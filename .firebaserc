@@ -1,13 +1,13 @@
 {
   "projects": {
-    "default": "REPLACE_WITH_NEW_FIREBASE_PROJECT_ID",
-    "canteen-isolated": "REPLACE_WITH_NEW_FIREBASE_PROJECT_ID"
+    "default": "canteen-dashboard-cfeb9",
+    "canteen-isolated": "canteen-dashboard-cfeb9"
   },
   "targets": {
-    "canteen-isolated": {
+    "canteen-dashboard-cfeb9": {
       "hosting": {
         "canteenApp": [
-          "REPLACE_WITH_NEW_FIREBASE_HOSTING_SITE_ID"
+          "canteen-dashboard-cfeb9"
         ]
       }
     }

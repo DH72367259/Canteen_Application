@@ -11,6 +11,12 @@ set -e  # Exit on error
 echo "🚀 Starting NoQx Deployment..."
 echo ""
 
+# ===== STEP 0: ENABLE WEBFRAMEWORKS EXPERIMENT =====
+echo "⏳ Step 0: Enabling Firebase webframeworks experiment..."
+firebase experiments:enable webframeworks --project canteen-dashboard-cfeb9
+echo "✅ Webframeworks experiment enabled"
+echo ""
+
 # ===== STEP 1: NAVIGATE TO PROJECT =====
 cd /Users/kuhelijoardar/Canteen
 echo "✅ Step 1: Navigated to project directory"
