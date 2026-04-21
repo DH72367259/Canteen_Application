@@ -1,0 +1,35 @@
+{
+  "name": "canteen",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "firebase:login": "firebase login",
+    "firebase:deploy": "firebase deploy --project canteen-isolated --only hosting:canteenApp,firestore",
+    "firebase:deploy:hosting": "firebase deploy --project canteen-isolated --only hosting:canteenApp",
+    "firebase:deploy:canteen": "firebase deploy --project canteen-isolated --only hosting:canteenApp,firestore",
+    "firebase:deploy:canteen:hosting": "firebase deploy --project canteen-isolated --only hosting:canteenApp",
+    "admin:create": "node scripts/create-admin-user.mjs"
+  },
+  "private": true,
+  "dependencies": {
+    "firebase": "^12.12.1",
+    "firebase-admin": "^13.8.0",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.3",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.4",
+    "firebase-tools": "^15.15.0",
+    "tailwindcss": "^4.2.3",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    
+    function isCanteenAdmin() {
+      return isAuthenticated() && request.auth.token.canteen_admin == true;
+    }
+    
+    function isVendor() {
+      return isAuthenticated() && request.auth.token.vendor == true;
+    }
+    
+    function isWorker() {
+      return isAuthenticated() && request.auth.token.worker == true;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow write: if isSuperAdmin() || request.auth.uid == userId;
+      allow create: if isAuthenticated();
+    }
+
+    // Orders collection
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (
+        resource.data.uid == request.auth.uid ||
+        isCanteenAdmin() ||
+        isWorker() ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update: if isCanteenAdmin() || isWorker() || isSuperAdmin() || request.auth.uid == resource.data.uid;
+    }
+
+    // Canteens collection
+    match /canteens/{canteenId} {
+      allow read: if isAuthenticated();
+      allow write: if isCanteenAdmin() || isSuperAdmin();
+    }
+
+    // Menu items
+    match /menu_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if isCanteenAdmin() || isSuperAdmin();
+    }
+
+    // Time slots
+    match /time_slots/{slotId} {
+      allow read: if isAuthenticated();
+      allow write: if isCanteenAdmin() || isSuperAdmin();
+    }
+
+    // Bins
+    match /bins/{binId} {
+      allow read: if isAuthenticated() && (isCanteenAdmin() || isWorker() || isSuperAdmin());
+      allow write: if isCanteenAdmin() || isWorker() || isSuperAdmin();
+    }
+
+    // Rewards
+    match /rewards/{rewardId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.uid || isSuperAdmin());
+      allow write: if isSuperAdmin() || request.auth.uid == resource.data.uid;
+      allow create: if isAuthenticated();
+    }
+
+    // Reward transactions
+    match /reward_transactions/{txId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.uid || isSuperAdmin());
+      allow create: if isAuthenticated();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
