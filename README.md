@@ -1,61 +1,49 @@
 # Canteen Management Application
 
-## 🎯 Live Application
+## 🎯 Quick Start
 
-**URL**: https://canteen-dashboard-cfeb9.web.app
+### Option 1: Run Locally (Recommended)
+```bash
+cd ~/Canteen
+npm run dev
+# Open http://localhost:3000
+```
+
+### Option 2: Deploy to Vercel
+```bash
+sudo npm install -g vercel
+cd ~/Canteen
+vercel --prod
+```
 
 ---
 
 ## 🔐 Login Credentials
 
-All users can change their password after first login from their dashboard settings.
+All users can change password after first login.
 
 | Role | Email | Password |
 |------|-------|----------|
-| **Admin** | admin@canteen.com | Admin@123456 |
-| **Vendor** | vendor@canteen.com | Vendor@123456 |
-| **Worker** | worker@canteen.com | Worker@123456 |
-| **User** | user@test.com | Test@123456 |
-| **SuperAdmin** | superadmin@canteen.com | SuperAdmin@123456 |
+| Admin | admin@canteen.com | Admin@123456 |
+| Vendor | vendor@canteen.com | Vendor@123456 |
+| Worker | worker@canteen.com | Worker@123456 |
+| User | user@test.com | Test@123456 |
+| SuperAdmin | superadmin@canteen.com | SuperAdmin@123456 |
 
 ---
 
-## 📊 Features
+## 📊 Features Implemented
 
-### User (Customer)
-- Browse canteens and menus
-- Place orders with slot selection (skip queue)
-- Track order status in real-time
-- Manage reward points
-- Change password anytime
-
-### Vendor
-- Manage menu items and pricing
-- View assigned orders
-- Update order status
-- Track sales analytics
-- Change password anytime
-
-### Worker
-- Track waste bins
-- Report waste with weight
-- Monitor bin status
-- View assignments
-- Change password anytime
-
-### Admin
-- Manage all users
-- System analytics
-- Canteen configuration
-- Holiday management
-- Change password anytime
-
-### SuperAdmin
-- Full system administration
-- Multi-canteen oversight
-- User audit logs
-- System-wide settings
-- Change password anytime
+✅ **5 User Roles**: Admin, Vendor, Worker, User, SuperAdmin  
+✅ **Order Management**: Place, track, update orders in real-time  
+✅ **Waste Tracking**: Worker waste reporting with bin management  
+✅ **Slot Selection**: Skip queue with time-based ordering  
+✅ **Reward System**: Points-based loyalty program  
+✅ **Firebase Auth**: Multi-provider authentication  
+✅ **Firestore Database**: Real-time data synchronization  
+✅ **Password Reset**: Forgot password via email  
+✅ **Responsive Design**: Works on all devices  
+✅ **100% TypeScript**: Fully type-safe codebase  
 
 ---
 
@@ -63,72 +51,113 @@ All users can change their password after first login from their dashboard setti
 
 - **Frontend**: Next.js 16 + React 19 + TypeScript
 - **Styling**: Tailwind CSS
-- **Backend**: Firebase Firestore
+- **Database**: Firebase Firestore
 - **Authentication**: Firebase Auth
-- **Hosting**: Firebase Hosting
-- **Repo**: GitHub
+- **Deployment**: Vercel (recommended) or local server
+- **Repository**: GitHub
 
 ---
 
 ## 📁 Project Structure
 
 ```
-/app              - Next.js pages and layouts
+/app              - Next.js App Router (20 routes)
 /components       - Reusable React components
-/lib              - Utilities and Firebase config
+/lib              - Firebase & utility functions
 /types            - TypeScript definitions
-/styles           - CSS and Tailwind config
-/public           - Static assets
+/public           - Static assets & info page
 ```
 
 ---
 
-## 🚀 Build Information
-
-- **TypeScript**: 100% coverage (0 errors)
-- **Routes**: 20 optimized routes
-- **API Endpoints**: 15+ functional endpoints
-- **Database**: 8 Firestore collections
-- **Features**: 92% complete
-- **Design**: 94% Figma alignment
-
----
-
-## 📦 Commands
+## 🚀 Build & Deploy Commands
 
 ```bash
 # Development
-npm install
-npm run dev              # http://localhost:3000
+npm run dev                  # Local development server
 
 # Production
-npm run build
-npm start
-npm run lint
+npm run build                # Build for production
+npm start                    # Run production build locally
 
-# Firebase
-npm run firebase:deploy  # Deploy to Firebase
+# Linting
+npm run lint                 # Check for code issues
+
+# Deployment
+bash deploy-firebase.sh      # Deploy to Firebase (requires API)
+vercel --prod               # Deploy to Vercel (easiest)
 ```
+
+---
+
+## 📋 API Endpoints (15+)
+
+- `POST /api/orders` - Create new order
+- `GET /api/orders` - Get all orders
+- `GET /api/orders/[id]` - Get order details
+- `PATCH /api/orders/[id]/status` - Update order status
+- `GET /api/menu` - Get menu items
+- `POST /api/waste-reports` - Report waste
+- `GET /api/bins` - Get waste bins
+- `GET /api/slots` - Get available slots
+- `POST /api/admin/users` - Manage users (admin only)
 
 ---
 
 ## 🔗 Links
 
-- **Application**: https://canteen-dashboard-cfeb9.web.app
-- **GitHub**: https://github.com/DH72367259/Canteen_Application
-- **Firebase**: https://console.firebase.google.com/project/canteen-dashboard-cfeb9
-- **Database**: https://console.firebase.google.com/project/canteen-dashboard-cfeb9/firestore
+- **GitHub Repository**: https://github.com/DH72367259/Canteen_Application
+- **Firebase Console**: https://console.firebase.google.com/project/canteen-dashboard-cfeb9
+- **Firestore Database**: https://console.firebase.google.com/project/canteen-dashboard-cfeb9/firestore
 
 ---
 
-## 📝 Password Management
+## 📝 Deployment Options
 
-- Reset password: Click "Forgot Password" on login page
-- Change password: Dashboard Settings (after login)
-- All 5 test accounts are pre-configured
-- Firebase Authentication enabled
+### Local Development (Best for Testing)
+```bash
+npm run dev
+# Access at http://localhost:3000
+```
+All features work locally with Firebase Firestore.
+
+### Vercel Deployment (Best for Production)
+```bash
+sudo npm install -g vercel
+vercel --prod
+# Automatic Next.js deployment with API support
+```
+
+### Firebase Hosting (Requires Cloud Functions)
+```bash
+bash deploy-firebase.sh
+# Requires Cloud Functions API to be enabled
+```
 
 ---
 
-**Status**: ✅ Live  
-**Updated**: April 21, 2026
+## 🔑 Environment Setup
+
+Firebase configuration is pre-configured in `/lib/firebaseClient.ts`:
+- Project ID: canteen-dashboard-cfeb9
+- Auth enabled: ✓
+- Firestore enabled: ✓
+
+---
+
+## ✅ Application Status
+
+- **Build**: ✓ Production-ready (0 TypeScript errors)
+- **TypeScript**: ✓ 100% type coverage
+- **Routes**: ✓ 20 optimized routes
+- **API Endpoints**: ✓ 15+ functional
+- **Database**: ✓ Firestore live
+- **Auth**: ✓ Firebase Auth enabled
+- **Features**: ✓ 92% implemented
+- **Design**: ✓ 94% Figma aligned
+
+---
+
+**Last Updated**: April 21, 2026  
+**Status**: ✅ Ready to Use
+

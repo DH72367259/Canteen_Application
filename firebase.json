@@ -1,17 +1,15 @@
 {
   "hosting": {
     "site": "canteen-dashboard-cfeb9",
-    "public": "public",
+    "source": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
+      "**/node_modules/**",
+      "npm-debug.log",
+      ".npm",
+      ".eslintrc.json",
+      "*.log"
     ]
   },
   "firestore": {
