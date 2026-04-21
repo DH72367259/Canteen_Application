@@ -27,21 +27,21 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { binId, amount, type, notes } = body;
+    const { binId, weight, notes, canteenId } = body;
 
-    if (!binId || !amount || !type) {
+    if (!binId || weight === undefined || !canteenId) {
       return Response.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields: binId, weight, canteenId' },
         { status: 400 }
       );
     }
 
     const report = await createWasteReport({
       binId,
-      amount,
-      type,
+      weight,
       notes: notes || '',
-      reportedBy: context.uid,
+      workerId: context.uid,
+      canteenId,
     });
 
     return Response.json({ report }, { status: 201 });

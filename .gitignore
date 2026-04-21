@@ -1,5 +1,7 @@
 # dependencies
 /node_modules
+/.firebase
+firebase-debug.log
 
 # next.js
 /.next

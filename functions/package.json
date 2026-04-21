@@ -1,0 +1,20 @@
+{
+  "name": "canteen-app",
+  "version": "1.0.0",
+  "description": "Canteen Management Application",
+  "main": "server.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "start": "node .next/standalone/server.js",
+    "dev": "next dev"
+  },
+  "dependencies": {
+    "next": "16.2.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "firebase": "^10.13.0",
+    "tailwindcss": "^3.4.0"
+  }
+}

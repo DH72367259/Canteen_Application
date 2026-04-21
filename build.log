@@ -1,0 +1,52 @@
+
+> canteen@0.1.0 build
+> next build
+
+▲ Next.js 16.2.4 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 4.9s
+  Running TypeScript ...
+  Finished TypeScript in 6.2s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/20) ...
+  Generating static pages using 7 workers (5/20) 
+  Generating static pages using 7 workers (10/20) 
+  Generating static pages using 7 workers (15/20) 
+✓ Generating static pages using 7 workers (20/20) in 408ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /admin
+├ ○ /admin/dashboard
+├ ○ /admin/users
+├ ƒ /api/admin/users
+├ ƒ /api/bins
+├ ƒ /api/menu
+├ ƒ /api/orders
+├ ƒ /api/orders/[id]
+├ ƒ /api/orders/[id]/status
+├ ƒ /api/slots
+├ ƒ /api/waste-reports
+├ ○ /dashboard
+├ ○ /dashboard/order
+├ ƒ /dashboard/orders/[id]
+├ ○ /login
+├ ○ /operations
+├ ƒ /operations/[module]
+├ ○ /system
+├ ƒ /system/[module]
+├ ○ /system/dashboard
+├ ○ /vendor
+├ ƒ /vendor/[module]
+├ ○ /vendor/dashboard
+├ ○ /worker
+├ ○ /worker/dashboard
+└ ○ /worker/waste-tracking
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

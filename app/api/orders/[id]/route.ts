@@ -1,9 +1,10 @@
 import { getRequestContext } from '@/lib/authServer';
 import { getOrder } from '@/lib/firestoreRepository';
+import type { NextRequest } from 'next/server';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  routeContext: { params: Promise<{ id: string }> }
 ) {
   try {
     const context = await getRequestContext(request);
@@ -11,7 +12,7 @@ export async function GET(
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const orderId = params.id;
+    const { id: orderId } = await routeContext.params;
     const order = await getOrder(orderId);
 
     if (!order) {
