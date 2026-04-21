@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signInAnonymously, signInWithEmailAndPassword } from "firebase/auth";
+import { signInAnonymously, signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { getClientAuth, isFirebaseClientConfigured } from "@/lib/firebaseClient";
 import { getDashboardUrl } from "@/lib/rolesClient";
@@ -13,7 +13,9 @@ export default function LoginPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   if (!isFirebaseClientConfigured()) {
     return (
@@ -42,6 +44,7 @@ export default function LoginPage() {
   async function adminLogin() {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     try {
       const result = await signInWithEmailAndPassword(getClientAuth(), adminEmail, adminPassword);
       
@@ -54,6 +57,25 @@ export default function LoginPage() {
       router.push(dashboardUrl);
     } catch {
       setError("Admin login failed. Check email/password.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!adminEmail) {
+      setError("Please enter your email address first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await sendPasswordResetEmail(getClientAuth(), adminEmail);
+      setSuccess("Password reset email sent! Check your inbox.");
+      setShowForgotPassword(false);
+    } catch {
+      setError("Failed to send password reset email. Check your email address.");
     } finally {
       setBusy(false);
     }
@@ -87,40 +109,85 @@ export default function LoginPage() {
         <article className="panel checkout">
           <h2>Admin Access</h2>
           
-          <label htmlFor="role-select">Select Role</label>
-          <select
-            id="role-select"
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-            className="form-select"
-          >
-            {roleOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.icon} {option.label}
-              </option>
-            ))}
-          </select>
+          {!showForgotPassword ? (
+            <>
+              <label htmlFor="role-select">Select Role</label>
+              <select
+                id="role-select"
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+                className="form-select"
+              >
+                {roleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.icon} {option.label}
+                  </option>
+                ))}
+              </select>
 
-          <label htmlFor="admin-email">Email</label>
-          <input
-            id="admin-email"
-            type="email"
-            value={adminEmail}
-            onChange={(event) => setAdminEmail(event.target.value)}
-            placeholder="admin@domain.com"
-          />
-          <label htmlFor="admin-password">Password</label>
-          <input
-            id="admin-password"
-            type="password"
-            value={adminPassword}
-            onChange={(event) => setAdminPassword(event.target.value)}
-            placeholder="Enter password"
-          />
-          <button type="button" className="place-btn" disabled={busy} onClick={adminLogin}>
-            Login as {roleOptions.find((r) => r.value === selectedRole)?.label}
-          </button>
-          {error ? <p className="error-msg">{error}</p> : null}
+              <label htmlFor="admin-email">Email</label>
+              <input
+                id="admin-email"
+                type="email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.target.value)}
+                placeholder="admin@domain.com"
+              />
+              <label htmlFor="admin-password">Password</label>
+              <input
+                id="admin-password"
+                type="password"
+                value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+                placeholder="Enter password"
+              />
+              <button type="button" className="place-btn" disabled={busy} onClick={adminLogin}>
+                Login as {roleOptions.find((r) => r.value === selectedRole)?.label}
+              </button>
+              <button 
+                type="button" 
+                className="place-btn" 
+                style={{ marginTop: "8px", backgroundColor: "#666" }}
+                disabled={busy}
+                onClick={() => setShowForgotPassword(true)}
+              >
+                Forgot Password?
+              </button>
+              {error ? <p className="error-msg">{error}</p> : null}
+              {success ? <p style={{ color: "green", marginTop: "8px" }}>{success}</p> : null}
+            </>
+          ) : (
+            <>
+              <h3>Reset Password</h3>
+              <p>Enter your email to receive a password reset link.</p>
+              <label htmlFor="reset-email">Email</label>
+              <input
+                id="reset-email"
+                type="email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.target.value)}
+                placeholder="admin@domain.com"
+              />
+              <button type="button" className="place-btn" disabled={busy} onClick={resetPassword}>
+                Send Reset Email
+              </button>
+              <button 
+                type="button" 
+                className="place-btn" 
+                style={{ marginTop: "8px", backgroundColor: "#666" }}
+                disabled={busy}
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setError(null);
+                  setSuccess(null);
+                }}
+              >
+                Back to Login
+              </button>
+              {error ? <p className="error-msg">{error}</p> : null}
+              {success ? <p style={{ color: "green", marginTop: "8px" }}>{success}</p> : null}
+            </>
+          )}
         </article>
       </section>
     </main>
