@@ -1,247 +1,108 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getClientAuth, isFirebaseClientConfigured } from "@/lib/firebaseClient";
-import { useUserRole } from "@/lib/rolesClient";
-import type { CanteenOrder } from "@/types/canteen";
+import { useAuth } from "@/lib/auth-context";
 
-function currency(value: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
+const CANTEENS = [
+  { id: "c1", name: "Main Canteen", desc: "Breakfast · Lunch · Dinner", emoji: "🍱", status: "open", nextSlot: "12:30 PM", items: 42, rating: 4.6 },
+  { id: "c2", name: "Snack Corner", desc: "Snacks · Tea · Coffee", emoji: "☕", status: "busy", nextSlot: "11:45 AM", items: 18, rating: 4.3 },
+  { id: "c3", name: "Hostel Mess", desc: "Breakfast · Dinner", emoji: "🥘", status: "open", nextSlot: "7:30 AM", items: 12, rating: 4.1 },
+  { id: "c4", name: "Ground Floor Cafe", desc: "All Day Dining", emoji: "🥗", status: "closed", nextSlot: "Opens 8 AM", items: 28, rating: 4.4 },
+];
 
-export default function CustomerDashboard() {
+export default function UserHomePage() {
+  const { user, logout } = useAuth();
   const router = useRouter();
-  const { role, loading: roleLoading } = useUserRole();
-  const [rewards, setRewards] = useState({ points: 0, balance: 0 });
-  const [orders, setOrders] = useState<CanteenOrder[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const clientConfigReady = isFirebaseClientConfigured();
+  const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
 
-  // Redirect if not customer
-  useEffect(() => {
-    if (!roleLoading && role && role !== "customer") {
-      router.push("/");
-    }
-  }, [role, roleLoading, router]);
-
-  const getAuthHeader = useCallback(async () => {
-    const currentUser = getClientAuth().currentUser;
-    if (!currentUser) {
-      throw new Error("User not authenticated.");
-    }
-
-    const token = await currentUser.getIdToken();
-    return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-  }, []);
-
-  const refreshOrders = useCallback(async () => {
-    try {
-      const response = await fetch("/api/orders", {
-        cache: "no-store",
-        headers: await getAuthHeader(),
-      });
-
-      const payload = (await response.json()) as {
-        orders?: CanteenOrder[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not load orders.");
-      }
-
-      setOrders(payload.orders ?? []);
-      setRewards({ points: (payload.orders?.length ?? 0) * 2, balance: (payload.orders?.length ?? 0) * 2 });
-      setLoading(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not load orders.";
-      setError(message);
-      setLoading(false);
-    }
-  }, [getAuthHeader]);
-
-  useEffect(() => {
-    if (!clientConfigReady || roleLoading) {
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(getClientAuth(), async (authUser) => {
-      if (!authUser) {
-        setLoading(false);
-        return;
-      }
-
-      await refreshOrders();
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [clientConfigReady, roleLoading, refreshOrders]);
-
-  async function handleLogout() {
-    try {
-      await signOut(getClientAuth());
-      router.push("/login");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Logout failed.";
-      setError(message);
-    }
-  }
-
-  if (!clientConfigReady) {
-    return (
-      <main className="canteen-page">
-        <section className="hero">
-          <h1>Firebase configuration missing</h1>
-        </section>
-      </main>
-    );
-  }
-
-  if (roleLoading) {
-    return (
-      <main className="canteen-page">
-        <section className="hero">
-          <h1>Loading...</h1>
-        </section>
-      </main>
-    );
-  }
+  const handleLogout = async () => { await logout(); router.push("/login"); };
 
   return (
-    <main className="canteen-page">
-      <section className="hero">
-        <p className="hero-kicker">Customer Portal</p>
-        <h1>Order & Rewards Dashboard</h1>
-        <p>Place orders, track delivery, and earn rewards.</p>
-        <p className="route-links">
-          <Link href="/">Home</Link> |
-          <button 
-            type="button" 
-            onClick={handleLogout}
-            style={{ background: "none", border: "none", color: "#7a2f00", cursor: "pointer", textDecoration: "underline" }}
-          >
-            Logout
-          </button>
-        </p>
-      </section>
+    <div className="app-shell">
+      {/* Top bar */}
+      <div className="app-topbar">
+        <div className="greeting-block">
+          <div className="greeting">Good morning 👋</div>
+          <div className="name">{user?.displayName || "Guest"}</div>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <Link href="/dashboard/rewards" style={{ background: "var(--orange-light)", borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.78rem", fontWeight: 700, color: "var(--orange-dark)", textDecoration: "none" }}>
+            ₹12 NoQx Cash
+          </Link>
+          <button onClick={handleLogout} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }} title="Logout">🚪</button>
+        </div>
+      </div>
 
-      <section className="grid-wrap">
-        <div className="panel">
-          <h2>🎁 Rewards</h2>
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <div style={{ padding: "0.75rem", background: "#ffe0cc", borderRadius: "10px" }}>
-              <p style={{ fontSize: "0.9rem", color: "#666" }}>Total Points</p>
-              <h3 style={{ fontSize: "1.8rem" }}>{rewards.points}</h3>
-            </div>
-            <div style={{ padding: "0.75rem", background: "#ffeedd", borderRadius: "10px" }}>
-              <p style={{ fontSize: "0.9rem", color: "#666" }}>Redeemable Balance</p>
-              <h3 style={{ fontSize: "1.8rem" }}>₹{rewards.balance}</h3>
-            </div>
-            <Link 
-              href="/dashboard/redeem"
-              style={{ 
-                display: "block", 
-                padding: "0.75rem", 
-                background: "#c75100", 
-                color: "white",
-                borderRadius: "10px", 
-                textAlign: "center",
-                textDecoration: "none",
-                fontWeight: "600"
-              }}
-            >
-              Redeem Rewards
-            </Link>
-          </div>
+      {/* Hero card */}
+      <div className="hero-card">
+        <h2>Skip the queue.<br />Pre-order now.</h2>
+        <p>Choose your meal, pick a slot, collect from your bin.</p>
+        <Link href="#canteens" className="hero-cta">Browse canteens ↓</Link>
+      </div>
+
+      {/* Active order banner */}
+      <div style={{ margin: "0 1rem 0.25rem", background: "var(--green-light)", borderRadius: 14, padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #bbf7d0" }}>
+        <div>
+          <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600, textTransform: "uppercase" }}>Active Order</div>
+          <div style={{ fontSize: "0.88rem", fontWeight: 700 }}>Slot 1:00 PM · Bin #4</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>Paneer Butter Masala, Roti × 2</div>
+        </div>
+        <Link href="/dashboard/orders" style={{ background: "var(--green)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.75rem", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}>Track →</Link>
+      </div>
+
+      {/* Canteen list */}
+      <div id="canteens">
+        <div className="section-header">
+          <h3>Canteens nearby</h3>
+          <button style={{ background: "none", border: "none", color: "var(--orange)", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}>See all</button>
         </div>
 
-        <div className="panel">
-          <h2>🛒 Quick Actions</h2>
-          <div style={{ display: "grid", gap: "0.6rem" }}>
-            <Link 
-              href="/dashboard/order"
-              style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}
-            >
-              <strong>Place New Order</strong>
-              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Browse menu and create order</p>
-            </Link>
-            <Link 
-              href="/dashboard/slots"
-              style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}
-            >
-              <strong>View Available Slots</strong>
-              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Check time slots for pickup</p>
-            </Link>
-            <Link 
-              href="/dashboard/orders"
-              style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}
-            >
-              <strong>Order History</strong>
-              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>View past and current orders</p>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel orders">
-        <h2>📦 Recent Orders</h2>
-        {loading ? <p>Loading orders...</p> : null}
-        {orders.length === 0 && !loading ? (
-          <p style={{ color: "#999" }}>No orders yet. <Link href="/dashboard/order" style={{ color: "#c75100", fontWeight: "600" }}>Place your first order</Link></p>
-        ) : null}
-        <div className="orders-list">
-          {orders.map((order) => (
-            <div key={order.id} className="order-card">
-              <div className="order-head">
-                <h3>Order #{order.id.substring(0, 8)}</h3>
-                <span>{order.status}</span>
+        <div className="canteen-list">
+          {CANTEENS.map(c => (
+            <Link key={c.id} href={`/dashboard/menu/${c.id}`} className="canteen-card">
+              <div className="canteen-icon">{c.emoji}</div>
+              <div className="canteen-info">
+                <h4>{c.name}</h4>
+                <p>{c.desc}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.35rem" }}>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>⭐ {c.rating}</span>
+                  <span style={{ color: "var(--border)" }}>·</span>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{c.items} items</span>
+                  <span style={{ color: "var(--border)" }}>·</span>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>Next: {c.nextSlot}</span>
+                </div>
               </div>
-              <ul>
-                {order.items.map((item) => (
-                  <li key={`${order.id}-${item.itemId}`}>
-                    {item.name} x {item.quantity} = {currency(item.lineTotal)}
-                  </li>
-                ))}
-              </ul>
-              <strong>Total: {currency(order.total)}</strong>
-              <div style={{ fontSize: "0.85rem", color: "#999", marginTop: "0.35rem" }}>
-                {new Date(order.createdAt).toLocaleString()}
-              </div>
-              <Link 
-                href={`/dashboard/order/${order.id}`}
-                style={{ 
-                  display: "block", 
-                  marginTop: "0.6rem",
-                  padding: "0.5rem",
-                  background: "#fff8ef",
-                  border: "1px solid #e8cfb4",
-                  borderRadius: "8px",
-                  textAlign: "center",
-                  textDecoration: "none",
-                  color: "#7a2f00",
-                  fontSize: "0.9rem"
-                }}
-              >
-                Track Order
-              </Link>
-            </div>
+              <span className={`canteen-badge badge-${c.status}`}>
+                {c.status === "open" ? "Open" : c.status === "busy" ? "Busy" : "Closed"}
+              </span>
+            </Link>
           ))}
         </div>
-        {error ? <p className="error-msg">{error}</p> : null}
-      </section>
-    </main>
+      </div>
+
+      {/* Bottom navigation */}
+      <nav className="bottom-nav">
+        {(["home", "orders", "rewards", "profile"] as const).map(tab => {
+          const icons: Record<string, string> = { home: "🏠", orders: "📦", rewards: "💰", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "My Orders", rewards: "Rewards", profile: "Profile" };
+          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", rewards: "/dashboard/rewards", profile: "/dashboard/profile" };
+          return (
+            <Link
+              key={tab}
+              href={links[tab]}
+              className={`bottom-nav-item ${activeNav === tab ? "active" : ""}`}
+              onClick={() => setActiveNav(tab)}
+            >
+              <span className="nav-icon">{icons[tab]}</span>
+              <span>{labels[tab]}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
+
+

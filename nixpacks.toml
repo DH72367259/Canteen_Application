@@ -1,0 +1,15 @@
+# Nixpacks config for Railway deployment
+
+[phases.build]
+cmds = ["npm ci", "npm run build"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[start]
+cmd = "node .next/standalone/server.js"
+
+[variables]
+NODE_ENV = "production"
+PORT = "3000"
+HOSTNAME = "0.0.0.0"
