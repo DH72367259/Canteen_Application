@@ -20,13 +20,13 @@ export async function GET(
     }
 
     // Verify user owns this order or is admin
-    if (order.customerId !== context.uid && context.role !== 'canteen-admin' && context.role !== 'super-admin') {
+    if (order.customerId !== context.uid && context.role !== 'canteen_admin' && context.role !== 'super_admin') {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     return Response.json({ order });
   } catch (error) {
-    console.error('Error fetching order:', error);
+    void error;
     return Response.json(
       { error: 'Failed to fetch order' },
       { status: 500 }

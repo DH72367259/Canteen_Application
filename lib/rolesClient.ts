@@ -24,10 +24,9 @@ export function useUserRole() {
         if (customRole) {
           setRole(customRole);
         } else if (user.isAnonymous) {
-          setRole("customer");
+          setRole("user");
         } else {
-          // Default to "customer" if no role set
-          setRole("customer");
+          setRole("user");
         }
       } else {
         setRole(null);
@@ -48,23 +47,20 @@ export function useUserRole() {
  */
 export function getDashboardUrl(role: UserRole): string {
   switch (role) {
-    case "super-admin":
-      return "/system/dashboard";
-    case "canteen-admin":
+    case "super_admin":
       return "/admin/dashboard";
+    case "canteen_admin":
+      return "/vendor/dashboard";
     case "vendor":
       return "/vendor/dashboard";
     case "worker":
       return "/worker/dashboard";
-    case "customer":
+    case "user":
     default:
       return "/dashboard";
   }
 }
 
-/**
- * Check if user has admin privileges
- */
 export function isAdminRole(role: UserRole | null): boolean {
-  return role === "super-admin" || role === "canteen-admin" || role === "vendor" || role === "worker";
+  return role === "super_admin" || role === "canteen_admin" || role === "vendor" || role === "worker";
 }

@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+
+interface ActiveOrder {
+  id: string;
+  bin: string;
+  otp: string;
+  items: string;
+  slot: string;
+}
 
 const CANTEENS = [
   { id: "c1", name: "Main Canteen", desc: "Breakfast · Lunch · Dinner", emoji: "🍱", status: "open", nextSlot: "12:30 PM", items: 42, rating: 4.6 },
@@ -16,6 +24,17 @@ export default function UserHomePage() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
+
+  useEffect(() => {
+    const bal = localStorage.getItem("canteen_wallet_balance");
+    if (bal) setWalletBalance(Number(bal));
+    const order = localStorage.getItem("canteen_active_order");
+    if (order) {
+      try { setActiveOrder(JSON.parse(order)); } catch { /* invalid data */ }
+    }
+  }, []);
 
   const handleLogout = async () => { await logout(); router.push("/login"); };
 
@@ -29,7 +48,7 @@ export default function UserHomePage() {
         </div>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <Link href="/dashboard/rewards" style={{ background: "var(--orange-light)", borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.78rem", fontWeight: 700, color: "var(--orange-dark)", textDecoration: "none" }}>
-            ₹12 Canteen Cash
+            {walletBalance > 0 ? `₹${walletBalance} Canteen Cash` : "Top Up"}
           </Link>
           <button onClick={handleLogout} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }} title="Logout">🚪</button>
         </div>
@@ -42,15 +61,17 @@ export default function UserHomePage() {
         <Link href="#canteens" className="hero-cta">Browse canteens ↓</Link>
       </div>
 
-      {/* Active order banner */}
-      <div style={{ margin: "0 1rem 0.25rem", background: "var(--green-light)", borderRadius: 14, padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #bbf7d0" }}>
-        <div>
-          <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600, textTransform: "uppercase" }}>Active Order</div>
-          <div style={{ fontSize: "0.88rem", fontWeight: 700 }}>Slot 1:00 PM · Bin #4</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>Paneer Butter Masala, Roti × 2</div>
+      {/* Active order banner — shown only when an order exists */}
+      {activeOrder && (
+        <div style={{ margin: "0 1rem 0.25rem", background: "var(--green-light)", borderRadius: 14, padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #bbf7d0" }}>
+          <div>
+            <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600, textTransform: "uppercase" }}>Active Order</div>
+            <div style={{ fontSize: "0.88rem", fontWeight: 700 }}>{activeOrder.slot} · {activeOrder.bin}</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{activeOrder.items}</div>
+          </div>
+          <Link href="/dashboard/orders" style={{ background: "var(--green)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.75rem", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}>Track →</Link>
         </div>
-        <Link href="/dashboard/orders" style={{ background: "var(--green)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.75rem", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}>Track →</Link>
-      </div>
+      )}
 
       {/* Canteen list */}
       <div id="canteens">

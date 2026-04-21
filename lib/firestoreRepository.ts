@@ -299,7 +299,7 @@ export async function createUserProfile(profile: Partial<UserProfile>): Promise<
     email: profile.email || "",
     name: profile.name || "",
     phone: profile.phone,
-    role: profile.role || "customer",
+    role: profile.role || "user",
     canteenId: profile.canteenId,
     vendorId: profile.vendorId,
     active: profile.active !== false,

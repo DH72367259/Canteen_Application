@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const reports = await getAllWasteReports();
     return Response.json({ reports });
   } catch (error) {
-    console.error('Error fetching waste reports:', error);
+    void error;
     return Response.json(
       { error: 'Failed to fetch waste reports' },
       { status: 500 }
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
     return Response.json({ report }, { status: 201 });
   } catch (error) {
-    console.error('Error creating waste report:', error);
+    void error;
     return Response.json(
       { error: 'Failed to create waste report' },
       { status: 500 }

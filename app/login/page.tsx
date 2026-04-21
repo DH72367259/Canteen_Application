@@ -87,13 +87,13 @@ function LoginContent() {
   // Staff state
   const [email, setEmail]       = useState(
     roleParam === "vendor"        ? "vendor@canteen.app"  :
-    roleParam === "super-admin"   ? "admin@canteen.app"   :
-    roleParam === "canteen-admin" ? "canteen@canteen.app" : ""
+    roleParam === "super_admin"   ? "admin@canteen.app"   :
+    roleParam === "canteen_admin" ? "canteen@canteen.app" : ""
   );
   const [password, setPassword] = useState(
     roleParam === "vendor"        ? "vendor123"  :
-    roleParam === "super-admin"   ? "admin123"   :
-    roleParam === "canteen-admin" ? "canteen123" : ""
+    roleParam === "super_admin"   ? "admin123"   :
+    roleParam === "canteen_admin" ? "canteen123" : ""
   );
 
   const [busy,  setBusy]  = useState(false);

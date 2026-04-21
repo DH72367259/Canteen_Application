@@ -21,7 +21,7 @@ export default function SuperAdminDashboard() {
 
   // Redirect if not super-admin
   useEffect(() => {
-    if (!roleLoading && role && role !== "super-admin") {
+    if (!roleLoading && role && role !== "super_admin") {
       router.push("/");
     }
   }, [role, roleLoading, router]);
@@ -80,7 +80,7 @@ export default function SuperAdminDashboard() {
     );
   }
 
-  if (role !== "super-admin") {
+  if (role !== "super_admin") {
     return (
       <main className="canteen-page">
         <section className="hero">

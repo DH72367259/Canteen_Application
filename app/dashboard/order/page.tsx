@@ -46,7 +46,7 @@ export default function OrderPage() {
 
   // Redirect non-customers
   useEffect(() => {
-    if (!roleLoading && role && role !== 'customer') {
+    if (!roleLoading && role && role !== 'user') {
       router.push('/dashboard');
     }
   }, [role, roleLoading, router]);

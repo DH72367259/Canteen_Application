@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     return Response.json({ slots: availableSlots });
   } catch (error) {
-    console.error('Error fetching slots:', error);
+    void error;
     return Response.json(
       { error: 'Failed to fetch time slots' },
       { status: 500 }

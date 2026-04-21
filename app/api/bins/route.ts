@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const bins = await getAllBins();
     return Response.json({ bins });
   } catch (error) {
-    console.error('Error fetching bins:', error);
+    void error; // suppress server error details from client-visible logs
     return Response.json(
       { error: 'Failed to fetch bins' },
       { status: 500 }

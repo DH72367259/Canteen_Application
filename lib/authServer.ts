@@ -19,13 +19,12 @@ function parseRoleFromEmail(email: string): UserRole {
   const lowerEmail = email.toLowerCase();
   
   // Check for role prefixes in email (super-admin@, canteen-admin@, vendor@, worker@)
-  if (lowerEmail.startsWith("super-admin@")) return "super-admin";
-  if (lowerEmail.startsWith("canteen-admin@")) return "canteen-admin";
+  if (lowerEmail.startsWith("super-admin@")) return "super_admin";
+  if (lowerEmail.startsWith("canteen-admin@")) return "canteen_admin";
+  if (lowerEmail.startsWith("admin@")) return "super_admin";
   if (lowerEmail.startsWith("vendor@")) return "vendor";
   if (lowerEmail.startsWith("worker@")) return "worker";
-  
-  // Default allowlist emails are admins (for backward compatibility)
-  return "canteen-admin";
+  return "canteen_admin";
 }
 
 export async function getRequestContext(request: Request): Promise<RequestContext> {
@@ -39,7 +38,7 @@ export async function getRequestContext(request: Request): Promise<RequestContex
   const email = decoded.email?.toLowerCase();
   const allowList = parseAdminAllowList();
   
-  let role: UserRole = "customer";
+  let role: UserRole = "user";
   let canteenId: string | undefined;
   
   // Check if user is in admin allowlist (legacy support)
