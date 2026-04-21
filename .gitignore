@@ -1,34 +1,43 @@
-# dependencies
+# Dependencies
 /node_modules
-/.firebase
-firebase-debug.log
 
-# next.js
+# Next.js build output
 /.next
 /out
 
-# production
+# Production build
 /build
 
-# misc
+# Environment files (local only)
+.env*.local
+.env.local
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Railway (local link config only — railway.json stays in repo)
+/.railway
+
+# OS
 .DS_Store
 *.pem
+Thumbs.db
 
-# debug
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# local env files
-.env*.local
-
-# Firebase credentials
+# Firebase (no longer used)
+/.firebase
+firebase-debug.log
 serviceAccountKey.json
 
-# vercel
-.vercel
+# Vercel (no longer used)
+/.vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# IDE
+.vscode/
+.idea/

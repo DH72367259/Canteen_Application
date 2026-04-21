@@ -1,22 +1,45 @@
-# Canteen Management Application
+# NoQx – Smart Institutional Dining
 
-**Status**: ✅ Production Ready | **Build**: ✅ Passing | **Tests**: ✅ All Routes Compiled
+**Stack**: Next.js 16 · React 19 · TypeScript · Tailwind CSS  
+**Deployed**: Railway (`angelic-trust` project)
 
-> 🚀 **First time?** See [GET_STARTED.md](GET_STARTED.md) or [PROJECT_STATUS.md](PROJECT_STATUS.md)
+## Local Development
 
-## 🎯 Quick Start
-
-### Step 1: Add Firebase Credentials (Required)
-Create `.env.local` in project root with your Firebase config:
 ```bash
-NEXT_PUBLIC_FIREBASE_API_KEY=your_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=canteen-dashboard-cfeb9.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=canteen-dashboard-cfeb9
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=canteen-dashboard-cfeb9.appspot.com
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+npm install
+npm run dev
+# → http://localhost:3000
 ```
-👉 [How to get Firebase credentials?](GET_STARTED.md#1-get-firebase-configuration)
+
+## Demo Login
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | admin@noqx.in | admin123 |
+| Vendor / Canteen | vendor@noqx.in | vendor123 |
+| Student | *(any phone + OTP: 1234)* | — |
+
+## Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page |
+| `/login` | Phone OTP (users) · Email/password (staff) |
+| `/dashboard` | User home – canteen list, hero card |
+| `/dashboard/orders` | My orders – Active / Upcoming / Completed |
+| `/dashboard/rewards` | NoQx Cash balance & history |
+| `/vendor/dashboard` | Live orders with BIN CARDS + OTP modal |
+| `/admin/dashboard` | Super admin – canteens, users, analytics |
+
+## Deployment
+
+Push to `main` → GitHub Actions builds and deploys to Railway automatically.
+
+Manual deploy:
+```bash
+railway up
+```
+
 
 ### Step 2: Run Locally (Recommended)
 ```bash
