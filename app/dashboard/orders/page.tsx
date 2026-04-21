@@ -82,7 +82,7 @@ export default function MyOrdersPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.25rem" }}>
                 <span className="order-amount">₹{order.total}</span>
                 {order.earning > 0 && (
-                  <span className="tag tag-orange">+₹{order.earning} NoQx Cash</span>
+                  <span className="tag tag-orange">+₹{order.earning} Canteen Cash</span>
                 )}
               </div>
 

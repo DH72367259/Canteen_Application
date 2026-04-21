@@ -19,7 +19,7 @@ export default function RewardsPage() {
       {/* Top bar */}
       <div className="topbar">
         <Link href="/dashboard" style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)", textDecoration: "none" }}>←</Link>
-        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>NoQx Cash</h1>
+        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>Canteen Cash</h1>
         <div />
       </div>
 
@@ -37,7 +37,7 @@ export default function RewardsPage() {
 
       {/* How to earn */}
       <div style={{ padding: "0 1rem" }}>
-        <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.75rem", marginTop: "0.5rem" }}>How to earn NoQx Cash</h3>
+        <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.75rem", marginTop: "0.5rem" }}>How to earn Canteen Cash</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
           {[
             { icon: "₹1", label: "Order ≥₹50", sub: "Get ₹1 reward" },

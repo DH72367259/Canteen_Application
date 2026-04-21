@@ -24,10 +24,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const DEMO_ACCOUNTS = [
-  { email: 'admin@noqx.in', password: 'admin123', role: 'super_admin' as UserRole, displayName: 'Super Admin' },
-  { email: 'vendor@noqx.in', password: 'vendor123', role: 'vendor' as UserRole, displayName: 'Central Canteen' },
-  { email: 'canteen@noqx.in', password: 'canteen123', role: 'canteen_admin' as UserRole, displayName: 'Canteen Admin' },
-  { email: 'worker@noqx.in', password: 'worker123', role: 'worker' as UserRole, displayName: 'Kitchen Worker' },
+  { email: 'admin@canteen.app', password: 'admin123', role: 'super_admin' as UserRole, displayName: 'Super Admin' },
+  { email: 'vendor@canteen.app', password: 'vendor123', role: 'vendor' as UserRole, displayName: 'Central Canteen' },
+  { email: 'canteen@canteen.app', password: 'canteen123', role: 'canteen_admin' as UserRole, displayName: 'Canteen Admin' },
+  { email: 'worker@canteen.app', password: 'worker123', role: 'worker' as UserRole, displayName: 'Kitchen Worker' },
 ];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -36,14 +36,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('noqx_session');
+      const saved = localStorage.getItem('canteen_session');
       if (saved) setUser(JSON.parse(saved));
     } catch {/* ignore */}
     setLoading(false);
   }, []);
 
   const logout = async () => {
-    localStorage.removeItem('noqx_session');
+    localStorage.removeItem('canteen_session');
     setUser(null);
   };
 
@@ -51,13 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const account = DEMO_ACCOUNTS.find(a => a.email === email && a.password === password);
     if (!account) throw new Error('Invalid credentials. Check demo accounts.');
     const u: AuthUser = { uid: `uid_${account.role}`, email: account.email, displayName: account.displayName, role: account.role, isAnonymous: false };
-    localStorage.setItem('noqx_session', JSON.stringify(u));
+    localStorage.setItem('canteen_session', JSON.stringify(u));
     setUser(u);
   };
 
   const userLogin = async (phone?: string, name?: string) => {
     const u: AuthUser = { uid: `uid_user_${Date.now()}`, email: null, displayName: name || 'Guest User', role: 'user', isAnonymous: !phone, phone: phone || null };
-    localStorage.setItem('noqx_session', JSON.stringify(u));
+    localStorage.setItem('canteen_session', JSON.stringify(u));
     setUser(u);
   };
 

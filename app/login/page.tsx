@@ -19,9 +19,9 @@ function LoginContent() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState(
-    roleParam === "vendor" ? "vendor@noqx.in" :
-    roleParam === "super-admin" ? "admin@noqx.in" :
-    roleParam === "canteen-admin" ? "canteen@noqx.in" : ""
+    roleParam === "vendor" ? "vendor@canteen.app" :
+    roleParam === "super-admin" ? "admin@canteen.app" :
+    roleParam === "canteen-admin" ? "canteen@canteen.app" : ""
   );
   const [password, setPassword] = useState(
     roleParam === "vendor" ? "vendor123" :
@@ -78,7 +78,7 @@ function LoginContent() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
             <span style={{ width: 44, height: 44, background: "var(--orange)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>🍽️</span>
           </div>
-          <h1>NoQx</h1>
+          <h1>Canteen</h1>
           <p>Smart Institutional Dining</p>
         </div>
 
@@ -152,11 +152,11 @@ function LoginContent() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ background: "var(--orange-light)", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.65rem 0.85rem", fontSize: "0.78rem", color: "var(--orange-dark)" }}>
               <strong>Demo accounts:</strong><br />
-              vendor@noqx.in / vendor123 · admin@noqx.in / admin123
+              vendor@canteen.app / vendor123 · admin@canteen.app / admin123
             </div>
             <div className="form-group">
               <label className="form-label">Email</label>
-              <input className="form-input" type="email" placeholder="vendor@noqx.in" value={email} onChange={e => setEmail(e.target.value)} />
+              <input className="form-input" type="email" placeholder="vendor@canteen.app" value={email} onChange={e => setEmail(e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>

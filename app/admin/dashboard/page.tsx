@@ -46,7 +46,7 @@ export default function SuperAdminDashboard() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-badge"><span className="dot" />NoQx Admin</div>
+          <div className="logo-badge"><span className="dot" />Canteen Admin</div>
           <p>Super Administrator</p>
         </div>
         <nav className="sidebar-nav">
@@ -92,7 +92,7 @@ function OverviewSection() {
           { icon: "🏪", label: "Active Canteens", value: "3", sub: "+1 this month", color: "var(--orange)" },
           { icon: "👥", label: "Total Users", value: "2,841", sub: "+128 this week", color: "var(--blue)" },
           { icon: "📦", label: "Orders Today", value: "1,248", sub: "₹96,240 revenue", color: "var(--green)" },
-          { icon: "💰", label: "NoQx Cash Given", value: "₹14,220", sub: "rewards this month", color: "var(--yellow)" },
+          { icon: "💰", label: "Canteen Cash Given", value: "₹14,220", sub: "rewards this month", color: "var(--yellow)" },
           { icon: "⭐", label: "Avg. Rating", value: "4.4", sub: "across all canteens", color: "var(--orange)" },
           { icon: "📱", label: "App Users", value: "1,922", sub: "iOS + Android", color: "var(--blue)" },
         ].map(s => (

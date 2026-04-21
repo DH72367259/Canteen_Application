@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
-  title: "NoQx - Smart Institutional Dining",
+  title: "Canteen - Smart Institutional Dining",
   description: "Canteen management platform",
 };
 

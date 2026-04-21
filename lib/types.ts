@@ -1,4 +1,4 @@
-// Data models for the NoQx platform
+// Data models for the Canteen platform
 
 export type OrderStatus = 
   | 'placed'

@@ -106,7 +106,7 @@ export default function VendorDashboard() {
         <div className="sidebar-logo">
           <div className="logo-badge">
             <span className="dot" />
-            NoQx
+            Canteen
           </div>
           <p>{user?.displayName || "Central Canteen"}</p>
         </div>

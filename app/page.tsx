@@ -9,7 +9,7 @@ export default function HomePage() {
       <header style={{ padding: "1rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: 32, height: 32, background: "var(--orange)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>🍽️</span>
-          <span style={{ fontWeight: 900, fontSize: "1.2rem", color: "var(--ink)" }}>NoQx</span>
+          <span style={{ fontWeight: 900, fontSize: "1.2rem", color: "var(--ink)" }}>Canteen</span>
         </div>
         <Link href="/login" className="btn btn-primary" style={{ padding: "0.5rem 1.1rem", fontSize: "0.85rem" }}>Sign In</Link>
       </header>
@@ -24,7 +24,7 @@ export default function HomePage() {
           <span style={{ color: "var(--orange)" }}>Pre-order your meal.</span>
         </h1>
         <p style={{ fontSize: "1.05rem", color: "var(--ink-3)", maxWidth: 480, margin: "0 auto 2rem" }}>
-          NoQx lets you pre-order canteen meals, pick up from your assigned bin with a secure OTP, and earn rewards with every order.
+          Canteen lets you pre-order meals, pick up from your assigned bin with a secure OTP, and earn rewards with every order.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
           <Link href="/login?role=user" className="btn btn-primary" style={{ fontSize: "1rem", padding: "0.75rem 1.75rem" }}>Order Now →</Link>
@@ -40,7 +40,7 @@ export default function HomePage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1rem" }}>
           {[
             { icon: "🔢", title: "Bin-based pickup", desc: "Auto-assigned numbered bins with OTP verification for secure, contactless pickup." },
-            { icon: "🎁", title: "NoQx Cash Rewards", desc: "Earn ₹1–₹2 per order. Use rewards at checkout. 14-day expiry keeps it fair." },
+            { icon: "🎁", title: "Canteen Cash Rewards", desc: "Earn ₹1–₹2 per order. Use rewards at checkout. 14-day expiry keeps it fair." },
             { icon: "🕐", title: "Slot-based ordering", desc: "Pick your pickup time slot. No rush, no chaos, no cold food." },
             { icon: "📊", title: "Live vendor dashboard", desc: "Color-coded live orders view. Yellow = preparing, Green = done, Red = delayed." },
             { icon: "💳", title: "UPI & card payments", desc: "Pay via any UPI app, debit/credit card, or wallet. Fully secure checkout." },
@@ -78,7 +78,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer style={{ borderTop: "1px solid var(--border)", padding: "1.25rem 1.5rem", textAlign: "center", fontSize: "0.8rem", color: "var(--ink-3)" }}>
-        <p>© 2025 Krytil Private Limited · NoQx Platform · <Link href="/login" style={{ color: "var(--orange)", textDecoration: "none" }}>Sign in</Link></p>
+        <p>© 2025 Krytil Private Limited · Canteen Platform · <Link href="/login" style={{ color: "var(--orange)", textDecoration: "none" }}>Sign in</Link></p>
       </footer>
     </div>
   );
