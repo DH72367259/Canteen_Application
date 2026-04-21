@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
@@ -19,19 +19,6 @@ const SLOTS = [
   { id: "s3", label: "1:30 PM",  available: true },
   { id: "s4", label: "2:00 PM",  available: false },
 ];
-
-/* ─── Razorpay loader ────────────────────────────────────────────────────── */
-function loadRazorpayScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (typeof window === "undefined") return resolve(false);
-    if ((window as unknown as Record<string, unknown>).Razorpay) return resolve(true);
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload  = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-}
 
 /* ─── Cart content ───────────────────────────────────────────────────────── */
 function CartContent() {
@@ -55,7 +42,6 @@ function CartContent() {
   const [busy, setBusy]         = useState(false);
   const [placedOrder, setPlacedOrder] = useState<{ id: string; bin: string; otp: string } | null>(null);
   const [error, setError]       = useState<string | null>(null);
-  const razorpayKeyRef          = useRef(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "");
 
   const subtotal    = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const walletDisc  = useWallet ? Math.min(walletBal, subtotal) : 0;
@@ -75,51 +61,46 @@ function CartContent() {
     setBusy(true);
     setError(null);
 
-    // If entire bill covered by wallet, skip Razorpay
+    // If entire bill covered by wallet, skip PhonePe redirect
     if (payable === 0) {
       await finaliseOrder("WALLET");
       return;
     }
 
-    const loaded = await loadRazorpayScript();
-    if (!loaded) {
-      setError("Failed to load payment gateway. Check your internet connection.");
-      setBusy(false);
-      return;
-    }
+    // Generate a unique transaction ID (alphanumeric, max 38 chars)
+    const txnId    = `CAN${Date.now()}`.slice(0, 38);
+    const statusUrl = `${window.location.origin}/dashboard/cart/payment-status?txnId=${txnId}`;
 
-    // In production: call /api/payments/create-order to get orderId from Razorpay
-    // Here we open Razorpay with the amount and handle success/failure
-    const key = razorpayKeyRef.current;
-    if (!key) {
-      setError("Payment not configured. Please contact support.");
-      setBusy(false);
-      return;
-    }
+    // Save cart summary so payment-status page can restore it
+    const slotLabel = SLOTS.find(s => s.id === slot)?.label || "";
+    localStorage.setItem("canteen_pending_order", JSON.stringify({
+      items: cart.map(c => `${c.name} ×${c.qty}`).join(", "),
+      slot:  slotLabel,
+    }));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Razorpay = (window as unknown as Record<string, any>).Razorpay;
-    const options = {
-      key,
-      amount: Math.round(payable * 100), // paise
-      currency: "INR",
-      name: "Canteen",
-      description: `Order – ${cart.length} item(s)`,
-      image: "/logo.png",
-      prefill: {
-        name:  user?.displayName  || "",
-        email: user?.email        || "",
-        contact: user?.phone      || "",
-      },
-      theme: { color: "#f97316" },
-      handler: async (response: { razorpay_payment_id: string }) => {
-        await finaliseOrder(response.razorpay_payment_id);
-      },
-      modal: {
-        ondismiss: () => { setBusy(false); },
-      },
-    };
-    new Razorpay(options).open();
+    try {
+      const res  = await fetch("/api/payments/phonepe-init", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          amount:      payable,
+          userId:      user?.uid || "GUEST",
+          txnId,
+          redirectUrl: statusUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) {
+        setError(data.error || "Payment initiation failed. Please try again.");
+        setBusy(false);
+        return;
+      }
+      // Redirect to PhonePe payment page
+      window.location.href = data.redirectUrl;
+    } catch {
+      setError("Network error. Please try again.");
+      setBusy(false);
+    }
   }
 
   async function finaliseOrder(paymentId: string) {
@@ -261,7 +242,7 @@ function CartContent() {
         <section className="card" style={{ padding: "0.85rem" }}>
           <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "0.5rem", fontWeight: 600 }}>ACCEPTED PAYMENTS</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-            {["UPI / GPay", "PhonePe", "Paytm", "Credit / Debit Card", "Net Banking"].map(m => (
+            {["PhonePe", "UPI / GPay", "Paytm", "Credit / Debit Card", "Net Banking"].map(m => (
               <span key={m} style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem", borderRadius: 8, border: "1px solid var(--border)", color: "var(--ink-3)" }}>{m}</span>
             ))}
           </div>
