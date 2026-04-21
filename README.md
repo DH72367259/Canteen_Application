@@ -1,15 +1,32 @@
 # Canteen Management Application
 
+**Status**: ✅ Production Ready | **Build**: ✅ Passing | **Tests**: ✅ All Routes Compiled
+
+> 🚀 **First time?** See [GET_STARTED.md](GET_STARTED.md) or [PROJECT_STATUS.md](PROJECT_STATUS.md)
+
 ## 🎯 Quick Start
 
-### Option 1: Run Locally (Recommended)
+### Step 1: Add Firebase Credentials (Required)
+Create `.env.local` in project root with your Firebase config:
+```bash
+NEXT_PUBLIC_FIREBASE_API_KEY=your_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=canteen-dashboard-cfeb9.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=canteen-dashboard-cfeb9
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=canteen-dashboard-cfeb9.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+```
+👉 [How to get Firebase credentials?](GET_STARTED.md#1-get-firebase-configuration)
+
+### Step 2: Run Locally (Recommended)
 ```bash
 cd ~/Canteen
+npm install    # If not already done
 npm run dev
 # Open http://localhost:3000
 ```
 
-### Option 2: Deploy to Vercel
+### Step 3: Deploy to Vercel
 ```bash
 sudo npm install -g vercel
 cd ~/Canteen
