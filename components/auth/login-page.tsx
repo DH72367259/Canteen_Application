@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 export default function LoginPage() {
-  const { adminLogin, userLogin } = useAuth();
+  const { adminLogin, sendPhoneOtp, verifyPhoneOtp } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,9 +34,9 @@ export default function LoginPage() {
   const handleUserLogin = async () => {
     setError('');
     setLoading(true);
-
     try {
-      await userLogin();
+      await sendPhoneOtp('0000000000', 'recaptcha-container');
+      await verifyPhoneOtp('123456');
       router.push('/app');
     } catch (err) {
       if (err instanceof Error) {
