@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import type { Bin } from "@/types/firestore";
-import { createWasteReport, getAllBins } from "@/lib/firestoreRepository";
 
 export default function WasteReportForm() {
   const [bins, setBins] = useState<Bin[]>([]);
@@ -17,8 +16,9 @@ export default function WasteReportForm() {
   useEffect(() => {
     async function loadBins() {
       try {
-        const data = await getAllBins();
-        setBins(data);
+        const res  = await fetch("/api/bins");
+        const data = await res.json();
+        setBins(data.bins ?? []);
       } catch (error) {
         console.error("Failed to load bins:", error);
       }
@@ -35,13 +35,18 @@ export default function WasteReportForm() {
 
     setLoading(true);
     try {
-      await createWasteReport({
-        binId: formData.binId,
-        canteenId: "canteen-1",
-        workerId: formData.workerId,
-        weight: formData.weight,
-        notes: formData.notes,
+      const res = await fetch("/api/waste-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          binId:     formData.binId,
+          canteenId: "canteen-1",
+          workerId:  formData.workerId,
+          weight:    formData.weight,
+          notes:     formData.notes,
+        }),
       });
+      if (!res.ok) throw new Error("Failed to submit report");
       alert("Waste report submitted successfully!");
       setFormData({ binId: "", weight: 0, notes: "", workerId: "worker-1" });
     } catch (error) {

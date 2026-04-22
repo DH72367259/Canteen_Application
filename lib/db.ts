@@ -1,230 +1,315 @@
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  getDoc,
-  doc,
-  addDoc,
-  updateDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { getDatabase } from './firebase';
-import { Order, OrderStatus, Bin, Reward } from './types';
+import { createAdminClient } from './supabase-server'
 
-/**
- * Order Management
- */
+// ============================================================
+// Types
+// ============================================================
+interface OrderItem {
+  menu_item_id: string
+  quantity: number
+  unit_price: number
+}
 
-export async function createOrder(orderData: Omit<Order, 'id' | 'createdAt'>) {
-  const db = getDatabase();
-  const docRef = await addDoc(collection(db, 'orders'), {
-    ...orderData,
-    createdAt: serverTimestamp(),
-    status: 'placed',
-  });
-  return docRef.id;
+interface CreateOrderData {
+  user_id: string
+  canteen_id: string
+  slot_id?: string
+  total_amount: number
+  notes?: string
+  payment_id?: string
+  items: OrderItem[]
+}
+
+// ============================================================
+// Orders
+// ============================================================
+export async function createOrder(orderData: CreateOrderData): Promise<string> {
+  const supabase = createAdminClient()
+  const { items, ...orderFields } = orderData
+
+  const { data: order, error } = await supabase
+    .from('orders')
+    .insert(orderFields)
+    .select('id')
+    .single()
+
+  if (error) throw error
+
+  if (items?.length) {
+    const orderItems = items.map((item) => ({ ...item, order_id: order.id }))
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems)
+    if (itemsError) throw itemsError
+  }
+
+  return order.id as string
 }
 
 export async function getOrder(orderId: string) {
-  const db = getDatabase();
-  const docRef = doc(db, 'orders', orderId);
-  const docSnap = await getDoc(docRef);
-  return docSnap.data() as Order | undefined;
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('orders')
+    .select(
+      '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*)'
+    )
+    .eq('id', orderId)
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 export async function getUserOrders(uid: string) {
-  const db = getDatabase();
-  const q = query(collection(db, 'orders'), where('uid', '==', uid));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as (Order & { id: string })[];
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('orders')
+    .select(
+      '*, order_items(*, menu_items(name, price, image_url)), time_slots(slot_name, start_time, end_time)'
+    )
+    .eq('user_id', uid)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
 }
 
-export async function getCanteenOrders(canteenId: string, status?: OrderStatus) {
-  const db = getDatabase();
-  let q;
+export async function getCanteenOrders(canteenId: string, status?: string) {
+  const supabase = createAdminClient()
+  let query = supabase
+    .from('orders')
+    .select(
+      '*, order_items(*, menu_items(name, price)), profiles(name, email, phone), bins(bin_code, color)'
+    )
+    .eq('canteen_id', canteenId)
+    .order('created_at', { ascending: false })
+
   if (status) {
-    q = query(
-      collection(db, 'orders'),
-      where('canteenId', '==', canteenId),
-      where('status', '==', status)
-    );
-  } else {
-    q = query(collection(db, 'orders'), where('canteenId', '==', canteenId));
+    query = query.eq('status', status)
   }
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as (Order & { id: string })[];
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
 }
 
-export async function updateOrderStatus(orderId: string, status: OrderStatus) {
-  const db = getDatabase();
-  const docRef = doc(db, 'orders', orderId);
-  await updateDoc(docRef, { status });
-}
-
-export async function assignOrderToBin(orderId: string, binNumber: number) {
-  const db = getDatabase();
-  const docRef = doc(db, 'orders', orderId);
-  const otp = generateOTP();
-  await updateDoc(docRef, {
-    binNumber,
-    otp,
-    status: 'ready_for_placement' as OrderStatus,
-  });
-  return otp;
-}
-
-/**
- * Bin Management
- */
-
-export async function getAvailableBin(canteenId: string): Promise<Bin | null> {
-  const db = getDatabase();
-  const q = query(
-    collection(db, 'bins'),
-    where('canteenId', '==', canteenId),
-    where('status', '==', 'empty')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.length > 0
-    ? (querySnapshot.docs[0].data() as Bin)
-    : null;
-}
-
-export async function updateBinStatus(
-  binId: string,
-  status: 'empty' | 'occupied' | 'picked_up',
-  orderId?: string
-) {
-  const db = getDatabase();
-  const docRef = doc(db, 'bins', binId);
-  await updateDoc(docRef, {
-    status,
-    ...(orderId && { currentOrder: orderId }),
-  });
-}
-
-/**
- * Rewards System
- */
-
-export async function getUserRewardBalance(uid: string): Promise<number> {
-  const db = getDatabase();
-  const q = query(
-    collection(db, 'rewards'),
-    where('uid', '==', uid),
-    where('redeemed', '==', false)
-  );
-  const querySnapshot = await getDocs(q);
-  let total = 0;
-  querySnapshot.forEach((docSnap) => {
-    const reward = docSnap.data() as Reward;
-    const expiresAt = new Date(reward.expiresAt);
-    if (expiresAt > new Date()) {
-      total += reward.points;
-    }
-  });
-  return total;
-}
-
-export async function earnReward(
-  uid: string,
-  points: number,
+export async function updateOrderStatus(
   orderId: string,
-  reason: string
+  status: string,
+  updates?: Record<string, unknown>
 ) {
-  const db = getDatabase();
-  // Add reward points
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 14); // 14 days expiry
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ status, ...updates })
+    .eq('id', orderId)
+    .select()
+    .single()
 
-  await addDoc(collection(db, 'rewards'), {
-    uid,
-    points,
-    expiresAt: expiresAt.toISOString(),
-    redeemed: false,
-    createdAt: serverTimestamp(),
-  });
-
-  // Record transaction
-  await addDoc(collection(db, 'reward_transactions'), {
-    uid,
-    type: 'earned',
-    points,
-    orderId,
-    reason,
-    createdAt: serverTimestamp(),
-  });
+  if (error) throw error
+  return data
 }
 
-export async function redeemReward(uid: string, points: number, orderId: string) {
-  const db = getDatabase();
-  // Find and mark reward as redeemed
-  const q = query(
-    collection(db, 'rewards'),
-    where('uid', '==', uid),
-    where('redeemed', '==', false)
-  );
-  const querySnapshot = await getDocs(q);
-  let remaining = points;
+export async function getActiveOrderForUser(uid: string) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('orders')
+    .select(
+      '*, order_items(*, menu_items(name, price, image_url)), bins(bin_code, color)'
+    )
+    .eq('user_id', uid)
+    .not('status', 'in', '(collected,cancelled)')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  for (const docSnap of querySnapshot.docs) {
-    if (remaining <= 0) break;
-    const reward = docSnap.data() as Reward;
-    const deduct = Math.min(reward.points, remaining);
+  if (error) throw error
+  return data
+}
 
-    if (deduct === reward.points) {
-      await updateDoc(doc(db, 'rewards', docSnap.id), { redeemed: true });
-    } else {
-      // Split reward
-      await updateDoc(doc(db, 'rewards', docSnap.id), {
-        points: reward.points - deduct,
-      });
-    }
+// ============================================================
+// Bins
+// ============================================================
+export async function getBins(canteenId: string) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('bins')
+    .select('*')
+    .eq('canteen_id', canteenId)
+    .order('bin_code')
 
-    remaining -= deduct;
+  if (error) throw error
+  return data ?? []
+}
+
+export async function updateBin(
+  binId: string,
+  data: Record<string, unknown>
+) {
+  const supabase = createAdminClient()
+  const { data: updated, error } = await supabase
+    .from('bins')
+    .update(data)
+    .eq('id', binId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return updated
+}
+
+// ============================================================
+// Menu
+// ============================================================
+export async function getMenuItems(canteenId: string, category?: string) {
+  const supabase = createAdminClient()
+  let query = supabase
+    .from('menu_items')
+    .select('*')
+    .eq('canteen_id', canteenId)
+    .eq('is_available', true)
+    .order('name')
+
+  if (category) {
+    query = query.eq('category', category)
   }
 
-  // Record transaction
-  await addDoc(collection(db, 'reward_transactions'), {
-    uid,
-    type: 'redeemed',
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
+// ============================================================
+// Slots
+// ============================================================
+export async function getTimeSlots(canteenId: string) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('time_slots')
+    .select('*')
+    .eq('canteen_id', canteenId)
+    .eq('is_active', true)
+    .order('start_time')
+
+  if (error) throw error
+  return data ?? []
+}
+
+// ============================================================
+// Rewards
+// ============================================================
+export async function getUserRewardBalance(uid: string): Promise<number> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('wallet_balance')
+    .eq('id', uid)
+    .single()
+
+  if (error) throw error
+  return data?.wallet_balance ?? 0
+}
+
+export async function addRewardTransaction(
+  uid: string,
+  type: 'earned' | 'redeemed' | 'expired',
+  points: number,
+  orderId?: string,
+  reason?: string
+) {
+  const supabase = createAdminClient()
+
+  // Reward points expire 7 days after earning
+  const expiresAt =
+    type === 'earned'
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : null
+
+  const { error } = await supabase.from('reward_transactions').insert({
+    user_id:    uid,
+    type,
     points,
-    orderId,
-    reason: 'Order discount',
-    createdAt: serverTimestamp(),
-  });
+    order_id:   orderId ?? null,
+    reason:     reason  ?? null,
+    expires_at: expiresAt,
+  })
+  if (error) throw error
+
+  // Atomically update wallet_balance (uses increment_wallet_balance SQL function)
+  const delta =
+    type === 'redeemed' || type === 'expired'
+      ? -Math.abs(points)
+      : Math.abs(points)
+
+  const { error: rpcError } = await supabase.rpc('increment_wallet_balance', {
+    p_user_id: uid,
+    p_delta:   delta,
+  })
+  if (rpcError) throw rpcError
 }
 
-/**
- * Utility Functions
- */
+// ============================================================
+// OTP verification
+// ============================================================
+export async function verifyOrderOtp(
+  otp: string,
+  canteenId: string
+): Promise<string> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase.rpc('verify_order_otp', {
+    p_otp:       otp,
+    p_canteen_id: canteenId,
+  })
 
-export function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  if (error) throw error
+  return data as string
 }
 
-export function calculateOrderRewards(orderAmount: number): number {
-  // ₹50+ = ₹1, ₹100+ = ₹2
-  if (orderAmount >= 100) return 2;
-  if (orderAmount >= 50) return 1;
-  return 0;
-}
+// ============================================================
+// Canteen stats
+// ============================================================
+export async function getCanteenStats(canteenId: string) {
+  const supabase = createAdminClient()
 
-export function getOrderTime(slotStart: string): string {
-  // Convert HH:MM to readable time
-  return slotStart;
-}
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayISO = todayStart.toISOString()
 
-export function calculateRemainingCapacity(
-  total: number,
-  current: number
-): number {
-  return total - current;
+  const [todayResult, pendingResult, completedResult] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, total_amount, status')
+      .eq('canteen_id', canteenId)
+      .gte('created_at', todayISO),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('canteen_id', canteenId)
+      .in('status', [
+        'placed',
+        'confirmed',
+        'preparing',
+        'ready_for_placement',
+        'placed_in_bin',
+        'ready_for_pickup',
+      ]),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('canteen_id', canteenId)
+      .eq('status', 'collected'),
+  ])
+
+  const todayOrders = todayResult.data?.length ?? 0
+  const todayEarnings =
+    todayResult.data?.reduce(
+      (sum, o) => sum + (Number(o.total_amount) ?? 0),
+      0
+    ) ?? 0
+
+  return {
+    todayOrders,
+    todayEarnings,
+    pendingOrders:   pendingResult.count   ?? 0,
+    completedOrders: completedResult.count ?? 0,
+  }
 }

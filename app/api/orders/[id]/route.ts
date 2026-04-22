@@ -1,5 +1,5 @@
 import { getRequestContext } from '@/lib/authServer';
-import { getOrder } from '@/lib/firestoreRepository';
+import { getOrder } from '@/lib/db';
 import type { NextRequest } from 'next/server';
 
 export async function GET(

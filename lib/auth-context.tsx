@@ -1,263 +1,212 @@
-'use client';
+'use client'
 
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { isFirebaseClientConfigured } from './firebaseClient';
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { getSupabaseClient } from './supabase-client'
 
-export type UserRole = 'user' | 'canteen_admin' | 'vendor' | 'worker' | 'super_admin' | null;
+// Stable singleton — safe outside the component tree
+const supabase = getSupabaseClient()
+
+// ============================================================
+// Types
+// ============================================================
+export type UserRole =
+  | 'user'
+  | 'canteen_admin'
+  | 'vendor'
+  | 'worker'
+  | 'super_admin'
+  | null
 
 export interface AuthUser {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  role: UserRole;
-  isAnonymous: boolean;
-  phone?: string | null;
-  photoURL?: string | null;
+  uid: string
+  email: string | null
+  displayName: string | null
+  role: UserRole
+  phone?: string | null
+  walletBalance: number
 }
 
-interface AuthContextType {
-  user: AuthUser | null;
-  loading: boolean;
-  isFirebaseMode: boolean;
-  otpPending: boolean;
-  logout: () => Promise<void>;
-  adminLogin: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<void>;
-  verifyPhoneOtp: (code: string) => Promise<void>;
-  cancelOtp: () => void;
+interface AuthContextValue {
+  user: AuthUser | null
+  session: Session | null
+  loading: boolean
+  logout: () => Promise<void>
+  sendEmailOtp: (email: string) => Promise<void>
+  verifyEmailOtp: (email: string, token: string) => Promise<void>
+  sendPhoneOtp: (phone: string) => Promise<void>
+  verifyPhoneOtp: (phone: string, token: string) => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<void>
+  signUp: (
+    email: string,
+    password: string,
+    metadata?: Record<string, unknown>
+  ) => Promise<void>
+  resetPassword: (email: string) => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// ============================================================
+// Context
+// ============================================================
+const AuthContext = createContext<AuthContextValue | null>(null)
 
-// Demo credentials (used when Firebase env vars are not set)
-const DEMO_ACCOUNTS = [
-  { email: 'admin@canteen.app',   password: 'admin123',   role: 'super_admin'   as UserRole, displayName: 'Super Admin'     },
-  { email: 'vendor@canteen.app',  password: 'vendor123',  role: 'vendor'        as UserRole, displayName: 'Central Canteen' },
-  { email: 'canteen@canteen.app', password: 'canteen123', role: 'canteen_admin' as UserRole, displayName: 'Canteen Admin'   },
-  { email: 'worker@canteen.app',  password: 'worker123',  role: 'worker'        as UserRole, displayName: 'Kitchen Worker'  },
-];
+// ============================================================
+// Helpers
+// ============================================================
+async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('name, role, wallet_balance, phone')
+    .eq('id', userId)
+    .single()
 
-// Map staff emails → roles (used in Firebase mode to assign roles post-login)
-const STAFF_EMAIL_ROLES: Record<string, UserRole> = {
-  'admin@canteen.app':   'super_admin',
-  'vendor@canteen.app':  'vendor',
-  'canteen@canteen.app': 'canteen_admin',
-  'worker@canteen.app':  'worker',
-};
-
-const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
-  'auth/invalid-phone-number':   'Invalid phone number. Include country code or use 10-digit format.',
-  'auth/too-many-requests':      'Too many requests. Please wait a few minutes and try again.',
-  'auth/quota-exceeded':         'SMS quota exceeded. Please try again later.',
-  'auth/invalid-verification-code': 'Wrong OTP code. Please check and try again.',
-  'auth/code-expired':           'OTP has expired. Please request a new one.',
-  'auth/popup-closed-by-user':   'Sign-in popup was closed. Please try again.',
-  'auth/cancelled-popup-request':'Only one popup window allowed at a time.',
-  'auth/popup-blocked':          'Popup blocked by browser. Allow popups for this site.',
-  'auth/unauthorized-domain':    'This domain is not authorized in Firebase. Add it to Firebase Console → Authentication → Settings → Authorized domains.',
-  'auth/wrong-password':         'Incorrect password.',
-  'auth/user-not-found':         'No account found with this email.',
-  'auth/invalid-credential':     'Invalid email or password.',
-};
-
-function friendlyError(e: unknown): string {
-  if (e instanceof Error) {
-    const code = (e as { code?: string }).code;
-    if (code && FIREBASE_ERROR_MESSAGES[code]) return FIREBASE_ERROR_MESSAGES[code];
-    return e.message;
+  return {
+    displayName: data?.name ?? null,
+    role: (data?.role as UserRole) ?? 'user',
+    walletBalance: data?.wallet_balance ?? 0,
+    phone: data?.phone ?? null,
   }
-  return 'Something went wrong. Please try again.';
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]           = useState<AuthUser | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [otpPending, setOtpPending] = useState(false);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const confirmationRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recaptchaRef    = useRef<any>(null);
-
-  const firebaseMode = isFirebaseClientConfigured();
-
-  // ── Resolve role from email or Firestore ─────────────────────────────────
-  async function resolveRole(uid: string, email: string | null): Promise<UserRole> {
-    if (email && STAFF_EMAIL_ROLES[email]) return STAFF_EMAIL_ROLES[email];
-    try {
-      const { getFirestore, doc, getDoc } = await import('firebase/firestore');
-      const { getClientAuth } = await import('./firebaseClient');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = getFirestore((getClientAuth() as any).app);
-      const snap = await getDoc(doc(db, 'users', uid));
-      if (snap.exists()) return (snap.data().role as UserRole) || 'user';
-    } catch { /* Firestore not reachable or no doc */ }
-    return 'user';
+function buildAuthUser(
+  id: string,
+  email: string | undefined,
+  profile: Partial<AuthUser>
+): AuthUser {
+  return {
+    uid: id,
+    email: email ?? null,
+    displayName: profile.displayName ?? null,
+    role: profile.role ?? 'user',
+    phone: profile.phone ?? null,
+    walletBalance: profile.walletBalance ?? 0,
   }
+}
 
-  // ── Auth state listener ───────────────────────────────────────────────────
+// ============================================================
+// Provider
+// ============================================================
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    if (!firebaseMode) {
-      // Demo mode – restore from localStorage
-      try {
-        const saved = localStorage.getItem('canteen_session');
-        if (saved) setUser(JSON.parse(saved));
-      } catch { /* ignore */ }
-      setLoading(false);
-      return;
-    }
-
-    let unsub: () => void;
-    (async () => {
-      const { onAuthStateChanged } = await import('firebase/auth');
-      const { getClientAuth } = await import('./firebaseClient');
-      unsub = onAuthStateChanged(getClientAuth(), async (fbUser) => {
-        if (fbUser) {
-          const role = await resolveRole(fbUser.uid, fbUser.email);
-          setUser({
-            uid:         fbUser.uid,
-            email:       fbUser.email,
-            displayName: fbUser.displayName,
-            role,
-            isAnonymous: fbUser.isAnonymous,
-            phone:       fbUser.phoneNumber,
-            photoURL:    fbUser.photoURL,
-          });
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-    })();
-
-    return () => unsub?.();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseMode]);
-
-  // ── Google Sign-In ────────────────────────────────────────────────────────
-  const signInWithGoogle = async () => {
-    if (!firebaseMode) throw new Error('Firebase is not configured. Add your Firebase env vars to enable Google login.');
-    try {
-      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-      const { getClientAuth } = await import('./firebaseClient');
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(getClientAuth(), provider);
-      // onAuthStateChanged handles setUser
-    } catch (e) {
-      throw new Error(friendlyError(e));
-    }
-  };
-
-  // ── Phone OTP – Step 1: send ──────────────────────────────────────────────
-  const sendPhoneOtp = async (phone: string, recaptchaContainerId: string) => {
-    if (!firebaseMode) {
-      // Demo mode: just set pending, OTP is "123456"
-      setOtpPending(true);
-      return;
-    }
-    try {
-      const { signInWithPhoneNumber, RecaptchaVerifier } = await import('firebase/auth');
-      const { getClientAuth } = await import('./firebaseClient');
-      const auth = getClientAuth();
-
-      // Clear any previous recaptcha
-      if (recaptchaRef.current) {
-        recaptchaRef.current.clear();
-        recaptchaRef.current = null;
+    // Load initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setSession(session)
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        setUser(buildAuthUser(session.user.id, session.user.email, profile))
       }
+      setLoading(false)
+    })
 
-      const verifier = new RecaptchaVerifier(auth, recaptchaContainerId, {
-        size: 'invisible',
-        callback: () => {},
-        'expired-callback': () => { recaptchaRef.current = null; },
-      });
-      recaptchaRef.current = verifier;
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setSession(session)
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        setUser(buildAuthUser(session.user.id, session.user.email, profile))
+      } else {
+        setUser(null)
+      }
+      setLoading(false)
+    })
 
-      const e164 = phone.startsWith('+') ? phone : `+91${phone}`;
-      const confirmation = await signInWithPhoneNumber(auth, e164, verifier);
-      confirmationRef.current = confirmation;
-      setOtpPending(true);
-    } catch (e) {
-      throw new Error(friendlyError(e));
-    }
-  };
+    return () => subscription.unsubscribe()
+  }, [])
 
-  // ── Phone OTP – Step 2: verify ────────────────────────────────────────────
-  const verifyPhoneOtp = async (code: string) => {
-    if (!firebaseMode) {
-      if (code !== '123456') throw new Error('Wrong OTP. Use 123456 for demo.');
-      const u: AuthUser = {
-        uid: `uid_user_${Date.now()}`,
-        email: null,
-        displayName: 'Guest User',
-        role: 'user',
-        isAnonymous: false,
-      };
-      localStorage.setItem('canteen_session', JSON.stringify(u));
-      setUser(u);
-      setOtpPending(false);
-      return;
-    }
-    if (!confirmationRef.current) throw new Error('No pending OTP. Please request a new one.');
-    try {
-      await confirmationRef.current.confirm(code);
-      setOtpPending(false);
-      confirmationRef.current = null;
-      // onAuthStateChanged handles setUser
-    } catch (e) {
-      throw new Error(friendlyError(e));
-    }
-  };
+  // ---- Auth methods ----
 
-  const cancelOtp = () => {
-    setOtpPending(false);
-    confirmationRef.current = null;
-    if (recaptchaRef.current) { recaptchaRef.current.clear(); recaptchaRef.current = null; }
-  };
+  async function logout() {
+    await supabase.auth.signOut()
+  }
 
-  // ── Staff Email / Password Login ──────────────────────────────────────────
-  const adminLogin = async (email: string, password: string) => {
-    if (!firebaseMode) {
-      const account = DEMO_ACCOUNTS.find(a => a.email === email && a.password === password);
-      if (!account) throw new Error('Invalid credentials. Try demo accounts listed above.');
-      const u: AuthUser = { uid: `uid_${account.role}`, email: account.email, displayName: account.displayName, role: account.role, isAnonymous: false };
-      localStorage.setItem('canteen_session', JSON.stringify(u));
-      setUser(u);
-      return;
-    }
-    try {
-      const { signInWithEmailAndPassword } = await import('firebase/auth');
-      const { getClientAuth } = await import('./firebaseClient');
-      await signInWithEmailAndPassword(getClientAuth(), email, password);
-      // onAuthStateChanged handles setUser
-    } catch (e) {
-      throw new Error(friendlyError(e));
-    }
-  };
+  async function sendEmailOtp(email: string) {
+    const { error } = await supabase.auth.signInWithOtp({ email })
+    if (error) throw error
+  }
 
-  // ── Logout ────────────────────────────────────────────────────────────────
-  const logout = async () => {
-    if (firebaseMode) {
-      const { signOut } = await import('firebase/auth');
-      const { getClientAuth } = await import('./firebaseClient');
-      await signOut(getClientAuth());
-    } else {
-      localStorage.removeItem('canteen_session');
-      setUser(null);
-    }
-  };
+  async function verifyEmailOtp(email: string, token: string) {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    })
+    if (error) throw error
+  }
+
+  async function sendPhoneOtp(phone: string) {
+    const { error } = await supabase.auth.signInWithOtp({ phone })
+    if (error) throw error
+  }
+
+  async function verifyPhoneOtp(phone: string, token: string) {
+    const { error } = await supabase.auth.verifyOtp({
+      phone,
+      token,
+      type: 'sms',
+    })
+    if (error) throw error
+  }
+
+  async function signInWithPassword(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (error) throw error
+  }
+
+  async function signUp(
+    email: string,
+    password: string,
+    metadata?: Record<string, unknown>
+  ) {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata },
+    })
+    if (error) throw error
+  }
+
+  async function resetPassword(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
+    })
+    if (error) throw error
+  }
 
   return (
-    <AuthContext.Provider value={{ user, loading, isFirebaseMode: firebaseMode, otpPending, logout, adminLogin, signInWithGoogle, sendPhoneOtp, verifyPhoneOtp, cancelOtp }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        logout,
+        sendEmailOtp,
+        verifyEmailOtp,
+        sendPhoneOtp,
+        verifyPhoneOtp,
+        signInWithPassword,
+        signUp,
+        resetPassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+// ============================================================
+// Hook
+// ============================================================
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>')
+  return ctx
 }

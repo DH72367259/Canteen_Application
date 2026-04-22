@@ -19,6 +19,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
+  if (!auth) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
   if (!canManageOrders(auth.role)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }

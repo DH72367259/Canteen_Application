@@ -1,5 +1,5 @@
 import { getRequestContext } from '@/lib/authServer';
-import { getAvailableTimeSlots } from '@/lib/firestoreRepository';
+import { getTimeSlots } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -10,13 +10,15 @@ export async function GET(request: Request) {
 
     // Get slots for today and tomorrow
     const today = new Date();
-    const slots = await getAvailableTimeSlots();
+    const canteenId = context.canteenId;
+    const allSlots = canteenId ? await getTimeSlots(canteenId) : [];
 
     // Filter to show upcoming slots
-    const availableSlots = slots.filter((slot: any) => {
-      const [startHour] = slot.startTime.split(':').map(Number);
-      const now = today.getHours();
-      return startHour >= now;
+    const nowHour = today.getHours();
+    const availableSlots = allSlots.filter((slot: Record<string, unknown>) => {
+      const startTime = String(slot.start_time ?? "");
+      const [startHour] = startTime.split(':').map(Number);
+      return !isNaN(startHour) ? startHour >= nowHour : true;
     });
 
     return Response.json({ slots: availableSlots });

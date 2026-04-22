@@ -1,5 +1,5 @@
 import { getRequestContext } from '@/lib/authServer';
-import { getAllBins } from '@/lib/firestoreRepository';
+import { getBins } from '@/lib/db';
 import { canManageOrders } from '@/lib/roleChecks';
 
 export async function GET(request: Request) {
@@ -9,10 +9,11 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const bins = await getAllBins();
+    const canteenId = context.canteenId ?? '';
+    const bins = canteenId ? await getBins(canteenId) : [];
     return Response.json({ bins });
   } catch (error) {
-    void error; // suppress server error details from client-visible logs
+    void error;
     return Response.json(
       { error: 'Failed to fetch bins' },
       { status: 500 }

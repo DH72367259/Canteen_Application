@@ -1,5 +1,5 @@
 import { getRequestContext } from '@/lib/authServer';
-import { createWasteReport, getAllWasteReports } from '@/lib/firestoreRepository';
+import { createAdminClient } from '@/lib/supabase-server';
 
 export async function GET(request: Request) {
   try {
@@ -8,8 +8,14 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const reports = await getAllWasteReports();
-    return Response.json({ reports });
+    const supabase = createAdminClient();
+    const { data: reports, error } = await supabase
+      .from('waste_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return Response.json({ reports: reports ?? [] });
   } catch (error) {
     void error;
     return Response.json(
@@ -36,13 +42,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const report = await createWasteReport({
-      binId,
-      weight,
-      notes: notes || '',
-      workerId: context.uid,
-      canteenId,
-    });
+    const supabase = createAdminClient();
+    const { data: report, error } = await supabase
+      .from('waste_reports')
+      .insert({
+        bin_id:     binId,
+        weight_kg:  weight,
+        notes:      notes ?? '',
+        worker_id:  context.uid,
+        canteen_id: canteenId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
 
     return Response.json({ report }, { status: 201 });
   } catch (error) {
@@ -53,3 +65,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

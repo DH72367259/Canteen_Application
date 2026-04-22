@@ -58,6 +58,7 @@ function mapOrderItems(items: OrderItemInput[]): OrderItem[] {
 export async function GET(request: Request) {
   try {
     const context = await getRequestContext(request);
+    if (!context) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     const orders = canManageOrders(context.role)
       ? await listRecentOrders(200)
       : await listOrdersForUser(context.uid);
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  if (!context) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const body = (await request.json().catch(() => null)) as unknown;
 

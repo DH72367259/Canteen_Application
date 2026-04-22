@@ -4,18 +4,6 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
-/* ─── Google icon SVG ───────────────────────────────────────────────────── */
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
-      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-    </svg>
-  );
-}
-
 /* ─── OTP digit boxes ───────────────────────────────────────────────────── */
 function OtpInput({ value, onChange, length = 6 }: { value: string; onChange: (v: string) => void; length?: number }) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
@@ -75,17 +63,14 @@ function Divider({ label }: { label: string }) {
 function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user, adminLogin, signInWithGoogle, sendPhoneOtp, verifyPhoneOtp, cancelOtp, otpPending, isFirebaseMode } = useAuth();
+  const { user, sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, signInWithPassword, resetPassword } = useAuth();
 
+  type Tab = "phone" | "email" | "password" | "forgot";
   const roleParam = params.get("role") || "user";
-  const [tab, setTab] = useState<"user" | "staff">(roleParam === "user" ? "user" : "staff");
+  const [tab, setTab] = useState<Tab>(roleParam === "user" ? "phone" : "password");
 
-  // Phone OTP state
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp]     = useState("");
-
-  // Staff state
-  const [email, setEmail]       = useState(
+  const [phone, setPhone]   = useState("");
+  const [email, setEmail]   = useState(
     roleParam === "vendor"        ? "vendor@canteen.app"  :
     roleParam === "super_admin"   ? "admin@canteen.app"   :
     roleParam === "canteen_admin" ? "canteen@canteen.app" : ""
@@ -95,183 +80,226 @@ function LoginContent() {
     roleParam === "super_admin"   ? "admin123"   :
     roleParam === "canteen_admin" ? "canteen123" : ""
   );
+  const [otp,           setOtp]           = useState("");
+  const [otpSentTo,     setOtpSentTo]     = useState<string | null>(null);
+  const [otpTarget,     setOtpTarget]     = useState<"phone" | "email">("phone");
+  const [busy,          setBusy]          = useState(false);
+  const [error,         setError]         = useState<string | null>(null);
+  const [info,          setInfo]          = useState<string | null>(null);
 
-  const [busy,  setBusy]  = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info,  setInfo]  = useState<string | null>(null);
-
-  // Redirect once authenticated
   useEffect(() => {
     if (!user) return;
+    const next = params.get("next");
+    if (next) { router.replace(next); return; }
     const role = user.role;
-    if (role === "vendor" || role === "canteen_admin") router.push("/vendor/dashboard");
-    else if (role === "super_admin")                   router.push("/admin/dashboard");
-    else if (role === "worker")                        router.push("/worker/dashboard");
-    else                                               router.push("/dashboard");
-  }, [user, router]);
+    if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
+    else if (role === "super_admin")                   router.replace("/admin/dashboard");
+    else if (role === "worker")                        router.replace("/worker/dashboard");
+    else                                               router.replace("/dashboard");
+  }, [user, router, params]);
 
-  // ── Google Sign-In ─────────────────────────────────────────────────────
-  async function handleGoogle() {
-    setBusy(true); setError(null); setInfo(null);
-    try {
-      await signInWithGoogle();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Google sign-in failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); }
+  function switchTab(t: Tab) { clearState(); setTab(t); }
 
-  // ── Phone: Send OTP ────────────────────────────────────────────────────
-  async function handleSendOtp() {
+  // Phone OTP
+  async function handleSendPhoneOtp() {
     if (phone.length < 10) { setError("Enter a valid 10-digit mobile number."); return; }
-    setBusy(true); setError(null); setInfo(null);
+    setBusy(true); clearState();
     try {
-      await sendPhoneOtp(phone, "recaptcha-container");
-      setInfo(`OTP sent to +91 ${phone}.${!isFirebaseMode ? " (Demo OTP: 123456)" : ""}`);
+      const fullPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+      await sendPhoneOtp(fullPhone);
+      setOtpTarget("phone");
+      setOtpSentTo(fullPhone);
+      setInfo(`OTP sent to ${fullPhone}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to send OTP.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  // ── Phone: Verify OTP ─────────────────────────────────────────────────
-  async function handleVerifyOtp() {
-    const expectedLength = isFirebaseMode ? 6 : 6;
-    if (otp.length < expectedLength) { setError(`Enter the ${expectedLength}-digit OTP.`); return; }
+  async function handleVerifyPhoneOtp() {
+    if (otp.length < 6) { setError("Enter the 6-digit OTP."); return; }
+    if (!otpSentTo) return;
     setBusy(true); setError(null);
     try {
-      await verifyPhoneOtp(otp);
+      await verifyPhoneOtp(otpSentTo, otp);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Invalid OTP.");
       setBusy(false);
     }
   }
 
-  // ── Staff: Email/Password ──────────────────────────────────────────────
-  async function handleStaffLogin() {
+  // Email OTP
+  async function handleSendEmailOtp() {
+    if (!email) { setError("Enter your email address."); return; }
+    setBusy(true); clearState();
+    try {
+      await sendEmailOtp(email);
+      setOtpTarget("email");
+      setOtpSentTo(email);
+      setInfo(`Magic link / OTP sent to ${email}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send OTP.");
+    } finally { setBusy(false); }
+  }
+
+  async function handleVerifyEmailOtp() {
+    if (otp.length < 6) { setError("Enter the 6-digit OTP from your email."); return; }
+    if (!otpSentTo) return;
+    setBusy(true); setError(null);
+    try {
+      await verifyEmailOtp(otpSentTo, otp);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Invalid OTP.");
+      setBusy(false);
+    }
+  }
+
+  // Password login
+  async function handlePasswordLogin() {
     if (!email || !password) { setError("Enter email and password."); return; }
     setBusy(true); setError(null);
     try {
-      await adminLogin(email, password);
+      await signInWithPassword(email, password);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed.");
       setBusy(false);
     }
   }
 
-  function switchTab(t: "user" | "staff") {
-    setTab(t);
-    setError(null);
-    setInfo(null);
-    if (otpPending) cancelOtp();
-    setOtp("");
-    setPhone("");
+  // Forgot password
+  async function handleForgotPassword() {
+    if (!email) { setError("Enter your email address."); return; }
+    setBusy(true); setError(null);
+    try {
+      await resetPassword(email);
+      setInfo(`Password reset link sent to ${email}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send reset link.");
+    } finally { setBusy(false); }
   }
 
   return (
     <div className="login-page">
-      {/* invisible reCAPTCHA mount point (Firebase Phone Auth) */}
-      <div id="recaptcha-container" />
-
       <div className="login-card">
         {/* Logo */}
         <div className="login-logo">
           <span style={{ width: 48, height: 48, background: "var(--orange)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", margin: "0 auto 0.5rem" }}>🍽️</span>
-          <h1>Canteen</h1>
+          <h1>NoQx Canteen</h1>
           <p>Smart Institutional Dining</p>
         </div>
 
         {/* Tab switcher */}
-        <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-          <button onClick={() => switchTab("user")}  style={{ flex: 1, padding: "0.6rem", fontSize: "0.85rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === "user"  ? "var(--orange)" : "transparent", color: tab === "user"  ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>Student / User</button>
-          <button onClick={() => switchTab("staff")} style={{ flex: 1, padding: "0.6rem", fontSize: "0.85rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === "staff" ? "var(--orange)" : "transparent", color: tab === "staff" ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>Staff / Vendor</button>
+        <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
+          {(["phone", "email", "password"] as Tab[]).map(t => (
+            <button key={t} onClick={() => switchTab(t)} style={{ flex: 1, padding: "0.55rem 0.25rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === t ? "var(--orange)" : "transparent", color: tab === t ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>
+              {t === "phone" ? "📱 Phone" : t === "email" ? "✉️ Email OTP" : "🔑 Password"}
+            </button>
+          ))}
         </div>
 
-        {/* ── Student / User tab ─────────────────────────────────────── */}
-        {tab === "user" && (
+        {/* ── Phone OTP ──────────────── */}
+        {tab === "phone" && !otpSentTo && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-
-            {/* Google sign-in */}
-            <button
-              className="btn btn-outline btn-full"
-              disabled={busy}
-              onClick={handleGoogle}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem", padding: "0.75rem", fontWeight: 600, fontSize: "0.88rem" }}
-            >
-              <GoogleIcon />
-              Continue with Google
+            <div className="form-group">
+              <label className="form-label">Mobile Number</label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
+                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="98765 43210" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
+              </div>
+            </div>
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || phone.length < 10} onClick={handleSendPhoneOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending…" : "Send OTP →"}
             </button>
-
-            <Divider label="or sign in with phone" />
-
-            {/* Phone OTP */}
-            {!otpPending ? (
-              <>
-                <div className="form-group">
-                  <label className="form-label">Mobile Number</label>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                    <input
-                      className="form-input"
-                      type="tel"
-                      inputMode="numeric"
-                      maxLength={10}
-                      placeholder="98765 43210"
-                      value={phone}
-                      onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
-                      onKeyDown={e => e.key === "Enter" && handleSendOtp()}
-                    />
-                  </div>
-                </div>
-                {error && <p className="error-msg">{error}</p>}
-                <button className="btn btn-primary btn-full" disabled={busy || phone.length < 10} onClick={handleSendOtp} style={{ padding: "0.8rem" }}>
-                  {busy ? "Sending…" : "Send OTP →"}
-                </button>
-              </>
-            ) : (
-              <>
-                {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
-                <OtpInput value={otp} onChange={setOtp} length={6} />
-                {error && <p className="error-msg">{error}</p>}
-                <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyOtp} style={{ padding: "0.8rem" }}>
-                  {busy ? "Verifying…" : "Verify OTP →"}
-                </button>
-                <button className="btn btn-ghost btn-full" onClick={() => { cancelOtp(); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
-                  ← Change number
-                </button>
-              </>
-            )}
           </div>
         )}
 
-        {/* ── Staff / Vendor tab ─────────────────────────────────────── */}
-        {tab === "staff" && (
+        {tab === "phone" && otpSentTo && otpTarget === "phone" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {!isFirebaseMode && (
-              <div style={{ background: "var(--orange-light)", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.65rem 0.85rem", fontSize: "0.78rem", color: "var(--orange-dark)" }}>
-                <strong>Demo mode</strong> — Firebase not configured.<br />
-                vendor@canteen.app / vendor123 &nbsp;·&nbsp; admin@canteen.app / admin123
-              </div>
-            )}
+            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            <OtpInput value={otp} onChange={setOtp} length={6} />
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyPhoneOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Verifying…" : "Verify OTP →"}
+            </button>
+            <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
+              ← Change number
+            </button>
+          </div>
+        )}
+
+        {/* ── Email OTP ──────────────── */}
+        {tab === "email" && !otpSentTo && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSendEmailOtp()} />
+            </div>
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleSendEmailOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending…" : "Send OTP →"}
+            </button>
+          </div>
+        )}
+
+        {tab === "email" && otpSentTo && otpTarget === "email" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            <OtpInput value={otp} onChange={setOtp} length={6} />
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyEmailOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Verifying…" : "Verify OTP →"}
+            </button>
+            <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
+              ← Change email
+            </button>
+          </div>
+        )}
+
+        {/* ── Password ──────────────── */}
+        {tab === "password" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div className="form-group">
               <label className="form-label">Email</label>
-              <input className="form-input" type="email" placeholder="vendor@canteen.app" value={email} onChange={e => setEmail(e.target.value)} />
+              <input className="form-input" type="email" placeholder="staff@canteen.app" value={email} onChange={e => setEmail(e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
-              <input className="form-input" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleStaffLogin()} />
+              <input className="form-input" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handlePasswordLogin()} />
             </div>
             {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy} onClick={handleStaffLogin} style={{ padding: "0.8rem" }}>
+            <button className="btn btn-primary btn-full" disabled={busy} onClick={handlePasswordLogin} style={{ padding: "0.8rem" }}>
               {busy ? "Signing in…" : "Sign In →"}
+            </button>
+            <Divider label="forgot password?" />
+            <button className="btn btn-ghost btn-full" onClick={() => switchTab("forgot")} style={{ fontSize: "0.82rem" }}>
+              Reset Password
+            </button>
+          </div>
+        )}
+
+        {/* ── Forgot Password ──────────── */}
+        {tab === "forgot" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotPassword()} />
+            </div>
+            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotPassword} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending…" : "Send Reset Link →"}
+            </button>
+            <button className="btn btn-ghost btn-full" onClick={() => switchTab("password")} style={{ fontSize: "0.82rem" }}>
+              ← Back to Sign In
             </button>
           </div>
         )}
 
         <p style={{ textAlign: "center", fontSize: "0.73rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
-          By continuing you agree to our Terms &amp; Privacy Policy
+          By continuing you agree to our{" "}
+          <a href="/terms" style={{ color: "var(--orange)" }}>Terms</a> &amp;{" "}
+          <a href="/privacy" style={{ color: "var(--orange)" }}>Privacy Policy</a>
         </p>
       </div>
     </div>
@@ -285,4 +313,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-

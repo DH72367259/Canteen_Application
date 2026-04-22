@@ -1,43 +1,14 @@
-import { useEffect, useState } from "react";
-import { getClientAuth } from "./firebaseClient";
+import { useAuth } from "./auth-context";
 import type { UserRole } from "@/types/canteen";
 
 /**
- * Hook to get current user's role and metadata
+ * Hook to get current user's role and metadata — backed by Supabase auth.
  */
 export function useUserRole() {
-  const [role, setRole] = useState<UserRole | null>(null);
-  const [uid, setUid] = useState<string | null>(null);
-  const [email, setEmail] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = getClientAuth().onAuthStateChanged(async (user) => {
-      if (user) {
-        setUid(user.uid);
-        setEmail(user.email || null);
-        
-        // Get custom claims from ID token
-        const claims = await user.getIdTokenResult();
-        const customRole = claims.claims.role as UserRole | undefined;
-        
-        if (customRole) {
-          setRole(customRole);
-        } else if (user.isAnonymous) {
-          setRole("user");
-        } else {
-          setRole("user");
-        }
-      } else {
-        setRole(null);
-        setUid(null);
-        setEmail(null);
-      }
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
+  const { user, loading } = useAuth();
+  const role = (user?.role as UserRole) ?? null;
+  const uid = user?.uid ?? null;
+  const email = user?.email ?? null;
 
   return { role, uid, email, loading };
 }
