@@ -6,6 +6,7 @@ interface VersionInfo {
   forceUpdate: boolean
   updateAvailable: boolean
   currentVersion: string
+  minRequiredVersion: string
   message: string | null
   updateUrl?: string
 }
