@@ -38,7 +38,7 @@ export default function UserDashboard() {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1>NoQx - User Dashboard</h1>
+        <h1>Canteen-Application – Dashboard</h1>
         <button onClick={logout} style={styles.logoutButton}>
           Logout
         </button>
@@ -52,7 +52,7 @@ export default function UserDashboard() {
         </div>
 
         <div style={styles.card}>
-          <h3>Rewards (NoQx Cash)</h3>
+          <h3>Rewards (Canteen Cash)</h3>
           <p style={styles.largeText}>₹{rewards}</p>
           <p style={styles.smallText}>14 days expiry policy</p>
         </div>

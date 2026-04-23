@@ -184,7 +184,7 @@ function LoginContent() {
         {/* Logo */}
         <div className="login-logo">
           <span style={{ width: 48, height: 48, background: "var(--orange)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", margin: "0 auto 0.5rem" }}>🍽️</span>
-          <h1>NoQx Canteen</h1>
+          <h1>Canteen-Application</h1>
           <p>Smart Institutional Dining</p>
         </div>
 

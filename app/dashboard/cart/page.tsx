@@ -75,14 +75,14 @@ function CartContent() {
       items: cart.map(c => `${c.name} x${c.qty}`).join(", "),
     }));
 
-    const txns = JSON.parse(localStorage.getItem("noqx_transactions") || "[]");
+    const txns = JSON.parse(localStorage.getItem("canteen_transactions") || "[]");
     txns.unshift({
       orderId, paymentId, amount: payable, canteen: canteenName,
       items: cart.map(c => `${c.name} x${c.qty}`).join(", "),
       slot: slotLabel, bin, status: "paid", refundStatus: null,
       timestamp: new Date().toISOString(),
     });
-    localStorage.setItem("noqx_transactions", JSON.stringify(txns.slice(0, 100)));
+    localStorage.setItem("canteen_transactions", JSON.stringify(txns.slice(0, 100)));
 
     setPlacedOrder({ id: orderId, bin, otp, txnId: paymentId });
     setBusy(false);
@@ -127,7 +127,7 @@ function CartContent() {
       key:         orderData.keyId,
       amount:      orderData.amount,
       currency:    orderData.currency,
-      name:        "NoQx – Smart Canteen",
+      name:        "Canteen-Application",
       description: `Order from ${canteenName}`,
       order_id:    orderData.orderId,
       prefill:     { name: user?.displayName || "", email: user?.email || "" },

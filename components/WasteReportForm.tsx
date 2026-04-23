@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import type { Bin } from "@/types/firestore";
+import type { Bin } from "@/types/models";
 
 export default function WasteReportForm() {
   const [bins, setBins] = useState<Bin[]>([]);

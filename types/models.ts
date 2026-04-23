@@ -1,6 +1,6 @@
 /**
- * Firestore data models for the canteen application
- * This file contains TypeScript interfaces for all Firestore collections
+ * Data models for the Canteen-Application
+ * TypeScript interfaces for all database collections
  */
 
 import type { UserRole } from "./canteen";

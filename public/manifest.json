@@ -1,6 +1,6 @@
 {
-  "name": "NoQx – Smart Canteen",
-  "short_name": "NoQx",
+  "name": "Canteen-Application",
+  "short_name": "Canteen",
   "description": "Skip the queue. Order food from your college canteen.",
   "start_url": "/dashboard",
   "display": "standalone",

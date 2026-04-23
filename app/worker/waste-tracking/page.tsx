@@ -48,7 +48,7 @@ export default function WorkerDashboard() {
   }, [role, roleLoading, router]);
 
   const getAuthHeader = useCallback(async () => {
-    const user = JSON.parse(localStorage.getItem('firebaseUser') || '{}');
+    const user = JSON.parse(localStorage.getItem('canteen_user') || '{}');
     if (user.idToken) {
       return { Authorization: `Bearer ${user.idToken}` };
     }

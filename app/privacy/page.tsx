@@ -23,7 +23,7 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>Process and fulfill your food orders and send order confirmations.</li>
           <li>Generate and verify OTPs for secure pickup authentication.</li>
-          <li>Calculate and credit NoQx Cash (reward points) to your wallet.</li>
+          <li>Calculate and credit Canteen Cash (reward points) to your wallet.</li>
           <li>Send transactional emails including order updates, slot reminders, and OTP codes.</li>
           <li>Send promotional emails about offers, discounts, and festival specials — you may opt out at any time.</li>
           <li>Improve our services, troubleshoot issues, and prevent fraud.</li>
@@ -36,7 +36,7 @@ export default function PrivacyPolicyPage() {
         <p>We do not sell, trade, or rent your personal information to third parties. We may share your data with:</p>
         <ul>
           <li><strong>Canteen operators:</strong> Your name, order details, and OTP are shared with the canteen you order from for fulfillment purposes only.</li>
-          <li><strong>Payment processors:</strong> PhonePe processes payments on our behalf. We share only the information necessary to complete your transaction. PhonePe&apos;s privacy policy applies to payment data.</li>
+          <li><strong>Payment processors:</strong> Razorpay processes payments on our behalf. We share only the information necessary to complete your transaction. Razorpay’s privacy policy applies to payment data.</li>
           <li><strong>Service providers:</strong> Supabase (database and authentication) and email service providers who process data under strict confidentiality agreements.</li>
           <li><strong>Legal requirements:</strong> If required by law or to protect rights, property, or safety.</li>
         </ul>
@@ -54,8 +54,8 @@ export default function PrivacyPolicyPage() {
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
-        <h2>5. NoQx Cash (Reward Points)</h2>
-        <p>NoQx Cash earned through orders or promotions:</p>
+        <h2>5. Canteen Cash (Reward Points)</h2>
+        <p>Canteen Cash earned through orders or promotions:</p>
         <ul>
           <li>Expires 7 days from the date of earning.</li>
           <li>Cannot be transferred, withdrawn as cash, or combined with external discounts.</li>
@@ -98,8 +98,8 @@ export default function PrivacyPolicyPage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>10. Contact Us</h2>
         <p>For privacy-related questions or to exercise your rights, contact us at:</p>
-        <p><strong>Email:</strong> privacy@noqx.in</p>
-        <p><strong>Address:</strong> NoQx, Bengaluru, Karnataka, India</p>
+        <p><strong>Email:</strong> privacy@canteen-application.in</p>
+        <p><strong>Address:</strong> Canteen-Application, Bengaluru, Karnataka, India</p>
       </section>
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "2rem", display: "flex", gap: "1.5rem", fontSize: "0.875rem" }}>

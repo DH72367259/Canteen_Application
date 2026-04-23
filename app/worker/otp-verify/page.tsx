@@ -41,7 +41,7 @@ export default function WorkerOtpVerifyPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       <div style={{ background: "#1e293b", color: "#fff", padding: "0.75rem 1rem", fontWeight: 700, fontSize: "1rem" }}>
-        NoQx · OTP Verify (Backup)
+        Canteen-Application · OTP Verify (Backup)
       </div>
 
       <div style={{ padding: "1.5rem", paddingBottom: "5rem" }}>

@@ -4,13 +4,13 @@ import { AuthProvider } from "@/lib/auth-context";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 
 export const metadata: Metadata = {
-  title: "NoQx – Smart Canteen",
+  title: "Canteen-Application",
   description: "Skip the queue. Order food from your college canteen.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "NoQx",
+    title: "Canteen-Application",
   },
   icons: {
     icon: [
@@ -44,7 +44,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="NoQx" />
+        <meta name="apple-mobile-web-app-title" content="Canteen-Application" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="apple-touch-startup-image" href="/icons/icon-512.png" />
       </head>

@@ -78,7 +78,7 @@ export default function WorkerOrdersPage() {
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       {/* Top bar */}
       <div style={{ background: "#1e293b", color: "#fff", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontWeight: 700, fontSize: "1rem" }}>NoQx · Orders</div>
+        <div style={{ fontWeight: 700, fontSize: "1rem" }}>Canteen-Application · Orders</div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", fontSize: "0.82rem" }}>
           <span style={{ color: "#94a3b8" }}>{new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
           <button onClick={() => logout().then(() => router.push("/login"))} style={{ background: "none", border: "1px solid #475569", color: "#94a3b8", borderRadius: 8, padding: "0.35rem 0.65rem", cursor: "pointer", fontSize: "0.78rem" }}>Logout</button>

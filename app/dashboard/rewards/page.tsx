@@ -48,7 +48,7 @@ export default function RewardsPage() {
       {/* Top bar */}
       <div className="app-topbar">
         <button onClick={() => router.back()} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)" }}>←</button>
-        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>NoQx Cash</h1>
+        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>Canteen Cash</h1>
         <div />
       </div>
 

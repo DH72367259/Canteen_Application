@@ -1,4 +1,4 @@
-# NoQx - Smart Institutional Dining
+# Canteen-Application - Smart Institutional Dining
 
 > **Live URL** - https://noqx-production.up.railway.app
 
@@ -40,7 +40,7 @@ Every `git push origin main` triggers a new production build within ~2 minutes.
 
 > **Note on the URL**: Railway assigns a subdomain like `noqx-production.up.railway.app`.
 > Check your exact URL at Railway Dashboard -> your service -> Settings -> Domains.
-> You can also set a custom domain (e.g. `app.noqx.in`) from that same page.
+> You can also set a custom domain (e.g. `app.canteen-application.in`) from that same page.
 
 ---
 
@@ -48,9 +48,9 @@ Every `git push origin main` triggers a new production build within ~2 minutes.
 
 | Role | Email | Password | Access |
 |------|-------|----------|--------|
-| Super Admin | admin@noqx.in | admin123 | Full system - canteens, users, analytics, payments |
-| Vendor / Canteen Admin | vendor@noqx.in | vendor123 | Their canteen - live orders, menu, slots, toggle |
-| Worker | worker@noqx.in | worker123 | Bin management, OTP verify, waste tracking |
+| Super Admin | admin@canteen-application.in | admin123 | Full system - canteens, users, analytics, payments |
+| Vendor / Canteen Admin | vendor@canteen-application.in | vendor123 | Their canteen - live orders, menu, slots, toggle |
+| Worker | worker@canteen-application.in | worker123 | Bin management, OTP verify, waste tracking |
 | Student | any phone number | OTP: 1234 | Browse, order, pay, track |
 
 When Supabase is connected, replace demo credentials with real users created
@@ -335,15 +335,15 @@ railway variables set NEXT_PUBLIC_APP_URL=https://noqx-production.up.railway.app
 ### Custom domain
 
 In Railway -> your service -> Settings -> Domains -> Add Custom Domain:
-1. Enter your domain: `app.noqx.in`
-2. Add a CNAME DNS record: `app.noqx.in -> your-app.up.railway.app`
+1. Enter your domain: `app.canteen-application.in`
+2. Add a CNAME DNS record: `app.canteen-application.in -> your-app.up.railway.app`
 3. Railway provisions a free TLS certificate automatically
 
 ---
 
 ## iOS and Android Deployment
 
-NoQx is a **Progressive Web App (PWA)**. It installs on home screens and runs
+Canteen-Application is a **Progressive Web App (PWA)**. It installs on home screens and runs
 like a native app - no App Store approval needed for internal/college deployment.
 
 ### Install on iOS (Safari)
@@ -351,7 +351,7 @@ like a native app - no App Store approval needed for internal/college deployment
 1. Open https://noqx-production.up.railway.app in **Safari** (not Chrome)
 2. Tap the **Share** button (square with arrow pointing up)
 3. Scroll down and tap **Add to Home Screen**
-4. Tap **Add** - the NoQx icon appears on the home screen
+4. Tap **Add** - the Canteen-Application icon appears on the home screen
 5. Tap it to launch fullscreen, just like a native app
 
 ### Install on Android (Chrome)
@@ -359,7 +359,7 @@ like a native app - no App Store approval needed for internal/college deployment
 1. Open https://noqx-production.up.railway.app in **Chrome**
 2. Tap the three-dot menu (top right)
 3. Tap **Add to Home Screen** or **Install App**
-4. Tap **Install** - NoQx icon appears on home screen
+4. Tap **Install** - Canteen-Application icon appears on home screen
 5. Opens in standalone mode (no browser chrome visible)
 
 ### Distribute to students at scale

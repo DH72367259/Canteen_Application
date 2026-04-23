@@ -13,7 +13,7 @@ export default function RefundPolicyPage() {
           <li>Cancel <strong>before preparation begins</strong> → full refund</li>
           <li>Cancel after preparation → no refund</li>
           <li>Payment errors (duplicate charges) → full refund within 7 days</li>
-          <li>Refunds go to original payment method or NoQx Cash wallet</li>
+          <li>Refunds go to original payment method or Canteen Cash wallet</li>
         </ul>
       </div>
 
@@ -56,7 +56,7 @@ export default function RefundPolicyPage() {
         <p>If a canteen cancels your order (e.g. item unavailable, canteen closure, equipment failure):</p>
         <ul>
           <li>You will receive a <strong>full refund</strong> regardless of order status.</li>
-          <li>You will also receive <strong>NoQx Cash compensation</strong> (₹5–₹20 depending on inconvenience level).</li>
+          <li>You will also receive <strong>Canteen Cash compensation</strong> (₹5–₹20 depending on inconvenience level).</li>
           <li>You will be notified immediately via app notification and SMS.</li>
         </ul>
       </section>
@@ -68,14 +68,14 @@ export default function RefundPolicyPage() {
           <li><strong>UPI payments:</strong> Refunded to the source UPI ID within 5–7 business days.</li>
           <li><strong>Debit/Credit Card:</strong> Refunded to the card within 7–10 business days (depending on your bank).</li>
           <li><strong>Net Banking:</strong> Refunded to your bank account within 5–7 business days.</li>
-          <li><strong>PhonePe Wallet:</strong> Refunded to PhonePe wallet within 24 hours.</li>
+          <li><strong>Razorpay Wallet:</strong> Refunded to Razorpay wallet within 24 hours.</li>
         </ul>
-        <h3>2.2 NoQx Cash Wallet</h3>
-        <p>You may opt to receive refunds as NoQx Cash instead of reverting to original payment method. NoQx Cash:</p>
+        <h3>2.2 Canteen Cash Wallet</h3>
+        <p>You may opt to receive refunds as Canteen Cash instead of reverting to original payment method. Canteen Cash:</p>
         <ul>
           <li>Is credited instantly to your wallet.</li>
           <li>Expires 7 days from the date of credit.</li>
-          <li>Can be used on any future order at any NoQx-enabled canteen.</li>
+          <li>Can be used on any future order at any Canteen-Application-enabled canteen.</li>
         </ul>
       </section>
 
@@ -96,7 +96,7 @@ export default function RefundPolicyPage() {
         <ul>
           <li>Raise a dispute within 48 hours via the Support page.</li>
           <li>We will investigate and process a full refund within 7 business days.</li>
-          <li>In case of PhonePe payment failures where money is deducted but order is not confirmed — the amount is automatically reversed within 3–5 business days by PhonePe. If not, contact us.</li>
+          <li>In case of Razorpay payment failures where money is deducted but order is not confirmed — the amount is automatically reversed within 3–5 business days by Razorpay. If not, contact us.</li>
         </ul>
       </section>
 
@@ -119,7 +119,7 @@ export default function RefundPolicyPage() {
           <li>You will receive a confirmation notification and email within 1 hour.</li>
           <li>Refund will be processed as per the timelines above.</li>
         </ol>
-        <p>Alternatively, email us at: <strong>support@noqx.in</strong></p>
+        <p>Alternatively, email us at: <strong>support@canteen-application.in</strong></p>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>

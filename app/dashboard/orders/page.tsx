@@ -41,7 +41,7 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("noqx_transactions");
+      const raw = localStorage.getItem("canteen_transactions");
       if (raw) setTxns(JSON.parse(raw));
       const ao  = localStorage.getItem("canteen_active_order");
       if (ao)  setActiveOrder(JSON.parse(ao));
