@@ -169,6 +169,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  /** Maps well-known demo emails to a role; all others → 'user'. */
+  function demoRoleFor(email: string | null): UserRole {
+    if (email === 'admin@canteen.app')   return 'super_admin'
+    if (email === 'canteen@canteen.app') return 'canteen_admin'
+    if (email === 'vendor@canteen.app')  return 'vendor'
+    return 'user'
+  }
+
   async function sendEmailOtp(email: string) {
     if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
     const { error } = await supabase.auth.signInWithOtp({ email })
@@ -177,7 +185,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function verifyEmailOtp(email: string, token: string) {
     if (!isSupabaseConfigured()) {
-      setUser(buildAuthUser('demo-user', email, { role: 'super_admin', displayName: 'Demo User', walletBalance: 100 }))
+      const role = demoRoleFor(email)
+      const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : 'Student (Demo)'
+      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
       return
     }
     const { error } = await supabase.auth.verifyOtp({
@@ -196,7 +206,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function verifyPhoneOtp(phone: string, token: string) {
     if (!isSupabaseConfigured()) {
-      setUser(buildAuthUser('demo-user', null, { role: 'super_admin', displayName: 'Demo User', phone, walletBalance: 100 }))
+      // Phone OTP is the student flow
+      setUser(buildAuthUser('demo-user', null, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
       return
     }
     const { error } = await supabase.auth.verifyOtp({
@@ -209,7 +220,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signInWithPassword(email: string, password: string) {
     if (!isSupabaseConfigured()) {
-      setUser(buildAuthUser('demo-user', email, { role: 'super_admin', displayName: 'Demo User', walletBalance: 100 }))
+      const role = demoRoleFor(email)
+      const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : role === 'vendor' ? 'Vendor (Demo)' : 'Student (Demo)'
+      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
       return
     }
     const { error } = await supabase.auth.signInWithPassword({
