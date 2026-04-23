@@ -7,6 +7,22 @@ import { getSupabaseClient } from './supabase-client'
 // Stable singleton — safe outside the component tree
 const supabase = getSupabaseClient()
 
+// 20-day inactivity threshold (ms)
+const INACTIVITY_LIMIT_MS = 20 * 24 * 60 * 60 * 1000
+const LAST_ACTIVITY_KEY = 'canteen_last_activity'
+
+function recordActivity() {
+  try { localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now())) } catch { /* SSR safe */ }
+}
+
+function isInactive(): boolean {
+  try {
+    const raw = localStorage.getItem(LAST_ACTIVITY_KEY)
+    if (!raw) return false // first visit — not inactive
+    return Date.now() - Number(raw) > INACTIVITY_LIMIT_MS
+  } catch { return false }
+}
+
 // ============================================================
 // Types
 // ============================================================
@@ -92,20 +108,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Load initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        setUser(buildAuthUser(session.user.id, session.user.email, profile))
-      }
-      setLoading(false)
-    })
+    // Safety timeout: if Supabase is unreachable (env vars not set in production),
+    // stop the spinner after 5 seconds and redirect to login.
+    const fallback = setTimeout(() => setLoading(false), 5000)
+
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        clearTimeout(fallback)
+
+        // 20-day inactivity check — if the user hasn't been active, sign them out
+        if (session?.user && isInactive()) {
+          await supabase.auth.signOut()
+          setLoading(false)
+          return
+        }
+
+        if (session?.user) recordActivity()
+
+        setSession(session)
+        if (session?.user) {
+          const profile = await fetchProfile(session.user.id)
+          setUser(buildAuthUser(session.user.id, session.user.email, profile))
+        }
+        setLoading(false)
+      })
+      .catch(() => {
+        clearTimeout(fallback)
+        setLoading(false)
+      })
 
     // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) recordActivity()
       setSession(session)
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
@@ -122,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ---- Auth methods ----
 
   async function logout() {
+    try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
     await supabase.auth.signOut()
   }
 

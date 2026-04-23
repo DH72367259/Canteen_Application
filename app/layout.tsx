@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
+import { UpdateBanner, ForceUpdateGate } from "@/components/UpdateGate";
 
 export const metadata: Metadata = {
   title: "Canteen-Application",
@@ -51,7 +52,10 @@ export default function RootLayout({
       <body>
         <ServiceWorkerRegistrar />
         <AuthProvider>
-          {children}
+          <ForceUpdateGate>
+            <UpdateBanner />
+            {children}
+          </ForceUpdateGate>
         </AuthProvider>
       </body>
     </html>
