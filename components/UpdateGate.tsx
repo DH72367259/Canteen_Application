@@ -101,7 +101,7 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
           'A new version of Canteen-Application is required. Please update to continue.'}
       </p>
       <p style={{ fontSize: 13, color: '#888', marginBottom: 24 }}>
-        Current version: {info.clientVersion} → Required: {info.minRequiredVersion}
+        Required version: {info.minRequiredVersion || info.currentVersion}
       </p>
       {info.updateUrl && (
         <a
