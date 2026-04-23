@@ -170,11 +170,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function sendEmailOtp(email: string) {
+    if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
     const { error } = await supabase.auth.signInWithOtp({ email })
     if (error) throw error
   }
 
   async function verifyEmailOtp(email: string, token: string) {
+    if (!isSupabaseConfigured()) {
+      setUser(buildAuthUser('demo-user', email, { role: 'super_admin', displayName: 'Demo User', walletBalance: 100 }))
+      return
+    }
     const { error } = await supabase.auth.verifyOtp({
       email,
       token,
@@ -184,11 +189,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function sendPhoneOtp(phone: string) {
+    if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
     const { error } = await supabase.auth.signInWithOtp({ phone })
     if (error) throw error
   }
 
   async function verifyPhoneOtp(phone: string, token: string) {
+    if (!isSupabaseConfigured()) {
+      setUser(buildAuthUser('demo-user', null, { role: 'super_admin', displayName: 'Demo User', phone, walletBalance: 100 }))
+      return
+    }
     const { error } = await supabase.auth.verifyOtp({
       phone,
       token,
@@ -198,6 +208,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signInWithPassword(email: string, password: string) {
+    if (!isSupabaseConfigured()) {
+      setUser(buildAuthUser('demo-user', email, { role: 'super_admin', displayName: 'Demo User', walletBalance: 100 }))
+      return
+    }
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
