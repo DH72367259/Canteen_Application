@@ -7,27 +7,13 @@ import { useAuth } from "@/lib/auth-context";
 type AdminSection = "overview" | "canteens" | "users" | "cities" | "analytics" | "payments" | "support";
 
 const ADMIN_NAV = [
-  { id: "overview", icon: "📊", label: "Dashboard" },
-  { id: "canteens", icon: "🏪", label: "Manage Canteens" },
-  { id: "users", icon: "👥", label: "All Users" },
-  { id: "cities", icon: "🏫", label: "Cities & Colleges" },
+  { id: "overview",  icon: "📊", label: "Dashboard" },
+  { id: "canteens",  icon: "🏪", label: "Manage Canteens" },
+  { id: "users",     icon: "👥", label: "All Users" },
+  { id: "cities",    icon: "🏫", label: "Cities & Colleges" },
   { id: "analytics", icon: "📈", label: "Analytics" },
-  { id: "payments", icon: "💳", label: "Payments" },
-  { id: "support", icon: "🎧", label: "Support" },
-];
-
-const MOCK_CANTEENS = [
-  { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", status: "active", orders: 1240, revenue: "₹1.2L" },
-  { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", status: "active", orders: 890, revenue: "₹86K" },
-  { id: "c3", name: "NIT Trichy – Block A Caf", college: "NIT Trichy", city: "Chennai", status: "inactive", orders: 0, revenue: "₹0" },
-  { id: "c4", name: "VIT University – Canteen 2", college: "VIT Vellore", city: "Vellore", status: "active", orders: 560, revenue: "₹55K" },
-];
-
-const MOCK_USERS = [
-  { id: "u1", name: "Arjun Sharma", phone: "+91 98765 43210", college: "IIT Bombay", orders: 28, rewards: "₹42", joined: "Jun 2025" },
-  { id: "u2", name: "Priya Menon", phone: "+91 90123 45678", college: "BITS Pilani", orders: 14, rewards: "₹18", joined: "Jul 2025" },
-  { id: "u3", name: "Karan Das", phone: "+91 87654 32109", college: "NIT Trichy", orders: 6, rewards: "₹8", joined: "Jul 2025" },
-  { id: "u4", name: "Sneha Joshi", phone: "+91 81234 56789", college: "VIT Vellore", orders: 35, rewards: "₹62", joined: "May 2025" },
+  { id: "payments",  icon: "💳", label: "Payments" },
+  { id: "support",   icon: "🎧", label: "Support" },
 ];
 
 export default function SuperAdminDashboard() {
@@ -69,15 +55,8 @@ export default function SuperAdminDashboard() {
         {section === "users" && <UsersSection />}
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments" && <PaymentsSection />}
-        {(section === "cities" || section === "support") && (
-          <div className="page-content">
-            <div className="empty-state">
-              <span className="empty-icon">🔧</span>
-              <h3>{ADMIN_NAV.find(n => n.id === section)?.label}</h3>
-              <p>This section is under development</p>
-            </div>
-          </div>
-        )}
+        {section === "cities" && <CitiesSection />}
+        {section === "support" && <SupportSection />}
       </main>
     </div>
   );
@@ -134,32 +113,435 @@ function OverviewSection() {
 }
 
 function CanteensSection() {
+  const INIT = [
+    { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", status: "active" as const, orders: 1240, revenue: "₹1.2L" },
+    { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", status: "active" as const, orders: 890, revenue: "₹86K" },
+    { id: "c3", name: "NIT Trichy – Block A Caf", college: "NIT Trichy", city: "Chennai", status: "inactive" as const, orders: 0, revenue: "₹0" },
+    { id: "c4", name: "VIT University – Canteen 2", college: "VIT Vellore", city: "Vellore", status: "active" as const, orders: 560, revenue: "₹55K" },
+  ];
+  type Canteen = typeof INIT[number];
+  const [canteens, setCanteens] = useState<Canteen[]>(INIT);
+  const [editing, setEditing] = useState<Canteen | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", college: "", city: "", status: "active" as "active" | "inactive" });
+
+  const openEdit = (c: Canteen) => { setEditing(c); setForm({ name: c.name, college: c.college, city: c.city, status: c.status }); setAdding(false); };
+  const openAdd = () => { setEditing(null); setForm({ name: "", college: "", city: "", status: "active" }); setAdding(true); };
+  const closeModal = () => { setEditing(null); setAdding(false); };
+
+  const saveEdit = () => {
+    if (!form.name.trim()) return;
+    if (editing) {
+      setCanteens(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } : c));
+    } else {
+      setCanteens(prev => [...prev, { id: `c${Date.now()}`, ...form, orders: 0, revenue: "₹0" }]);
+    }
+    closeModal();
+  };
+
+  const toggleStatus = (id: string) => {
+    setCanteens(prev => prev.map(c => c.id === id ? { ...c, status: c.status === "active" ? "inactive" : "active" } : c));
+  };
+
   return (
     <div className="page-content">
       <div className="page-header">
         <h2>Manage Canteens</h2>
-        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>+ Add Canteen</button>
+        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Canteen</button>
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>CANTEEN</th><th>COLLEGE</th><th>CITY</th><th>ORDERS</th><th>REVENUE</th><th>STATUS</th><th>ACTION</th></tr></thead>
+          <thead><tr><th>CANTEEN</th><th>COLLEGE</th><th>CITY</th><th>ORDERS</th><th>REVENUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
           <tbody>
-            {[
-              { id: "c1", name: "Main Canteen", college: "IIT Bombay", city: "Mumbai", status: "active", orders: 1240, revenue: "₹1.2L" },
-              { id: "c2", name: "Central Mess", college: "BITS Pilani", city: "Rajasthan", status: "active", orders: 890, revenue: "₹86K" },
-              { id: "c3", name: "Block A Caf", college: "NIT Trichy", city: "Chennai", status: "inactive", orders: 0, revenue: "₹0" },
-              { id: "c4", name: "Canteen 2", college: "VIT Vellore", city: "Vellore", status: "active", orders: 560, revenue: "₹55K" },
-            ].map(c => (
+            {canteens.map(c => (
               <tr key={c.id}>
                 <td style={{ fontWeight: 600 }}>{c.name}</td>
                 <td style={{ fontSize: "0.82rem" }}>{c.college}</td>
                 <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{c.city}</td>
                 <td>{c.orders.toLocaleString()}</td>
                 <td style={{ fontWeight: 600 }}>{c.revenue}</td>
-                <td><span className={`tag ${c.status === "active" ? "tag-green" : "tag-gray"}`}>{c.status}</span></td>
-                <td><button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }}>Edit</button></td>
+                <td>
+                  <button
+                    className={`tag ${c.status === "active" ? "tag-green" : "tag-gray"}`}
+                    style={{ cursor: "pointer", background: "none", border: "none" }}
+                    onClick={() => toggleStatus(c.id)}
+                    title="Click to toggle"
+                  >
+                    {c.status === "active" ? "● Active" : "○ Inactive"}
+                  </button>
+                </td>
+                <td>
+                  <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEdit(c)}>Edit</button>
+                </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(editing || adding) && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>{adding ? "Add New Canteen" : "Edit Canteen"}</h3>
+              <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label className="form-label">Canteen Name</label>
+                <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Main Canteen" />
+              </div>
+              <div>
+                <label className="form-label">College / Institution</label>
+                <input className="form-input" value={form.college} onChange={e => setForm(p => ({ ...p, college: e.target.value }))} placeholder="e.g. IIT Bombay" />
+              </div>
+              <div>
+                <label className="form-label">City</label>
+                <input className="form-input" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Mumbai" />
+              </div>
+              <div>
+                <label className="form-label">Status</label>
+                <select className="form-input" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as "active" | "inactive" }))}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <button className="btn btn-primary btn-full" onClick={saveEdit} style={{ marginTop: "0.5rem" }}>
+                {adding ? "Create Canteen" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsersSection() {
+  const INIT = [
+    { id: "u1", name: "Arjun Sharma", phone: "+91 98765 43210", college: "IIT Bombay", orders: 28, rewards: "₹42", joined: "Jun 2025", role: "user" },
+    { id: "u2", name: "Priya Menon", phone: "+91 90123 45678", college: "BITS Pilani", orders: 14, rewards: "₹18", joined: "Jul 2025", role: "user" },
+    { id: "u3", name: "Karan Das", phone: "+91 87654 32109", college: "NIT Trichy", orders: 6, rewards: "₹8", joined: "Jul 2025", role: "worker" },
+    { id: "u4", name: "Sneha Joshi", phone: "+91 81234 56789", college: "VIT Vellore", orders: 35, rewards: "₹62", joined: "May 2025", role: "canteen_admin" },
+    { id: "u5", name: "Rohan Kumar", phone: "+91 77654 32100", college: "IIT Bombay", orders: 52, rewards: "₹88", joined: "Apr 2025", role: "user" },
+  ];
+  const [users, setUsers] = useState(INIT);
+  const [search, setSearch] = useState("");
+  const [editUser, setEditUser] = useState<typeof INIT[number] | null>(null);
+  const [form, setForm] = useState({ name: "", phone: "", college: "", role: "user" });
+
+  const filtered = users.filter(u =>
+    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    u.phone.includes(search) ||
+    u.college.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const openEdit = (u: typeof INIT[number]) => { setEditUser(u); setForm({ name: u.name, phone: u.phone, college: u.college, role: u.role }); };
+  const saveEdit = () => {
+    if (editUser) setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, ...form } : u));
+    setEditUser(null);
+  };
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>All Users</h2>
+        <input className="form-input" type="search" placeholder="Search users…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>USER</th><th>PHONE</th><th>COLLEGE</th><th>ROLE</th><th>ORDERS</th><th>REWARDS</th><th>JOINED</th><th>ACTION</th></tr></thead>
+          <tbody>
+            {filtered.map(u => (
+              <tr key={u.id}>
+                <td style={{ fontWeight: 600 }}>{u.name}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{u.phone}</td>
+                <td style={{ fontSize: "0.82rem" }}>{u.college}</td>
+                <td><span className={`tag ${u.role === "super_admin" ? "tag-orange" : u.role === "canteen_admin" || u.role === "vendor" ? "tag-blue" : u.role === "worker" ? "tag-yellow" : "tag-gray"}`}>{u.role}</span></td>
+                <td>{u.orders}</td>
+                <td style={{ color: "var(--green)", fontWeight: 600 }}>{u.rewards}</td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{u.joined}</td>
+                <td><button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEdit(u)}>Edit</button></td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No users found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {editUser && (
+        <div className="modal-overlay" onClick={() => setEditUser(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>Edit User</h3>
+              <button onClick={() => setEditUser(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label className="form-label">Name</label>
+                <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Phone</label>
+                <input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">College</label>
+                <input className="form-input" value={form.college} onChange={e => setForm(p => ({ ...p, college: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Role</label>
+                <select className="form-input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
+                  <option value="user">User</option>
+                  <option value="worker">Worker</option>
+                  <option value="canteen_admin">Canteen Admin</option>
+                  <option value="vendor">Vendor</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
+              <button className="btn btn-primary btn-full" onClick={saveEdit} style={{ marginTop: "0.5rem" }}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CitiesSection() {
+  const INIT_CITIES = [
+    { id: "city1", name: "Mumbai", state: "Maharashtra", colleges: 12, canteens: 8, active: true },
+    { id: "city2", name: "Rajasthan", state: "Rajasthan", colleges: 5, canteens: 3, active: true },
+    { id: "city3", name: "Chennai", state: "Tamil Nadu", colleges: 9, canteens: 6, active: true },
+    { id: "city4", name: "Vellore", state: "Tamil Nadu", colleges: 3, canteens: 2, active: false },
+    { id: "city5", name: "Delhi NCR", state: "Delhi", colleges: 18, canteens: 14, active: true },
+  ];
+  const INIT_COLLEGES = [
+    { id: "col1", name: "IIT Bombay", city: "Mumbai", students: 8200, canteens: 4, active: true },
+    { id: "col2", name: "BITS Pilani", city: "Rajasthan", students: 6500, canteens: 3, active: true },
+    { id: "col3", name: "NIT Trichy", city: "Chennai", students: 5400, canteens: 2, active: true },
+    { id: "col4", name: "VIT Vellore", city: "Vellore", students: 25000, canteens: 6, active: false },
+  ];
+  type City = typeof INIT_CITIES[number];
+  type College = typeof INIT_COLLEGES[number];
+
+  const [tab, setTab] = useState<"cities" | "colleges">("cities");
+  const [cities, setCities] = useState<City[]>(INIT_CITIES);
+  const [colleges, setColleges] = useState<College[]>(INIT_COLLEGES);
+  const [modal, setModal] = useState<{ type: "city" | "college"; item: City | College | null } | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+
+  const openAddCity = () => { setModal({ type: "city", item: null }); setForm({ name: "", state: "" }); };
+  const openEditCity = (c: City) => { setModal({ type: "city", item: c }); setForm({ name: c.name, state: c.state }); };
+  const openAddCollege = () => { setModal({ type: "college", item: null }); setForm({ name: "", city: "", students: "" }); };
+  const openEditCollege = (c: College) => { setModal({ type: "college", item: c }); setForm({ name: c.name, city: c.city, students: String(c.students) }); };
+
+  const saveModal = () => {
+    if (modal?.type === "city") {
+      if (modal.item) {
+        setCities(prev => prev.map(c => c.id === (modal.item as City).id ? { ...c, name: form.name, state: form.state } : c));
+      } else {
+        setCities(prev => [...prev, { id: `city${Date.now()}`, name: form.name, state: form.state, colleges: 0, canteens: 0, active: true }]);
+      }
+    } else if (modal?.type === "college") {
+      if (modal.item) {
+        setColleges(prev => prev.map(c => c.id === (modal.item as College).id ? { ...c, name: form.name, city: form.city, students: Number(form.students) } : c));
+      } else {
+        setColleges(prev => [...prev, { id: `col${Date.now()}`, name: form.name, city: form.city, students: Number(form.students) || 0, canteens: 0, active: true }]);
+      }
+    }
+    setModal(null);
+  };
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Cities & Colleges</h2>
+        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}
+          onClick={tab === "cities" ? openAddCity : openAddCollege}>
+          + Add {tab === "cities" ? "City" : "College"}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        {(["cities", "colleges"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`btn ${tab === t ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontSize: "0.85rem", padding: "0.4rem 1rem", textTransform: "capitalize" }}>
+            {t === "cities" ? "🏙 Cities" : "🎓 Colleges"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "cities" && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>CITY</th><th>STATE</th><th>COLLEGES</th><th>CANTEENS</th><th>STATUS</th><th>ACTION</th></tr></thead>
+            <tbody>
+              {cities.map(c => (
+                <tr key={c.id}>
+                  <td style={{ fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ fontSize: "0.82rem" }}>{c.state}</td>
+                  <td>{c.colleges}</td>
+                  <td>{c.canteens}</td>
+                  <td>
+                    <button
+                      className={`tag ${c.active ? "tag-green" : "tag-gray"}`}
+                      style={{ cursor: "pointer", background: "none", border: "none" }}
+                      onClick={() => setCities(prev => prev.map(x => x.id === c.id ? { ...x, active: !x.active } : x))}
+                    >{c.active ? "● Active" : "○ Inactive"}</button>
+                  </td>
+                  <td><button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEditCity(c)}>Edit</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "colleges" && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>COLLEGE</th><th>CITY</th><th>STUDENTS</th><th>CANTEENS</th><th>STATUS</th><th>ACTION</th></tr></thead>
+            <tbody>
+              {colleges.map(c => (
+                <tr key={c.id}>
+                  <td style={{ fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ fontSize: "0.82rem" }}>{c.city}</td>
+                  <td>{c.students.toLocaleString()}</td>
+                  <td>{c.canteens}</td>
+                  <td>
+                    <button
+                      className={`tag ${c.active ? "tag-green" : "tag-gray"}`}
+                      style={{ cursor: "pointer", background: "none", border: "none" }}
+                      onClick={() => setColleges(prev => prev.map(x => x.id === c.id ? { ...x, active: !x.active } : x))}
+                    >{c.active ? "● Active" : "○ Inactive"}</button>
+                  </td>
+                  <td><button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEditCollege(c)}>Edit</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>{modal.item ? "Edit" : "Add"} {modal.type === "city" ? "City" : "College"}</h3>
+              <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label className="form-label">{modal.type === "city" ? "City" : "College"} Name</label>
+                <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Enter name" />
+              </div>
+              {modal.type === "city" && (
+                <div>
+                  <label className="form-label">State</label>
+                  <input className="form-input" value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} placeholder="e.g. Maharashtra" />
+                </div>
+              )}
+              {modal.type === "college" && (
+                <>
+                  <div>
+                    <label className="form-label">City</label>
+                    <input className="form-input" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Mumbai" />
+                  </div>
+                  <div>
+                    <label className="form-label">Student Count</label>
+                    <input className="form-input" type="number" value={form.students} onChange={e => setForm(p => ({ ...p, students: e.target.value }))} placeholder="e.g. 8000" />
+                  </div>
+                </>
+              )}
+              <button className="btn btn-primary btn-full" onClick={saveModal} style={{ marginTop: "0.5rem" }}>
+                {modal.item ? "Save Changes" : `Add ${modal.type === "city" ? "City" : "College"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SupportSection() {
+  const TICKETS = [
+    { id: "T001", user: "Arjun Sharma", issue: "OTP mismatch – order not collected", canteen: "IIT Bombay – Main", priority: "high", status: "open", time: "2 hrs ago" },
+    { id: "T002", user: "Priya Menon", issue: "Payment deducted but order not placed", canteen: "BITS Pilani", priority: "critical", status: "open", time: "4 hrs ago" },
+    { id: "T003", user: "Karan Das", issue: "Menu item not available at slot", canteen: "NIT Trichy", priority: "medium", status: "resolved", time: "1 day ago" },
+    { id: "T004", user: "Sneha Joshi", issue: "Rewards not credited after order", canteen: "VIT Vellore", priority: "low", status: "resolved", time: "2 days ago" },
+    { id: "T005", user: "Rohan Kumar", issue: "Wrong item placed in bin", canteen: "IIT Bombay – Main", priority: "high", status: "escalated", time: "30 mins ago" },
+  ];
+  type StatusType = "open" | "resolved" | "escalated";
+  const [tickets, setTickets] = useState(TICKETS);
+  const [filterStatus, setFilterStatus] = useState<"all" | StatusType>("all");
+
+  const filtered = filterStatus === "all" ? tickets : tickets.filter(t => t.status === filterStatus);
+
+  const resolve = (id: string) => setTickets(prev => prev.map(t => t.id === id ? { ...t, status: "resolved" } : t));
+  const escalate = (id: string) => setTickets(prev => prev.map(t => t.id === id ? { ...t, status: "escalated" } : t));
+
+  const priorityColor: Record<string, string> = { critical: "var(--red)", high: "var(--orange)", medium: "var(--yellow)", low: "var(--ink-3)" };
+  const statusTag: Record<string, string> = { open: "tag-blue", resolved: "tag-green", escalated: "tag-orange" };
+
+  const counts = { open: tickets.filter(t => t.status === "open").length, escalated: tickets.filter(t => t.status === "escalated").length };
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Complaints & Escalations</h2>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {(["all", "open", "escalated", "resolved"] as const).map(s => (
+            <button key={s} onClick={() => setFilterStatus(s)} className={`btn ${filterStatus === s ? "btn-primary" : "btn-ghost"}`} style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem", textTransform: "capitalize" }}>{s}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="stats-row" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1rem" }}>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--red)" }}>{counts.open}</div>
+          <div className="stat-label">Open Tickets</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--orange)" }}>{counts.escalated}</div>
+          <div className="stat-label">Escalated</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--green)" }}>{tickets.filter(t => t.status === "resolved").length}</div>
+          <div className="stat-label">Resolved</div>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>USER</th><th>ISSUE</th><th>CANTEEN</th><th>PRIORITY</th><th>STATUS</th><th>TIME</th><th>ACTIONS</th></tr></thead>
+          <tbody>
+            {filtered.map(t => (
+              <tr key={t.id}>
+                <td style={{ fontSize: "0.78rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{t.id}</td>
+                <td style={{ fontWeight: 600 }}>{t.user}</td>
+                <td style={{ fontSize: "0.82rem", maxWidth: 200 }}>{t.issue}</td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{t.canteen}</td>
+                <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: priorityColor[t.priority], textTransform: "uppercase" }}>{t.priority}</span></td>
+                <td><span className={`tag ${statusTag[t.status]}`}>{t.status}</span></td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{t.time}</td>
+                <td style={{ display: "flex", gap: "0.25rem" }}>
+                  {t.status !== "resolved" && (
+                    <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--green)" }} onClick={() => resolve(t.id)}>Resolve</button>
+                  )}
+                  {t.status === "open" && (
+                    <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--orange)" }} onClick={() => escalate(t.id)}>Escalate</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No tickets found</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -167,41 +549,7 @@ function CanteensSection() {
   );
 }
 
-function UsersSection() {
-  return (
-    <div className="page-content">
-      <div className="page-header">
-        <h2>All Users</h2>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <input className="form-input" type="search" placeholder="Search users…" style={{ width: 220 }} />
-        </div>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>USER</th><th>PHONE</th><th>COLLEGE</th><th>ORDERS</th><th>REWARDS</th><th>JOINED</th></tr></thead>
-          <tbody>
-            {[
-              { name: "Arjun Sharma", phone: "+91 98765 43210", college: "IIT Bombay", orders: 28, rewards: "₹42", joined: "Jun 2025" },
-              { name: "Priya Menon", phone: "+91 90123 45678", college: "BITS Pilani", orders: 14, rewards: "₹18", joined: "Jul 2025" },
-              { name: "Karan Das", phone: "+91 87654 32109", college: "NIT Trichy", orders: 6, rewards: "₹8", joined: "Jul 2025" },
-              { name: "Sneha Joshi", phone: "+91 81234 56789", college: "VIT Vellore", orders: 35, rewards: "₹62", joined: "May 2025" },
-              { name: "Rohan Kumar", phone: "+91 77654 32100", college: "IIT Bombay", orders: 52, rewards: "₹88", joined: "Apr 2025" },
-            ].map((u, i) => (
-              <tr key={i}>
-                <td style={{ fontWeight: 600 }}>{u.name}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{u.phone}</td>
-                <td style={{ fontSize: "0.82rem" }}>{u.college}</td>
-                <td>{u.orders}</td>
-                <td style={{ color: "var(--green)", fontWeight: 600 }}>{u.rewards}</td>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{u.joined}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+
 
 function AnalyticsSection() {
   return (
