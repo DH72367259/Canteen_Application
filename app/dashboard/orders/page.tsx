@@ -1,117 +1,163 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-type OrderStatus = "active" | "upcoming" | "completed" | "cancelled";
+interface Transaction {
+  orderId:      string;
+  paymentId:    string;
+  amount:       number;
+  canteen:      string;
+  items:        string;
+  slot:         string;
+  bin:          string;
+  status:       string;
+  refundStatus: string | null;
+  timestamp:    string;
+}
+interface ActiveOrder {
+  id:    string;
+  bin:   string;
+  otp:   string;
+  slot:  string;
+  items: string;
+}
 
-const MOCK_ORDERS = [
-  { id: "ORD001", canteen: "Main Canteen", items: ["Paneer Butter Masala", "Roti × 2", "Lassi"], total: 145, slot: "1:00 PM – 1:15 PM", bin: "Bin #4", otp: "4821", status: "active" as OrderStatus, date: "Today", earning: 2 },
-  { id: "ORD002", canteen: "Snack Corner", items: ["Vada Pav × 2", "Chai"], total: 52, slot: "11:30 AM – 11:45 AM", bin: null, otp: null, status: "upcoming" as OrderStatus, date: "Today", earning: 1 },
-  { id: "ORD003", canteen: "Main Canteen", items: ["Dal Rice", "Papad", "Pickle"], total: 80, slot: "12:30 PM – 12:45 PM", bin: "Bin #7", otp: null, status: "completed" as OrderStatus, date: "Yesterday", earning: 1 },
-  { id: "ORD004", canteen: "Hostel Mess", items: ["Dinner Thali"], total: 65, slot: "8:00 PM – 8:15 PM", bin: null, otp: null, status: "cancelled" as OrderStatus, date: "2 days ago", earning: 0 },
-];
-
-const STATUS_CONFIG = {
-  active:    { label: "Active",    tagClass: "tag-green",  dot: "var(--green)" },
-  upcoming:  { label: "Upcoming",  tagClass: "tag-blue",   dot: "var(--blue)" },
-  completed: { label: "Completed", tagClass: "tag-gray",   dot: "var(--ink-3)" },
-  cancelled: { label: "Cancelled", tagClass: "tag-red",    dot: "var(--red)" },
-};
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000)        return "Just now";
+  if (diff < 3_600_000)     return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000)    return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 172_800_000)   return "Yesterday";
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
 
 export default function MyOrdersPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<OrderStatus | "all">("all");
+  const [txns,        setTxns]        = useState<Transaction[]>([]);
+  const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
+  const [tab,         setTab]         = useState<"orders" | "transactions">("orders");
 
-  const filtered = activeTab === "all" ? MOCK_ORDERS : MOCK_ORDERS.filter(o => o.status === activeTab);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("noqx_transactions");
+      if (raw) setTxns(JSON.parse(raw));
+      const ao  = localStorage.getItem("canteen_active_order");
+      if (ao)  setActiveOrder(JSON.parse(ao));
+    } catch { /* ignore */ }
+  }, []);
 
   return (
     <div className="app-shell">
       {/* Top bar */}
       <div className="topbar">
-        <button onClick={() => router.back()} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)", marginRight: "0.5rem" }}>←</button>
-        <div>
-          <div className="topbar" style={{ padding: 0, border: "none", position: "static" }}>
-            <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>My Orders</h1>
-          </div>
-        </div>
+        <button onClick={() => router.back()} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)" }}>←</button>
+        <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>My Orders</h1>
         <div />
       </div>
 
-      {/* Tab filter */}
+      {/* Tab switcher */}
       <div className="slot-tabs" style={{ gap: "0.4rem" }}>
-        {(["all", "active", "upcoming", "completed", "cancelled"] as const).map(tab => (
-          <button
-            key={tab}
-            className={`slot-tab ${activeTab === tab ? "active" : ""}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab === "all" ? "All" : STATUS_CONFIG[tab].label}
+        {(["orders", "transactions"] as const).map(t => (
+          <button key={t} className={`slot-tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
+            {t === "orders" ? "Active Order" : `History (${txns.length})`}
           </button>
         ))}
       </div>
 
-      {/* Orders list */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.75rem", paddingBottom: "5rem" }}>
-        {filtered.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">📦</span>
-            <h3>No orders here</h3>
-            <p>Your {activeTab} orders will show up here</p>
-            <Link href="/dashboard" className="btn btn-primary" style={{ marginTop: "0.5rem" }}>Browse canteens</Link>
-          </div>
-        ) : filtered.map(order => {
-          const cfg = STATUS_CONFIG[order.status];
-          return (
-            <div key={order.id} className="order-card">
-              <div className="order-header">
+
+        {tab === "orders" && (
+          activeOrder ? (
+            <div className="card" style={{ padding: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
                 <div>
-                  <div className="order-id">#{order.id}</div>
-                  <div className="order-time">{order.date} · {order.slot}</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{activeOrder.id}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--ink-3)" }}>{activeOrder.slot}</div>
                 </div>
-                <span className={`tag ${cfg.tagClass}`}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.dot, display: "inline-block" }} />
-                  {cfg.label}
+                <span className="tag tag-green">
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)", display: "inline-block", marginRight: 4 }} />
+                  Active
                 </span>
               </div>
+              <div style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginBottom: "0.5rem" }}>{activeOrder.items}</div>
+              <div style={{ background: "var(--green-light)", border: "1px solid #bbf7d0", borderRadius: 12, padding: "0.75rem", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803d", textTransform: "uppercase", marginBottom: "0.3rem" }}>
+                  Show this OTP at pickup · {activeOrder.bin}
+                </div>
+                <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: "0.3em", color: "var(--ink)" }}>
+                  {activeOrder.otp}
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
+                  Canteen staff will confirm your order using this OTP.
+                </div>
+              </div>
+              <button
+                className="btn btn-outline btn-full"
+                style={{ marginTop: "0.75rem", fontSize: "0.82rem", padding: "0.5rem" }}
+                onClick={() => { localStorage.removeItem("canteen_active_order"); setActiveOrder(null); }}>
+                Mark as collected
+              </button>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <span className="empty-icon">📦</span>
+              <h3>No active order</h3>
+              <p>Your current order will appear here after checkout.</p>
+              <Link href="/dashboard" className="btn btn-primary" style={{ marginTop: "0.5rem" }}>Browse canteens</Link>
+            </div>
+          )
+        )}
 
-              <div style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{order.canteen}</div>
-              <div className="order-items">{order.items.join(" · ")}</div>
-
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.25rem" }}>
-                <span className="order-amount">₹{order.total}</span>
-                {order.earning > 0 && (
-                  <span className="tag tag-orange">+₹{order.earning} Canteen Cash</span>
+        {tab === "transactions" && (
+          txns.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon">🧾</span>
+              <h3>No transactions yet</h3>
+              <p>Your payment history will appear here after your first order.</p>
+              <Link href="/dashboard" className="btn btn-primary" style={{ marginTop: "0.5rem" }}>Place an order</Link>
+            </div>
+          ) : txns.map((txn, i) => (
+            <div key={i} className="card" style={{ padding: "0.85rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.88rem" }}>{txn.orderId}</div>
+                  <div style={{ fontSize: "0.76rem", color: "var(--ink-3)" }}>{txn.canteen} · {txn.slot}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontWeight: 800, color: "var(--orange)" }}>₹{txn.amount}</div>
+                  <div style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{relativeDate(txn.timestamp)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "var(--ink-3)", margin: "0.4rem 0" }}>{txn.items}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontFamily: "monospace" }}>
+                  {txn.paymentId !== "WALLET" ? `ID: ${txn.paymentId}` : "Paid via wallet"}
+                </span>
+                {txn.refundStatus ? (
+                  <span className="tag tag-blue">Refund in progress</span>
+                ) : (
+                  <span className="tag tag-green">Paid</span>
                 )}
               </div>
-
-              {/* Active order: show OTP + bin */}
-              {order.status === "active" && order.otp && (
-                <div style={{ background: "var(--green-light)", border: "1px solid #bbf7d0", borderRadius: 12, padding: "0.75rem", marginTop: "0.25rem" }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803d", textTransform: "uppercase", marginBottom: "0.3rem" }}>
-                    Show this OTP at pickup · {order.bin}
-                  </div>
-                  <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: "0.3em", color: "var(--ink)" }}>
-                    {order.otp}
-                  </div>
-                  <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
-                    Canteen staff will scan or type this OTP to complete your order
-                  </div>
+              {txn.refundStatus && (
+                <div style={{ fontSize: "0.72rem", color: "var(--blue)", marginTop: "0.4rem", padding: "0.4rem 0.6rem", background: "var(--blue-light, #eff6ff)", borderRadius: 8 }}>
+                  Refund initiated · expected within 5-7 business days.
                 </div>
               )}
             </div>
-          );
-        })}
+          ))
+        )}
       </div>
 
       {/* Bottom nav */}
       <nav className="bottom-nav">
         {[
-          { tab: "home", icon: "🏠", label: "Home", href: "/dashboard" },
-          { tab: "orders", icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { tab: "rewards", icon: "💰", label: "Rewards", href: "/dashboard/rewards" },
-          { tab: "profile", icon: "👤", label: "Profile", href: "/dashboard/profile" },
+          { tab: "home",    icon: "🏠", label: "Home",      href: "/dashboard" },
+          { tab: "orders",  icon: "📦", label: "My Orders", href: "/dashboard/orders" },
+          { tab: "rewards", icon: "💰", label: "Rewards",   href: "/dashboard/rewards" },
+          { tab: "profile", icon: "👤", label: "Profile",   href: "/dashboard/profile" },
         ].map(item => (
           <Link key={item.tab} href={item.href} className={`bottom-nav-item ${item.tab === "orders" ? "active" : ""}`}>
             <span className="nav-icon">{item.icon}</span>
