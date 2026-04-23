@@ -58,6 +58,8 @@ export default function VendorDashboard() {
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
   const [canteenOpen, setCanteenOpen] = useState(true);
+  const [toggleBusy, setToggleBusy] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Redirect if not vendor/canteen_admin
@@ -66,6 +68,40 @@ export default function VendorDashboard() {
       router.push("/login");
     }
   }, [user, router]);
+
+  const handleToggleCanteen = async () => {
+    if (toggleBusy) return;
+    const next = !canteenOpen;
+    setToggleBusy(true);
+    setToggleError(null);
+    // Optimistic update
+    setCanteenOpen(next);
+    try {
+      // user.canteenId is the canteen this vendor belongs to.
+      // Falls back to a placeholder if not yet wired to Supabase.
+      const canteenId = (user as { canteenId?: string })?.canteenId || "demo";
+      const session = typeof window !== "undefined"
+        ? JSON.parse(localStorage.getItem("supabase.auth.token") || "{}")?.currentSession?.access_token
+        : null;
+      if (canteenId !== "demo" && session) {
+        const res = await fetch(`/api/canteens/${canteenId}/toggle`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` },
+          body: JSON.stringify({ is_active: next }),
+        });
+        if (!res.ok) {
+          const j = await res.json();
+          throw new Error(j.error || "Server error");
+        }
+      }
+    } catch (err) {
+      // Revert on failure
+      setCanteenOpen(!next);
+      setToggleError(err instanceof Error ? err.message : "Could not update canteen status.");
+    } finally {
+      setToggleBusy(false);
+    }
+  };
 
   // Auto-refresh every 5s (mock: just simulate a new order occasionally)
   useEffect(() => {
@@ -146,8 +182,9 @@ export default function VendorDashboard() {
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600 }}>Canteen</span>
-              <label className="toggle-switch" title={canteenOpen ? "Canteen is OPEN – click to close" : "Canteen is CLOSED – click to open"}>
-                <input type="checkbox" checked={canteenOpen} onChange={() => setCanteenOpen(v => !v)} />
+              {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 180 }}>{toggleError}</span>}
+              <label className="toggle-switch" title={canteenOpen ? "Canteen is OPEN – click to close" : "Canteen is CLOSED – click to open"} style={{ opacity: toggleBusy ? 0.6 : 1 }}>
+                <input type="checkbox" checked={canteenOpen} disabled={toggleBusy} onChange={handleToggleCanteen} />
                 <span className="toggle-track" />
               </label>
               <span style={{ fontSize: "0.78rem", fontWeight: 700, color: canteenOpen ? "var(--green)" : "var(--red)" }}>

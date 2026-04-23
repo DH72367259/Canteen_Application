@@ -139,8 +139,28 @@ function CanteensSection() {
     closeModal();
   };
 
-  const toggleStatus = (id: string) => {
-    setCanteens(prev => prev.map(c => c.id === id ? { ...c, status: c.status === "active" ? "inactive" : "active" } : c));
+  const toggleStatus = async (id: string) => {
+    const canteen = canteens.find(c => c.id === id);
+    if (!canteen) return;
+    const next = canteen.status === "active" ? "inactive" : "active";
+    // Optimistic update
+    setCanteens(prev => prev.map(c => c.id === id ? { ...c, status: next } : c));
+    try {
+      const session = typeof window !== "undefined"
+        ? JSON.parse(localStorage.getItem("supabase.auth.token") || "{}")?.currentSession?.access_token
+        : null;
+      if (session) {
+        const res = await fetch(`/api/canteens/${id}/toggle`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` },
+          body: JSON.stringify({ is_active: next === "active" }),
+        });
+        if (!res.ok) throw new Error("API error");
+      }
+    } catch {
+      // Revert on failure
+      setCanteens(prev => prev.map(c => c.id === id ? { ...c, status: canteen.status } : c));
+    }
   };
 
   return (
