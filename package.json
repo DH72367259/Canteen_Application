@@ -6,7 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "admin:create": "node scripts/create-admin-user.mjs"
+    "admin:create": "node scripts/create-admin-user.mjs",
+    "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public"
   },
   "private": true,
   "dependencies": {
