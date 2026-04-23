@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { getSupabaseClient } from './supabase-client'
+import { getSupabaseClient, isSupabaseConfigured } from './supabase-client'
 
 // Stable singleton — safe outside the component tree
 const supabase = getSupabaseClient()
@@ -108,9 +108,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Safety timeout: if Supabase is unreachable (env vars not set in production),
-    // stop the spinner after 5 seconds and redirect to login.
-    const fallback = setTimeout(() => setLoading(false), 5000)
+    // If Supabase env vars are placeholders (not real credentials), skip the
+    // getSession() call entirely — it would hang indefinitely on an invalid host
+    // and freeze the login page spinner.
+    if (!isSupabaseConfigured()) {
+      setLoading(false)
+      return
+    }
+
+    // Safety timeout: if Supabase is unreachable, stop the spinner after 3s.
+    const fallback = setTimeout(() => setLoading(false), 3000)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
