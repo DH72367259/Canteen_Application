@@ -61,7 +61,7 @@ function maybePrune() {
   }
 }
 
-export function middleware(req: NextRequest): NextResponse {
+export function proxy(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
   const ip = getClientIp(req);
 
