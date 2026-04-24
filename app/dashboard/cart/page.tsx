@@ -56,7 +56,6 @@ function CartContent() {
   const [showProCard, setShowProCard] = useState(true);
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
-  const [placedOrder, setPlacedOrder] = useState<{ id: string; bin: string; otp: string; txnId: string } | null>(null);
 
   useEffect(() => {
     const proStatus = localStorage.getItem("noqx_pro_active");
