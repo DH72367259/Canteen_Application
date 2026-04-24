@@ -114,6 +114,7 @@ function buildAuthUser(
     role: profile.role ?? 'user',
     phone: profile.phone ?? null,
     walletBalance: profile.walletBalance ?? 0,
+    mustChangePassword: profile.mustChangePassword ?? false,
   }
 }
 
@@ -332,16 +333,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function linkEmail(email: string) {
-    const { error } = await supabase.auth.updateUser({ email })
+    const { error } = await withTimeout(
+      supabase.auth.updateUser({ email })
+    )
     if (error) throw error
   }
 
   async function verifyEmailLink(email: string, token: string) {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email_change',
-    })
+    const { error } = await withTimeout(
+      supabase.auth.verifyOtp({ email, token, type: 'email_change' })
+    )
     if (error) throw error
   }
 

@@ -16,7 +16,8 @@ convenience fee and get priority pickup — every order, every day.
 1. [Live URLs](#live-urls)
 2. [Login Credentials](#login-credentials)
 3. [Architecture](#architecture)
-4. [Security](#security)
+4. [Authentication Architecture](#authentication-architecture)
+5. [Security](#security)
 5. [NoQx Pro Subscription](#noqx-pro-subscription)
 6. [Order Tracking Flow](#order-tracking-flow)
 7. [Rewards (NoQx Cash)](#rewards-noqx-cash)
@@ -93,6 +94,72 @@ Student / Vendor / Admin browsers
 - SMS/WhatsApp: Twilio Verify (OTP delivery, multi-channel)
 - Hosting: Railway (auto-deploy from GitHub, standalone Docker build)
 - PWA: Web App Manifest (installable on iOS and Android home screen)
+
+---
+
+## Authentication Architecture
+
+### Login methods (all supported, web + iOS + Android PWA)
+
+| Method | Who uses it | How it works |
+|--------|-------------|--------------|
+| **Phone OTP (SMS)** | Students | Enter mobile number → 6-digit OTP via SMS (Twilio Verify) → logged in |
+| **Email OTP** | Students, Staff | Enter email → 6-digit OTP in email → enter code to log in |
+| **Email + Password** | Canteen managers, Admins | Enter email + password at the Canteen Login tab |
+| **Forced password change** | New canteen managers | Admin creates account → manager receives temp credentials → must set new password on first login |
+| **Password reset** | Any staff | Click "Forgot Password" → receive reset link → set new password |
+
+### Auth client configuration (`lib/supabase-client.ts`)
+
+The Supabase client uses **implicit flow** with localStorage persistence:
+
+```ts
+createClient(url, anonKey, {
+  auth: {
+    flowType: 'implicit',          // tokens in URL hash — works cross-device/browser
+    autoRefreshToken: true,        // auto-refreshes JWT before it expires
+    persistSession: true,          // session survives browser restart
+    detectSessionInUrl: true,      // picks up hash tokens from email links/OTPs
+    storageKey: 'canteen_auth_v2', // separate from any old PKCE/cookie sessions
+  }
+})
+```
+
+**Why implicit flow?**
+PKCE (the previous flow) required the browser that initiated login to also complete it — so clicking a magic link on a different device failed with "Link Expired". Implicit flow puts the token in the URL hash, which works from any device or browser.
+
+### Session behaviour
+
+| Platform | Session storage | Duration | Auto-refresh |
+|----------|----------------|----------|-------------|
+| Web (desktop/mobile) | `localStorage` | 30-day inactivity auto-logout | Yes — every 5 min heartbeat |
+| iOS PWA (Add to Home Screen) | `localStorage` | 30-day inactivity auto-logout | Yes |
+| Android PWA (Add to Home Screen) | `localStorage` | 30-day inactivity auto-logout | Yes |
+
+Sessions are refreshed automatically by Supabase (`autoRefreshToken: true`).
+If a user is inactive for 30 days, they are signed out next time they open the app.
+
+### Admin canteen onboarding (forced password change)
+
+When a Super Admin creates a new canteen manager account:
+1. Admin goes to **Admin Dashboard → Manage Canteens → Onboard New Canteen**
+2. Fills in canteen details + manager email + temporary password
+3. The API creates the Supabase user with `must_change_password: true` in `user_metadata`
+4. Admin shares the email + temp password with the manager
+5. Manager logs in → is redirected to `/change-password` before any dashboard access
+6. Manager sets a new password → `must_change_password` flag is cleared → redirected to canteen dashboard
+
+### Email OTP vs magic link
+
+When a user requests email OTP login, Supabase sends both:
+- A **6-digit OTP code** to type into the app (recommended — works everywhere)
+- A **magic link** in the email that opens the app directly (also works with implicit flow)
+
+The `/auth/confirm` page accepts either path. The OTP code is always the safest option for cross-device reliability.
+
+### Timeouts (prevents "stuck" loading states)
+
+All Supabase auth calls are wrapped with a 15-second timeout. If Supabase doesn't respond within 15 seconds, the error is surfaced to the user with a retry prompt instead of hanging forever on "Verifying…".
 
 ---
 
@@ -423,6 +490,10 @@ values (2.00, 0.00, 18.00);
 2. **Authentication → URL Configuration**:
    - Site URL: `https://canteenapplication-production.up.railway.app`
    - Redirect URLs: `https://canteenapplication-production.up.railway.app/**`
+3. **Authentication → Settings → Email**:
+   - OTP Expiry: `3600` (1 hour — default is fine)
+   - Enable email confirmations: on (required for email OTP)
+4. **No additional PKCE or flow-type settings needed** — the app uses implicit flow configured in the client code
 
 ### Step 6 — Create the first Super Admin
 
@@ -944,7 +1015,7 @@ Full schema SQL is in `supabase-setup.sql` at the root of this repo.
 | Webhook events not received | Verify the webhook URL exact matches what is in Razorpay Dashboard. Check RAZORPAY_WEBHOOK_SECRET matches |
 | Railway build fails | Run npm run build locally first and fix all TypeScript errors before pushing |
 | Auth redirects to wrong URL | Set NEXT_PUBLIC_APP_URL in Railway variables to your actual Railway domain |
-| iOS PWA: auth lost after minimising app | Auth state is persisted to localStorage - this is already implemented |
+| iOS PWA: auth lost after minimising app | Auth state is persisted to localStorage — already implemented; session auto-refreshes every 5 min |
 | 429 Too Many Requests | Rate limiter triggered. Wait 60 seconds. For payment routes, the limit is 10/minute - this is intentional |
 | "SMS could not be delivered" / Twilio trial error | Twilio trial accounts only send to verified numbers. Upgrade your Twilio account, or use Email OTP as a fallback |
 | Student OTP never arrives | Check that TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID are all set in Railway |
@@ -957,6 +1028,14 @@ Full schema SQL is in `supabase-setup.sql` at the root of this repo.
 | Order-status page redirects away | No `canteen_active_order` in localStorage — order must be placed first |
 | Floating track button missing | `canteen_active_order` not set; created by `finaliseOrder()` in cart after payment |
 | Settlement page blank | `platform_charges` table needs a seed row — run: `insert into platform_charges (charge_pct, flat_charge, gst_pct) values (2.00, 0.00, 18.00);` |
+| Magic link says "Link Expired" | Ensure the app is using implicit flow (not PKCE). `lib/supabase-client.ts` must use `flowType: 'implicit'`. The user can also use the 6-digit OTP code from the email instead of clicking the link |
+| Email OTP stuck on "Verifying…" | All auth calls have a 15-second timeout — this should no longer happen. If it does, check Supabase project is not paused (free tier auto-pauses after 1 week of inactivity) |
+| Password login stuck on "Signing in…" | Same as above — 15s timeout is in place. Check Supabase URL + anon key in Railway variables |
+| Canteen manager can't log in (new account) | They must use the temp password the admin gave them. On first login they are redirected to `/change-password` and must set a new password before accessing the dashboard |
+| Forced password change page not appearing | Check that `must_change_password: true` is set in `user_metadata` for the user in Supabase Dashboard → Authentication → Users. If missing, add it manually |
+| After password change, still redirected to change-password | The `must_change_password` flag was not cleared. Go to Supabase Dashboard → Authentication → Users → find the user → edit `user_metadata` and set `must_change_password: false` |
+| Session lost after browser update / storage clear | User must log in again. This is by design — sessions are in localStorage which can be cleared by the browser |
+| Admin / canteen login blocked with 401 | The JWT may have expired. Log out and log back in. If it keeps happening, check that Supabase JWT expiry is set to at least 3600 seconds (1 hour) in Auth Settings |
 
 ---
 
@@ -990,6 +1069,9 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Commit | Description |
 |--------|-------------|
+| latest | fix: auth all flows — buildAuthUser passes mustChangePassword, change-password API clears flag, linkEmail/verifyEmailLink timeouts, README updated |
+| `48b7b8f` | fix: implicit flow auth client, 15s timeouts on all auth calls, mustChangePassword forced redirect, /change-password page, admin canteen onboarding API |
+| `a718a59` | fix: auth guard, session persistence, fetchProfile timeout |
 | `5109031` | feat: Rewards nav tab, radio-button Pro upsell (₹69/mo vs ₹4 fee), vendor 5s refresh, slot-gate canteen toggle |
 | `7393808` | fix: end-to-end order workflow — persist to Supabase, real vendor dashboard, real status polling |
 | `57cf7eb` | fix: PDF spec — banner 3-line copy, "Pro users pay ₹0" in cart, "Your order is ready" heading |
@@ -1010,4 +1092,4 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 **Last updated**: 24 April 2026  
 **Build status**: Passing — 0 TypeScript errors  
-**Deployed**: Railway — auto-deploy from `main` (latest: `5109031`)
+**Deployed**: Railway — auto-deploy from `main` (latest: `48b7b8f`)

@@ -25,9 +25,12 @@ export async function POST(request: Request) {
   if (!password?.trim())    return Response.json({ error: "Password is required" }, { status: 400 });
   if (password.length < 8)  return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 });
 
-  // Use admin client to update the user's password by their UID
+  // Use admin client to update the user's password and clear the forced-change flag
   const supabase = createAdminClient();
-  const { error } = await supabase.auth.admin.updateUserById(ctx.uid, { password });
+  const { error } = await supabase.auth.admin.updateUserById(ctx.uid, {
+    password,
+    user_metadata: { must_change_password: false },
+  });
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 });
