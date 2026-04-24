@@ -97,6 +97,12 @@ function LoginContent() {
     // Don't redirect while email verification is still in progress
     if (dualVerifyStep === "email_verify") return;
 
+    // Admin-created accounts with a temporary password must change it first
+    if (user.mustChangePassword) {
+      router.replace("/change-password");
+      return;
+    }
+
     const next = params.get("next");
     if (next) { router.replace(next); return; }
     const role = user.role;
@@ -139,8 +145,10 @@ function LoginContent() {
     setBusy(true); setError(null);
     try {
       await verifyPhoneOtp(otpSentTo, otp);
+      // Success — redirect will fire via useEffect; reset busy after short delay as fallback
+      setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Invalid OTP.");
+      setError(e instanceof Error ? e.message : "Invalid OTP. Please check the code and try again.");
       setBusy(false);
     }
   }
@@ -192,8 +200,10 @@ function LoginContent() {
     setBusy(true); setError(null);
     try {
       await verifyEmailOtp(otpSentTo, otp);
+      // Success — redirect fires via useEffect; reset busy after short delay as fallback
+      setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Invalid OTP.");
+      setError(e instanceof Error ? e.message : "Invalid or expired OTP. Please request a new one.");
       setBusy(false);
     }
   }
@@ -204,16 +214,19 @@ function LoginContent() {
     setBusy(true); setError(null);
     try {
       await signInWithPassword(email, password);
-      // signInWithPassword succeeded — onAuthStateChange will fire and the
-      // useEffect above will redirect. Keep busy=true so button stays "Signing in…"
-      // but set a safety fallback in case the redirect stalls.
-      setTimeout(() => setBusy(false), 8000);
+      // Success — onAuthStateChange fires → useEffect redirects.
+      // Keep busy=true so button stays “Signing in…” until redirect.
+      // Safety fallback: reset after 10s if redirect somehow stalls.
+      setTimeout(() => setBusy(false), 10000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Login failed.";
-      // Surface a friendlier message for the most common Supabase error
       setError(
         msg.toLowerCase().includes("email not confirmed")
-          ? "Your email address has not been confirmed yet. Please check your inbox for a confirmation email and click the link, then try again."
+          ? "This account’s email is not confirmed. Please contact your administrator."
+          : msg.toLowerCase().includes("invalid login credentials")
+          ? "Incorrect email or password. Please check and try again."
+          : msg.toLowerCase().includes("timed out")
+          ? "Connection timed out. Please check your internet and try again."
           : msg
       );
       setBusy(false);

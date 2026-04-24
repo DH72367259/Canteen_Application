@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
-type AdminSection = "overview" | "canteens" | "users" | "cities" | "analytics" | "payments" | "support";
+type AdminSection = "overview" | "canteens" | "users" | "cities" | "analytics" | "payments" | "support" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
@@ -14,6 +14,7 @@ const ADMIN_NAV = [
   { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "payments",  icon: "💳", label: "Payments" },
   { id: "support",   icon: "🎧", label: "Support" },
+  { id: "account",   icon: "🔑", label: "My Account" },
 ];
 
 export default function SuperAdminDashboard() {
@@ -57,6 +58,7 @@ export default function SuperAdminDashboard() {
         {section === "payments" && <PaymentsSection />}
         {section === "cities" && <CitiesSection />}
         {section === "support" && <SupportSection />}
+        {section === "account" && <AccountSection />}
       </main>
     </div>
   );
@@ -113,6 +115,7 @@ function OverviewSection() {
 }
 
 function CanteensSection() {
+  const { session } = useAuth();
   const INIT = [
     { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", address: "Main Gate Road, IIT Bombay, Powai", lat: "19.1334", lng: "72.9133", gmapLink: "https://maps.google.com/?q=19.1334,72.9133", status: "active" as const, orders: 1240, revenue: "₹1.2L" },
     { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", address: "BITS Pilani Campus, Pilani, Rajasthan", lat: "28.3670", lng: "75.5882", gmapLink: "https://maps.google.com/?q=28.3670,75.5882", status: "active" as const, orders: 890, revenue: "₹86K" },
@@ -123,8 +126,22 @@ function CanteensSection() {
   const [canteens, setCanteens] = useState<Canteen[]>(INIT);
   const [editing, setEditing] = useState<Canteen | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive" });
+  const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive", email: "", password: "" });
   const [gmapParseError, setGmapParseError] = useState("");
+  const [savingCanteen, setSavingCanteen] = useState(false);
+  const [canteenApiError, setCanteenApiError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Timings modal state
+  type Timing = { day: string; opens: string; closes: string; active: boolean };
+  const DEFAULT_TIMINGS: Timing[] = [
+    { day: "Monday – Friday", opens: "07:30", closes: "21:00", active: true },
+    { day: "Saturday",        opens: "08:00", closes: "17:00", active: true },
+    { day: "Sunday",          opens: "08:00", closes: "17:00", active: false },
+  ];
+  const [timingsCanteen, setTimingsCanteen] = useState<Canteen | null>(null);
+  const [timings, setTimings] = useState<Timing[]>(DEFAULT_TIMINGS);
+  const [timingsSaved, setTimingsSaved] = useState(false);
 
   // Auto-extract lat/lng when a Google Maps URL is pasted
   const handleGmapLinkChange = (url: string) => {
@@ -149,30 +166,55 @@ function CanteensSection() {
 
   const openEdit = (c: Canteen) => {
     setEditing(c);
-    setForm({ name: c.name, college: c.college, city: c.city, address: c.address, lat: c.lat, lng: c.lng, gmapLink: c.gmapLink, status: c.status });
+    setForm({ name: c.name, college: c.college, city: c.city, address: c.address, lat: c.lat, lng: c.lng, gmapLink: c.gmapLink, status: c.status, email: "", password: "" });
     setAdding(false);
     setGmapParseError("");
+    setCanteenApiError("");
   };
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" });
+    setForm({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active", email: "", password: "" });
     setAdding(true);
     setGmapParseError("");
+    setCanteenApiError("");
+    setShowPassword(false);
   };
-  const closeModal = () => { setEditing(null); setAdding(false); setGmapParseError(""); };
+  const closeModal = () => { setEditing(null); setAdding(false); setGmapParseError(""); setCanteenApiError(""); };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!form.name.trim()) return;
     if (!form.lat.trim() || !form.lng.trim()) {
       setGmapParseError("Latitude and Longitude are required.");
       return;
     }
-    if (editing) {
+    if (adding) {
+      if (!form.email.trim()) { setCanteenApiError("Login email is required."); return; }
+      if (!form.password.trim() || form.password.length < 8) { setCanteenApiError("Password must be at least 8 characters."); return; }
+      setSavingCanteen(true);
+      setCanteenApiError("");
+      try {
+        const res = await fetch("/api/admin/canteens/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            name: form.name, college: form.college, city: form.city, address: form.address,
+            lat: form.lat, lng: form.lng, gmapLink: form.gmapLink,
+            email: form.email, password: form.password,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setCanteenApiError(data.error || "Failed to create canteen."); return; }
+        setCanteens(prev => [...prev, { id: data.canteen.id, ...form, orders: 0, revenue: "₹0" }]);
+        closeModal();
+      } catch {
+        setCanteenApiError("Network error — please try again.");
+      } finally {
+        setSavingCanteen(false);
+      }
+    } else if (editing) {
       setCanteens(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } : c));
-    } else {
-      setCanteens(prev => [...prev, { id: `c${Date.now()}`, ...form, orders: 0, revenue: "₹0" }]);
+      closeModal();
     }
-    closeModal();
   };
 
   const toggleStatus = async (id: string) => {
@@ -182,13 +224,10 @@ function CanteensSection() {
     // Optimistic update
     setCanteens(prev => prev.map(c => c.id === id ? { ...c, status: next } : c));
     try {
-      const session = typeof window !== "undefined"
-        ? JSON.parse(localStorage.getItem("supabase.auth.token") || "{}")?.currentSession?.access_token
-        : null;
-      if (session) {
+      if (session?.access_token) {
         const res = await fetch(`/api/canteens/${id}/toggle`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({ is_active: next === "active" }),
         });
         if (!res.ok) throw new Error("API error");
@@ -235,8 +274,9 @@ function CanteensSection() {
                     {c.status === "active" ? "● Active" : "○ Inactive"}
                   </button>
                 </td>
-                <td>
+                <td style={{ display: "flex", gap: "0.4rem" }}>
                   <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEdit(c)}>Edit</button>
+                  <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => { setTimingsCanteen(c); setTimings(DEFAULT_TIMINGS); setTimingsSaved(false); }}>🕐 Hours</button>
                 </td>
               </tr>
             ))}
@@ -314,8 +354,89 @@ function CanteensSection() {
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-              <button className="btn btn-primary btn-full" onClick={saveEdit} style={{ marginTop: "0.5rem" }}>
-                {adding ? "Create Canteen" : "Save Changes"}
+
+              {/* Login credentials — only when creating a new canteen */}
+              {adding && (
+                <>
+                  <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "0.25rem 0" }} />
+                  <p style={{ fontSize: "0.8rem", color: "var(--ink-3)", margin: 0 }}>
+                    🔐 <strong>Manager login credentials</strong> — the canteen manager will use these to sign in. Password is static and never sent by email.
+                  </p>
+                  <div>
+                    <label className="form-label">Login Email *</label>
+                    <input className="form-input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="e.g. iitbombay@canteen.app" autoComplete="off" />
+                  </div>
+                  <div>
+                    <label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span></label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        className="form-input"
+                        type={showPassword ? "text" : "password"}
+                        value={form.password}
+                        onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                        placeholder="Create a static password"
+                        autoComplete="new-password"
+                        style={{ paddingRight: "2.5rem" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(v => !v)}
+                        style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}
+                      >
+                        {showPassword ? "🙈" : "👁️"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {canteenApiError && (
+                <p style={{ fontSize: "0.82rem", color: "var(--red)", margin: 0 }}>{canteenApiError}</p>
+              )}
+
+              <button className="btn btn-primary btn-full" onClick={saveEdit} disabled={savingCanteen} style={{ marginTop: "0.5rem" }}>
+                {savingCanteen ? "Creating…" : adding ? "Create Canteen" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Timings modal */}
+      {timingsCanteen && (
+        <div className="modal-overlay" onClick={() => setTimingsCanteen(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>Operating Hours — {timingsCanteen.name}</h3>
+              <button onClick={() => setTimingsCanteen(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {timings.map((t, i) => (
+                <div key={t.day} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "0.5rem", alignItems: "center", padding: "0.5rem", background: "var(--surface-2)", borderRadius: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.82rem" }}>{t.day}</span>
+                  <div>
+                    <label className="form-label" style={{ marginBottom: "0.2rem" }}>Opens</label>
+                    <input className="form-input" type="time" value={t.opens} disabled={!t.active} onChange={e => setTimings(prev => prev.map((r, j) => j === i ? { ...r, opens: e.target.value } : r))} />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ marginBottom: "0.2rem" }}>Closes</label>
+                    <input className="form-input" type="time" value={t.closes} disabled={!t.active} onChange={e => setTimings(prev => prev.map((r, j) => j === i ? { ...r, closes: e.target.value } : r))} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+                    <label className="form-label" style={{ marginBottom: "0.2rem" }}>Open</label>
+                    <label className="toggle-switch" style={{ transform: "scale(1.1)" }}>
+                      <input type="checkbox" checked={t.active} onChange={e => setTimings(prev => prev.map((r, j) => j === i ? { ...r, active: e.target.checked } : r))} />
+                      <span className="toggle-track" />
+                    </label>
+                  </div>
+                </div>
+              ))}
+              <button
+                className="btn btn-primary btn-full"
+                style={{ marginTop: "0.5rem" }}
+                onClick={() => { setTimingsSaved(true); setTimeout(() => setTimingsSaved(false), 2000); }}
+              >
+                {timingsSaved ? "✓ Saved!" : "Save Hours"}
               </button>
             </div>
           </div>
@@ -1251,4 +1372,93 @@ interface PaymentRecord {
   transaction_ref: string | null; notes: string | null; created_at: string;
 }
 
+// ─── Account / Change Password ────────────────────────────────────────────────
+function AccountSection() {
+  const { session } = useAuth();
+  const [newPwd,     setNewPwd]     = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPwd,    setShowPwd]    = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [msg,        setMsg]        = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const handleChange = async () => {
+    setMsg(null);
+    if (!newPwd)              { setMsg({ type: "error", text: "Please enter a new password." }); return; }
+    if (newPwd.length < 8)    { setMsg({ type: "error", text: "Password must be at least 8 characters." }); return; }
+    if (newPwd !== confirmPwd){ setMsg({ type: "error", text: "Passwords do not match." }); return; }
+    if (!session?.access_token){ setMsg({ type: "error", text: "You are not logged in. Please refresh." }); return; }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ password: newPwd }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ type: "error", text: data.error || "Failed to update password." });
+      } else {
+        setMsg({ type: "success", text: "Password updated successfully!" });
+        setNewPwd("");
+        setConfirmPwd("");
+      }
+    } catch {
+      setMsg({ type: "error", text: "Network error — please try again." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="page-content">
+      <div className="page-header"><h2>My Account</h2></div>
+      <div className="card" style={{ maxWidth: 440 }}>
+        <h3 style={{ marginBottom: "1rem", fontSize: "0.9rem", fontWeight: 700 }}>Change Password</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div>
+            <label className="form-label">New Password <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span></label>
+            <div style={{ position: "relative" }}>
+              <input
+                className="form-input"
+                type={showPwd ? "text" : "password"}
+                value={newPwd}
+                onChange={e => setNewPwd(e.target.value)}
+                placeholder="Enter new password"
+                autoComplete="new-password"
+                style={{ paddingRight: "2.5rem" }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd(v => !v)}
+                style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}
+              >
+                {showPwd ? "🙈" : "👁️"}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="form-label">Confirm New Password</label>
+            <input
+              className="form-input"
+              type={showPwd ? "text" : "password"}
+              value={confirmPwd}
+              onChange={e => setConfirmPwd(e.target.value)}
+              placeholder="Re-enter new password"
+              autoComplete="new-password"
+            />
+          </div>
+          {msg && (
+            <p style={{ fontSize: "0.85rem", color: msg.type === "success" ? "var(--green)" : "var(--red)", margin: 0 }}>
+              {msg.type === "success" ? "✓ " : "⚠ "}{msg.text}
+            </p>
+          )}
+          <button className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.5rem 1.5rem" }} onClick={handleChange} disabled={saving}>
+            {saving ? "Updating…" : "Update Password"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 

@@ -866,7 +866,38 @@ function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: bool
   const [phone, setPhone] = useState("+91 90000 00000");
   const [saved, setSaved] = useState(false);
 
+  // Operating hours — editable, stored in localStorage
+  type HourRow = { day: string; opens: string; closes: string; active: boolean };
+  const HOURS_KEY = "vendor_operating_hours";
+  const DEFAULT_HOURS: HourRow[] = [
+    { day: "Monday – Friday", opens: "07:30", closes: "21:00", active: true },
+    { day: "Saturday",        opens: "08:00", closes: "17:00", active: true },
+    { day: "Sunday",          opens: "08:00", closes: "17:00", active: false },
+  ];
+  const [hours, setHours] = useState<HourRow[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_HOURS;
+    try { return JSON.parse(localStorage.getItem(HOURS_KEY) || "null") ?? DEFAULT_HOURS; }
+    catch { return DEFAULT_HOURS; }
+  });
+  const [hoursSaved, setHoursSaved] = useState(false);
+
+  const saveHours = () => {
+    localStorage.setItem(HOURS_KEY, JSON.stringify(hours));
+    setHoursSaved(true);
+    setTimeout(() => setHoursSaved(false), 2000);
+  };
+
   const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  // Format HH:MM to display as "7:30 AM"
+  const fmt = (t: string) => {
+    if (!t) return "—";
+    const [hStr, mStr] = t.split(":");
+    const h = parseInt(hStr, 10), m = parseInt(mStr, 10);
+    const ampm = h < 12 ? "AM" : "PM";
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+  };
 
   return (
     <div className="page-content">
@@ -913,24 +944,48 @@ function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: bool
 
       <div className="card">
         <h3 style={{ marginBottom: "1rem", fontSize: "0.9rem", fontWeight: 700 }}>Operating Hours</h3>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>DAY</th><th>OPENS</th><th>CLOSES</th><th>STATUS</th></tr></thead>
-            <tbody>
-              {[
-                { day: "Monday – Friday", opens: "7:30 AM", closes: "9:00 PM", active: true },
-                { day: "Saturday",        opens: "8:00 AM", closes: "5:00 PM", active: true },
-                { day: "Sunday",          opens: "—",       closes: "—",       active: false },
-              ].map(r => (
-                <tr key={r.day}>
-                  <td style={{ fontWeight: 600 }}>{r.day}</td>
-                  <td>{r.opens}</td>
-                  <td>{r.closes}</td>
-                  <td><span className={`tag ${r.active ? "tag-green" : "tag-gray"}`}>{r.active ? "Open" : "Closed"}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {hours.map((row, i) => (
+            <div key={row.day} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "0.5rem", alignItems: "center", padding: "0.5rem", background: "var(--surface-2)", borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: "0.82rem" }}>{row.day}</div>
+                {row.active && <div style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{fmt(row.opens)} – {fmt(row.closes)}</div>}
+                {!row.active && <div style={{ fontSize: "0.72rem", color: "var(--red)" }}>Closed</div>}
+              </div>
+              <div>
+                <label className="form-label" style={{ marginBottom: "0.2rem" }}>Opens</label>
+                <input
+                  className="form-input"
+                  type="time"
+                  value={row.opens}
+                  disabled={!row.active}
+                  onChange={e => setHours(prev => prev.map((r, j) => j === i ? { ...r, opens: e.target.value } : r))}
+                  style={{ opacity: row.active ? 1 : 0.4 }}
+                />
+              </div>
+              <div>
+                <label className="form-label" style={{ marginBottom: "0.2rem" }}>Closes</label>
+                <input
+                  className="form-input"
+                  type="time"
+                  value={row.closes}
+                  disabled={!row.active}
+                  onChange={e => setHours(prev => prev.map((r, j) => j === i ? { ...r, closes: e.target.value } : r))}
+                  style={{ opacity: row.active ? 1 : 0.4 }}
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+                <label className="form-label" style={{ marginBottom: "0.2rem" }}>Open</label>
+                <label className="toggle-switch" style={{ transform: "scale(1.05)" }}>
+                  <input type="checkbox" checked={row.active} onChange={e => setHours(prev => prev.map((r, j) => j === i ? { ...r, active: e.target.checked } : r))} />
+                  <span className="toggle-track" />
+                </label>
+              </div>
+            </div>
+          ))}
+          <button className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.5rem 1.5rem", marginTop: "0.25rem" }} onClick={saveHours}>
+            {hoursSaved ? "✓ Saved!" : "Save Hours"}
+          </button>
         </div>
       </div>
     </div>

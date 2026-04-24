@@ -7,8 +7,16 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabase-client'
 // Stable singleton — safe outside the component tree
 const supabase = getSupabaseClient()
 
-// 20-day inactivity threshold (ms)
-const INACTIVITY_LIMIT_MS = 20 * 24 * 60 * 60 * 1000
+// 30-day inactivity threshold (ms)
+const INACTIVITY_LIMIT_MS = 30 * 24 * 60 * 60 * 1000
+
+/** Races a promise against a timeout. Throws if the timeout fires first. */
+function withTimeout<T>(p: Promise<T>, ms = 15000, msg = 'Request timed out — please check your connection and try again.'): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ])
+}
 const LAST_ACTIVITY_KEY = 'canteen_last_activity'
 
 function recordActivity() {
@@ -41,6 +49,7 @@ export interface AuthUser {
   role: UserRole
   phone?: string | null
   walletBalance: number
+  mustChangePassword?: boolean
 }
 
 interface AuthContextValue {
@@ -76,17 +85,20 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 // Helpers
 // ============================================================
 async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('name, role, wallet_balance, phone')
-    .eq('id', userId)
-    .single()
-
-  return {
-    displayName: data?.name ?? null,
-    role: (data?.role as UserRole) ?? 'user',
-    walletBalance: data?.wallet_balance ?? 0,
-    phone: data?.phone ?? null,
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Profile fetch timed out')), 8000)
+    )
+    const query = supabase.from('profiles').select('name, role, wallet_balance, phone').eq('id', userId).single()
+    const { data } = await Promise.race([query, timeoutPromise])
+    return {
+      displayName: data?.name ?? null,
+      role: (data?.role as UserRole) ?? 'user',
+      walletBalance: data?.wallet_balance ?? 0,
+      phone: data?.phone ?? null,
+    }
+  } catch {
+    return { role: 'user', walletBalance: 0 }
   }
 }
 
@@ -149,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(async ({ data: { session } }) => {
         clearTimeout(fallback)
 
-        // 20-day inactivity check — if the user hasn't been active, sign them out
+        // 30-day inactivity check — if the user hasn't been active, sign them out
         if (session?.user && isInactive()) {
           await supabase.auth.signOut()
           setLoading(false)
@@ -161,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session)
         if (session?.user) {
           const profile = await fetchProfile(session.user.id)
-          setUser(buildAuthUser(session.user.id, session.user.email, profile))
+          const mustChangePassword = session.user.user_metadata?.must_change_password === true
+          setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword }))
           // Register session (non-blocking — don't block UI on this)
           registerSession(session.access_token).catch(() => {})
         }
@@ -180,7 +193,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
-        setUser(buildAuthUser(session.user.id, session.user.email, profile))
+        const mustChangePassword = session.user.user_metadata?.must_change_password === true
+        setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword }))
         registerSession(session.access_token).catch(() => {})
       } else {
         setUser(null)
@@ -250,13 +264,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function sendEmailOtp(email: string) {
     if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
-    const redirectTo = typeof window !== 'undefined'
-      ? `${window.location.origin}/auth/confirm`
-      : undefined
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo },
-    })
+    const { error } = await withTimeout(
+      supabase.auth.signInWithOtp({
+        email,
+        options: {
+          // No redirect — user enters the 6-digit OTP only.
+          // This avoids magic-link expiry issues on different devices.
+          shouldCreateUser: true,
+        },
+      })
+    )
     if (error) throw error
   }
 
@@ -267,11 +284,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
       return
     }
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email',
-    })
+    const { error } = await withTimeout(
+      supabase.auth.verifyOtp({ email, token, type: 'email' })
+    )
     if (error) throw error
   }
 
@@ -297,7 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* WhatsApp API unavailable — continue to SMS */ }
 
     // 2. Supabase sends SMS via Twilio Verify (creates or resends same verification code)
-    const { error } = await supabase.auth.signInWithOtp({ phone })
+    const { error } = await withTimeout(supabase.auth.signInWithOtp({ phone }))
     if (error) throw error
     channels.push('sms')
 
@@ -310,11 +325,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', undefined, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
       return
     }
-    const { error } = await supabase.auth.verifyOtp({
-      phone,
-      token,
-      type: 'sms',
-    })
+    const { error } = await withTimeout(
+      supabase.auth.verifyOtp({ phone, token, type: 'sms' })
+    )
     if (error) throw error
   }
 
@@ -339,10 +352,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
       return
     }
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password })
+    )
     if (error) throw error
   }
 
@@ -366,9 +378,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const origin = typeof window !== 'undefined'
       ? window.location.origin
       : (process.env.NEXT_PUBLIC_APP_URL ?? '')
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/auth/reset-password`,
-    })
+    const { error } = await withTimeout(
+      supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${origin}/auth/reset-password`,
+      })
+    )
     if (error) throw error
   }
 

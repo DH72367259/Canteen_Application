@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
@@ -16,9 +16,21 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export function createClient() {
-  return createBrowserClient(
+  return createSupabaseClient(
     SUPABASE_URL || 'https://placeholder.supabase.co',
-    SUPABASE_ANON_KEY || 'placeholder-anon-key'
+    SUPABASE_ANON_KEY || 'placeholder-anon-key',
+    {
+      auth: {
+        // Implicit flow: magic links & OAuth tokens arrive in the URL hash.
+        // This works perfectly across any browser or device — no PKCE code
+        // verifier needs to be present on the receiving device.
+        flowType: 'implicit',
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        storageKey: 'canteen_auth_v2',
+      },
+    }
   )
 }
 
