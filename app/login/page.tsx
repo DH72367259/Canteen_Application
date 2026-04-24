@@ -159,7 +159,11 @@ function LoginContent() {
   // ── Student password sign-in (returning users, both phone & email tabs) ───
   async function handleSignIn() {
     const id = (tab === "phone" ? identifier : email).trim();
-    if (!id)       { setError("Enter your email address or phone number."); return; }
+    if (tab === "phone") {
+      if (id.length < 10) { setError("Enter a valid 10-digit mobile number."); return; }
+    } else {
+      if (!id) { setError("Enter your email address."); return; }
+    }
     if (!password) { setError("Enter your password."); return; }
     setBusy(true); setError(null);
     try {
@@ -411,8 +415,11 @@ function LoginContent() {
         {tab === "phone" && !showSetup && !registerMode && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div className="form-group">
-              <label className="form-label">Email or Phone Number</label>
-              <input className="form-input" type="text" inputMode="email" placeholder="Email address or 10-digit phone" value={identifier} onChange={e => setIdentifier(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="username" />
+              <label className="form-label">Mobile Number</label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
+                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={identifier} onChange={e => setIdentifier(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="tel-national" />
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
