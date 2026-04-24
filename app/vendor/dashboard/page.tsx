@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import type { CanteenOrder } from "@/types/canteen";
 
 type BinStatus = "preparing" | "completed" | "delayed" | "empty";
 
@@ -15,27 +16,12 @@ interface Bin {
   slot: string | null;
   items: string | null;
   otp: string | null;
+  rawOrderId?: string;
+  binLabel?: string | null;
+  binColor?: string | null;
 }
 
-interface SlotStats { slot: string; total: number; preparing: number; completed: number; delayed: number; }
 
-const INITIAL_BINS: Bin[] = [
-  { id: "b1", number: 1, status: "completed", orderId: "ORD-103", customerName: "Ananya S.", slot: "12:30 PM", items: "Thali Veg", otp: "7821", },
-  { id: "b2", number: 2, status: "preparing", orderId: "ORD-104", customerName: "Rajan M.", slot: "1:00 PM", items: "Paneer + Roti ×2", otp: "4291", },
-  { id: "b3", number: 3, status: "preparing", orderId: "ORD-105", customerName: "Meera K.", slot: "1:00 PM", items: "Dal Rice, Papad", otp: "9034", },
-  { id: "b4", number: 4, status: "delayed", orderId: "ORD-102", customerName: "Dev P.", slot: "12:30 PM", items: "Chicken Curry + Rice", otp: "3318", },
-  { id: "b5", number: 5, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null, },
-  { id: "b6", number: 6, status: "preparing", orderId: "ORD-106", customerName: "Priya T.", slot: "1:00 PM", items: "Veg Thali", otp: "5523", },
-  { id: "b7", number: 7, status: "completed", orderId: "ORD-101", customerName: "Amir H.", slot: "12:30 PM", items: "Idli ×4, Sambhar", otp: "1174", },
-  { id: "b8", number: 8, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null, },
-];
-
-const SLOT_STATS: SlotStats[] = [
-  { slot: "12:30 PM", total: 8, preparing: 1, completed: 5, delayed: 2 },
-  { slot: "1:00 PM", total: 12, preparing: 5, completed: 3, delayed: 1 },
-  { slot: "1:30 PM", total: 6, preparing: 0, completed: 0, delayed: 0 },
-  { slot: "2:00 PM", total: 4, preparing: 0, completed: 0, delayed: 0 },
-];
 
 const NAV_ITEMS = [
   { id: "live", icon: "📊", label: "Live Orders" },
@@ -49,10 +35,11 @@ const NAV_ITEMS = [
 
 export default function VendorDashboard() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, session } = useAuth();
   const [activeNav, setActiveNav] = useState("live");
-  const [activeSlot, setActiveSlot] = useState("1:00 PM");
-  const [bins, setBins] = useState<Bin[]>(INITIAL_BINS);
+  const [activeSlot, setActiveSlot] = useState("all");
+  const [bins, setBins] = useState<Bin[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -103,14 +90,81 @@ export default function VendorDashboard() {
     }
   };
 
-  // Auto-refresh every 5s (mock: just simulate a new order occasionally)
+  // Fetch real orders from DB and map to bins
+  const fetchOrders = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token) return;
+    try {
+      const res = await fetch("/api/orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const { orders } = await res.json();
+      const active = (orders as CanteenOrder[]).filter(
+        (o) => !["collected", "completed", "cancelled"].includes(o.rawStatus ?? o.status)
+      );
+      const mapped: Bin[] = active.map((o, idx) => ({
+        id: o.id,
+        number: parseInt(o.binLabel ?? String(idx + 1), 10) || idx + 1,
+        status: o.rawStatus === "ready_for_pickup" || o.rawStatus === "placed_in_bin"
+          ? "completed"
+          : o.rawStatus === "placed" || o.rawStatus === "confirmed" || o.rawStatus === "preparing"
+            ? "preparing"
+            : "empty",
+        orderId: o.id.substring(0, 8).toUpperCase(),
+        customerName: o.customerName || "Customer",
+        slot: o.slotLabel ?? o.slotName ?? null,
+        items: o.items.map((i) => `${i.name} ×${i.quantity}`).join(", ") || null,
+        otp: o.otp ?? null,
+        binLabel: o.binLabel ?? null,
+        binColor: o.binColor ?? null,
+        rawOrderId: o.id,
+      }));
+      // Fill remaining slots as empty bins
+      const maxBin = 8;
+      const usedNumbers = new Set(mapped.map((b) => b.number));
+      for (let n = 1; n <= maxBin; n++) {
+        if (!usedNumbers.has(n)) {
+          mapped.push({ id: `empty-${n}`, number: n, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null });
+        }
+      }
+      mapped.sort((a, b) => a.number - b.number);
+      setBins(mapped);
+    } catch {
+      // silently ignore
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, [session?.access_token]);
+
+  const handleMarkReady = useCallback(async (rawOrderId: string) => {
+    const token = session?.access_token;
+    if (!token) return;
+    await fetch(`/api/orders/${rawOrderId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: "ready_for_pickup" }),
+    }).catch(() => {});
+    await fetchOrders();
+  }, [session?.access_token, fetchOrders]);
+
+  const handleMarkCollected = useCallback(async (rawOrderId: string) => {
+    const token = session?.access_token;
+    if (!token) return;
+    await fetch(`/api/orders/${rawOrderId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: "collected" }),
+    }).catch(() => {});
+    await fetchOrders();
+  }, [session?.access_token, fetchOrders]);
+
+  // Auto-refresh every 15 seconds
   useEffect(() => {
-    refreshRef.current = setInterval(() => {
-      // In real app: fetch /api/vendor/orders and update bins
-      // For demo, do nothing
-    }, 5000);
+    fetchOrders();
+    refreshRef.current = setInterval(fetchOrders, 15_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
-  }, []);
+  }, [fetchOrders]);
 
   const handleBinClick = (bin: Bin) => {
     if (bin.status === "empty") return;
@@ -120,20 +174,28 @@ export default function VendorDashboard() {
     setOtpSuccess(false);
   };
 
-  const handleOtpVerify = () => {
+  const handleOtpVerify = async () => {
     if (!selectedBin) return;
     if (otpInput !== selectedBin.otp) {
       setOtpError("Incorrect OTP. Try again.");
       return;
     }
-    setBins(prev => prev.map(b => b.id === selectedBin.id ? { ...b, status: "completed" } : b));
     setOtpSuccess(true);
+    if (selectedBin.rawOrderId) {
+      await handleMarkCollected(selectedBin.rawOrderId);
+    } else {
+      setBins(prev => prev.map(b => b.id === selectedBin.id ? { ...b, status: "completed" } : b));
+    }
     setTimeout(() => setSelectedBin(null), 1200);
   };
 
   const handleLogout = async () => { await logout(); router.push("/login"); };
 
-  const slotBins = bins.filter(b => !b.slot || b.slot === activeSlot || b.status === "empty");
+  const slotBins = activeSlot === "all"
+    ? bins
+    : bins.filter(b => !b.slot || b.slot === activeSlot || b.status === "empty");
+
+  const uniqueSlots = Array.from(new Set(bins.filter(b => b.slot).map(b => b.slot as string)));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
 
   return (
@@ -177,7 +239,7 @@ export default function VendorDashboard() {
             <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>
               {NAV_ITEMS.find(n => n.id === activeNav)?.label}
             </h1>
-            <div className="topbar-sub">Auto-refreshes every 5 seconds · Last updated just now</div>
+            <div className="topbar-sub">Auto-refreshes every 15 seconds</div>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -221,18 +283,19 @@ export default function VendorDashboard() {
 
             {/* Slot tabs */}
             <div className="slot-tabs">
-              {SLOT_STATS.map(s => (
+              <button
+                className={`slot-tab ${activeSlot === "all" ? "active" : ""}`}
+                onClick={() => setActiveSlot("all")}
+              >
+                All Bins
+              </button>
+              {uniqueSlots.map(s => (
                 <button
-                  key={s.slot}
-                  className={`slot-tab ${activeSlot === s.slot ? "active" : ""}`}
-                  onClick={() => setActiveSlot(s.slot)}
+                  key={s}
+                  className={`slot-tab ${activeSlot === s ? "active" : ""}`}
+                  onClick={() => setActiveSlot(s)}
                 >
-                  {s.slot}
-                  {s.total > 0 && (
-                    <span style={{ marginLeft: "0.35rem", background: activeSlot === s.slot ? "rgba(255,255,255,0.25)" : "var(--border)", borderRadius: 999, padding: "0.05rem 0.4rem", fontSize: "0.7rem" }}>
-                      {s.total}
-                    </span>
-                  )}
+                  {s}
                 </button>
               ))}
             </div>
@@ -246,6 +309,9 @@ export default function VendorDashboard() {
             </div>
 
             {/* Bin grid */}
+            {ordersLoading ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>Loading live orders…</div>
+            ) : (
             <div className="bin-grid">
               {slotBins.map(bin => (
                 <div
@@ -262,9 +328,17 @@ export default function VendorDashboard() {
                       <div className="bin-order-id">{bin.orderId}</div>
                       <div className="bin-customer">{bin.customerName}</div>
                       <div className="bin-slot">{bin.slot} · {bin.items}</div>
-                      {bin.status !== "completed" && (
-                        <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.7 }}>
-                          {bin.status === "preparing" ? "Tap to verify OTP" : "⚠ Delayed"}
+                      {bin.status === "preparing" && bin.rawOrderId && (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
+                          style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                        >
+                          ✓ Mark Ready
+                        </button>
+                      )}
+                      {bin.status === "completed" && (
+                        <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
+                          Ready for pickup — tap to verify OTP
                         </div>
                       )}
                     </>
@@ -274,6 +348,7 @@ export default function VendorDashboard() {
                 </div>
               ))}
             </div>
+            )}
           </>
         )}
 

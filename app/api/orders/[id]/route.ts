@@ -19,8 +19,8 @@ export async function GET(
       return Response.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Verify user owns this order or is admin
-    if (order.customerId !== context.uid && context.role !== 'canteen_admin' && context.role !== 'super_admin') {
+    // Verify user owns this order or is staff
+    if (order.user_id !== context.uid && context.role !== 'canteen_admin' && context.role !== 'super_admin' && context.role !== 'vendor') {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 

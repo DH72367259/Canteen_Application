@@ -33,6 +33,10 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
     canteenName:  (row.canteens as Record<string, unknown> | null)?.name
                     ? String((row.canteens as Record<string, unknown>).name) : undefined,
     paymentId:    row.payment_id ? String(row.payment_id) : undefined,
+    otp:          row.otp ? String(row.otp) : undefined,
+    binLabel:     row.bin_label ? String(row.bin_label) : undefined,
+    binColor:     row.bin_color ? String(row.bin_color) : undefined,
+    slotLabel:    row.slot_label ? String(row.slot_label) : undefined,
   };
 }
 

@@ -39,6 +39,11 @@ export type CanteenOrder = {
   paymentId?: string;
   slotName?: string;
   rawStatus?: string;
+  // Bin & OTP fields (set when order is placed via /api/orders/place)
+  otp?: string;
+  binLabel?: string;
+  binColor?: string;
+  slotLabel?: string;
 };
 
 export type CreateOrderRequest = {

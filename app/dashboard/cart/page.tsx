@@ -35,7 +35,7 @@ function loadRazorpay(): Promise<boolean> {
 function CartContent() {
   const router  = useRouter();
   const params  = useSearchParams();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const canteenId   = params.get("canteenId")  || "";
   const canteenName = params.get("canteenName") ? decodeURIComponent(params.get("canteenName")!) : "Canteen";
@@ -72,11 +72,46 @@ function CartContent() {
   }
 
   async function finaliseOrder(paymentId: string) {
-    const otp      = String(Math.floor(1000 + Math.random() * 9000));
-    const bin      = `Bin ${Math.floor(Math.random() * 8) + 1}`;
-    const binCode  = `#${["RED", "BLU", "GRN", "YEL"][Math.floor(Math.random() * 4)]}0${Math.floor(Math.random() * 8) + 1}`;
-    const orderId  = `ORD-${Date.now().toString(36).toUpperCase()}`;
     const slotLabel = SLOTS.find(s => s.id === slot)?.label || "";
+
+    // Create the order in Supabase via API
+    let orderId: string;
+    let otp: string;
+    let bin: string;
+    let binCode: string;
+
+    try {
+      const res = await fetch("/api/orders/place", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          canteenId,
+          cartItems: cart,
+          total: payable,
+          slotLabel,
+          paymentId,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.orderId) {
+        console.error("Place order error:", json);
+        setError("Failed to confirm order. Please contact canteen staff.");
+        setBusy(false);
+        return;
+      }
+      orderId = json.orderId;
+      otp = json.otp;
+      bin = `Bin ${json.binLabel}`;
+      binCode = `#${json.binColor?.toUpperCase?.().substring(0, 3) ?? "ORG"}${json.binLabel}`;
+    } catch (err) {
+      console.error("Place order network error:", err);
+      setError("Network error placing order. Please try again.");
+      setBusy(false);
+      return;
+    }
 
     const orderData = {
       id: orderId, bin, binCode, otp, slot: slotLabel,

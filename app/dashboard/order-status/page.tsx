@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 interface OrderData {
   id: string;
@@ -39,6 +40,7 @@ function getBinColor(binCode?: string) {
 
 export default function OrderStatusPage() {
   const router = useRouter();
+  const { session } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [phase, setPhase] = useState<Phase>("preparing");
   const [countdown, setCountdown] = useState(3);
@@ -46,6 +48,7 @@ export default function OrderStatusPage() {
     const d = new Date(Date.now() + 15 * 60 * 1000);
     return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
   });
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load active order from localStorage
   useEffect(() => {
@@ -60,21 +63,52 @@ export default function OrderStatusPage() {
     }
   }, [router]);
 
-  // Demo: auto-progress status for simulation (poll every 15s in prod)
+  // Poll real order status from DB every 10 seconds
   useEffect(() => {
-    if (!order) return;
-    // In production: poll /api/orders/[id] every 15 seconds
-    // For now: auto-advance from preparing → ready after 20s (demo only)
-    if (phase === "preparing") {
-      const t = setTimeout(() => {
-        setPhase("ready");
-        const updated = { ...order, status: "ready_for_pickup" };
+    if (!order?.id || phase === "collected") return;
+    // Only poll if we have a real Supabase UUID (not a local ORD-xxx id)
+    const isRealId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(order.id);
+    if (!isRealId) return;
+
+    const token = session?.access_token;
+    if (!token) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/orders/${order.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const { order: dbOrder } = await res.json();
+        if (!dbOrder) return;
+
+        const newPhase = toPhase(dbOrder.status || "placed");
+        const updated: OrderData = {
+          ...order,
+          status: dbOrder.status,
+          otp: dbOrder.otp ?? order.otp,
+          bin: dbOrder.bin_label ? `Bin ${dbOrder.bin_label}` : order.bin,
+          binCode: dbOrder.bin_color
+            ? `#${dbOrder.bin_color.substring(0, 3).toUpperCase()}${dbOrder.bin_label ?? ""}`
+            : order.binCode,
+        };
         setOrder(updated);
         localStorage.setItem("canteen_active_order", JSON.stringify(updated));
-      }, 20_000);
-      return () => clearTimeout(t);
-    }
-  }, [order, phase]);
+        setPhase(newPhase);
+
+        if (newPhase === "collected") {
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+      } catch {
+        // silently ignore poll errors
+      }
+    };
+
+    poll(); // immediate first poll
+    pollRef.current = setInterval(poll, 10_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, session?.access_token, phase]);
 
   // Countdown after "collected" → redirect home
   useEffect(() => {
@@ -88,13 +122,25 @@ export default function OrderStatusPage() {
     return () => clearTimeout(t);
   }, [phase, countdown, router]);
 
-  const handleMarkCollected = useCallback(() => {
+  const handleMarkCollected = useCallback(async () => {
     if (!order) return;
+    // Try to update DB status for real orders
+    const isRealId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(order.id);
+    if (isRealId && session?.access_token) {
+      await fetch(`/api/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ status: "collected" }),
+      }).catch(() => {});
+    }
     const updated = { ...order, status: "collected" };
     localStorage.setItem("canteen_active_order", JSON.stringify(updated));
     setOrder(updated);
     setPhase("collected");
-  }, [order]);
+  }, [order, session?.access_token]);
 
   if (!order) {
     return <div className="loading-screen"><div className="spinner" /></div>;
