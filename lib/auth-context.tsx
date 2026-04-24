@@ -52,6 +52,8 @@ interface AuthContextValue {
   verifyEmailOtp: (email: string, token: string) => Promise<void>
   sendPhoneOtp: (phone: string) => Promise<void>
   verifyPhoneOtp: (phone: string, token: string) => Promise<void>
+  linkEmail: (email: string) => Promise<void>
+  verifyEmailLink: (email: string, token: string) => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<void>
   signUp: (
     email: string,
@@ -200,8 +202,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function sendPhoneOtp(phone: string) {
     if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
-    // Client demo number — no SMS provider needed
-    if (phone === '+917019986046') return
     const { error } = await supabase.auth.signInWithOtp({ phone })
     if (error) throw error
   }
@@ -212,16 +212,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', undefined, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
       return
     }
-    // Client demo number — accept static OTP 123456
-    if (phone === '+917019986046' && token === '123456') {
-      setUser(buildAuthUser('demo-user-phone', undefined, { role: 'user', displayName: 'Demo Student', phone, walletBalance: 100 }))
-      return
-    }
-    if (phone === '+917019986046') throw new Error('Invalid OTP. Use 123456 for demo.')
     const { error } = await supabase.auth.verifyOtp({
       phone,
       token,
       type: 'sms',
+    })
+    if (error) throw error
+  }
+
+  async function linkEmail(email: string) {
+    const { error } = await supabase.auth.updateUser({ email })
+    if (error) throw error
+  }
+
+  async function verifyEmailLink(email: string, token: string) {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email_change',
     })
     if (error) throw error
   }
@@ -271,6 +279,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verifyEmailOtp,
         sendPhoneOtp,
         verifyPhoneOtp,
+        linkEmail,
+        verifyEmailLink,
         signInWithPassword,
         signUp,
         resetPassword,

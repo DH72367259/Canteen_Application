@@ -63,13 +63,13 @@ function Divider({ label }: { label: string }) {
 function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user, sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, signInWithPassword, resetPassword } = useAuth();
+  const { user, sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, linkEmail, verifyEmailLink, signInWithPassword, resetPassword } = useAuth();
 
   type Tab = "phone" | "email" | "password" | "forgot";
   const roleParam = params.get("role") || "user";
   const [tab, setTab] = useState<Tab>(roleParam === "user" ? "phone" : "password");
 
-  const [phone, setPhone]   = useState("7019986046");
+  const [phone, setPhone]   = useState("");
   const [email, setEmail]   = useState(
     roleParam === "vendor"        ? "vendor@canteen.app"  :
     roleParam === "super_admin"   ? "admin@canteen.app"   :
@@ -86,9 +86,25 @@ function LoginContent() {
   const [busy,          setBusy]          = useState(false);
   const [error,         setError]         = useState<string | null>(null);
   const [info,          setInfo]          = useState<string | null>(null);
+  const [dualVerifyStep, setDualVerifyStep] = useState<"idle" | "email_verify" | "done">("idle");
+  const [dualEmail,     setDualEmail]     = useState("");
 
   useEffect(() => {
     if (!user) return;
+
+    // Phone login without email: first-time users must verify email too
+    if (tab === "phone" && !user.email && dualVerifyStep === "idle") {
+      setDualVerifyStep("email_verify");
+      setOtpSentTo(null);
+      setOtp("");
+      setError(null);
+      setInfo(null);
+      return;
+    }
+
+    // Don't redirect while email verification is still in progress
+    if (dualVerifyStep === "email_verify") return;
+
     const next = params.get("next");
     if (next) { router.replace(next); return; }
     const role = user.role;
@@ -96,7 +112,7 @@ function LoginContent() {
     else if (role === "super_admin")                   router.replace("/admin/dashboard");
     else if (role === "worker")                        router.replace("/worker/dashboard");
     else                                               router.replace("/dashboard");
-  }, [user, router, params]);
+  }, [user, router, params, tab, dualVerifyStep]);
 
   function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); }
   function switchTab(t: Tab) { clearState(); setTab(t); }
@@ -124,6 +140,33 @@ function LoginContent() {
       await verifyPhoneOtp(otpSentTo, otp);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Invalid OTP.");
+      setBusy(false);
+    }
+  }
+
+  // Dual email verification (for first-time phone users)
+  async function handleLinkEmail() {
+    if (!dualEmail) { setError("Enter your email address."); return; }
+    setBusy(true); clearState();
+    try {
+      await linkEmail(dualEmail);
+      setOtpTarget("email");
+      setOtpSentTo(dualEmail);
+      setInfo(`Verification code sent to ${dualEmail}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send verification code.");
+    } finally { setBusy(false); }
+  }
+
+  async function handleVerifyEmailLink() {
+    if (otp.length < 6) { setError("Enter the 6-digit code from your email."); return; }
+    if (!otpSentTo) return;
+    setBusy(true); setError(null);
+    try {
+      await verifyEmailLink(otpSentTo, otp);
+      setDualVerifyStep("done");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Invalid verification code.");
       setBusy(false);
     }
   }
@@ -188,7 +231,8 @@ function LoginContent() {
           <p>Smart Institutional Dining</p>
         </div>
 
-        {/* Tab switcher */}
+        {/* Tab switcher — hidden during email verification step */}
+        {dualVerifyStep !== "email_verify" && (
         <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
           {(["phone", "email", "password"] as Tab[]).map(t => (
             <button key={t} onClick={() => switchTab(t)} style={{ flex: 1, padding: "0.55rem 0.25rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === t ? "var(--orange)" : "transparent", color: tab === t ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>
@@ -196,6 +240,7 @@ function LoginContent() {
             </button>
           ))}
         </div>
+        )}
 
         {/* ── Phone OTP ──────────────── */}
         {tab === "phone" && !otpSentTo && (
@@ -217,9 +262,6 @@ function LoginContent() {
         {tab === "phone" && otpSentTo && otpTarget === "phone" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
-            {otpSentTo === "+917019986046" && (
-              <p style={{ fontSize: "0.75rem", color: "var(--ink-3)", textAlign: "center" }}>Demo: enter <strong>123456</strong> to sign in</p>
-            )}
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
             <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyPhoneOtp} style={{ padding: "0.8rem" }}>
@@ -227,6 +269,45 @@ function LoginContent() {
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
               ← Change number
+            </button>
+          </div>
+        )}
+
+        {/* ── Dual Email Verification (first-time phone users) ────── */}
+        {tab === "phone" && dualVerifyStep === "email_verify" && !otpSentTo && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
+              <p style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--ink-1)" }}>✅ Phone verified!</p>
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginTop: 4 }}>Enter your email to complete registration</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input className="form-input" type="email" placeholder="you@example.com"
+                value={dualEmail} onChange={e => setDualEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLinkEmail()} />
+            </div>
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || !dualEmail}
+              onClick={handleLinkEmail} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending…" : "Send Email OTP →"}
+            </button>
+          </div>
+        )}
+
+        {tab === "phone" && dualVerifyStep === "email_verify" && otpSentTo && otpTarget === "email" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center" }}>Enter the 6-digit code sent to {otpSentTo}</p>
+            <OtpInput value={otp} onChange={setOtp} length={6} />
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6}
+              onClick={handleVerifyEmailLink} style={{ padding: "0.8rem" }}>
+              {busy ? "Verifying…" : "Complete Registration →"}
+            </button>
+            <button className="btn btn-ghost btn-full"
+              onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }}
+              style={{ fontSize: "0.82rem" }}>
+              ← Change email
             </button>
           </div>
         )}
