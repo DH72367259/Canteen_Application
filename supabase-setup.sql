@@ -270,6 +270,72 @@ alter table active_sessions enable row level security;
 -- No user-facing policies — all access via service role in API routes only.
 
 -- ============================================================
+-- Canteen payment / bank details (for admin settlements)
+-- ============================================================
+create table if not exists canteen_bank_details (
+  id            uuid primary key default gen_random_uuid(),
+  canteen_id    uuid references canteens(id) on delete cascade unique,
+  account_name  text not null default '',
+  account_no    text not null default '',
+  ifsc_code     text not null default '',
+  bank_name     text,
+  upi_id        text,
+  gpay_number   text,
+  updated_at    timestamptz default now(),
+  created_at    timestamptz default now()
+);
+alter table canteen_bank_details enable row level security;
+create policy "bank_admin_only" on canteen_bank_details
+  for all using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+  );
+
+-- ============================================================
+-- Platform charges config (admin-editable, one row)
+-- ============================================================
+create table if not exists platform_charges (
+  id           uuid primary key default gen_random_uuid(),
+  charge_pct   numeric(5,2) not null default 2.00,   -- % of gross, admin keeps this
+  flat_charge  numeric(8,2) not null default 0.00,   -- flat ₹ per order (0 = disabled)
+  gst_pct      numeric(5,2) not null default 18.00,  -- GST on platform charge itself
+  updated_by   uuid references auth.users,
+  updated_at   timestamptz default now()
+);
+alter table platform_charges enable row level security;
+create policy "charges_admin_only" on platform_charges
+  for all using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+  );
+insert into platform_charges (charge_pct, flat_charge, gst_pct)
+values (2.00, 0.00, 18.00)
+on conflict do nothing;
+
+-- ============================================================
+-- Settlement payments (admin → canteen; each row = one payment transaction)
+-- ============================================================
+create table if not exists settlement_payments (
+  id               uuid primary key default gen_random_uuid(),
+  canteen_id       uuid references canteens(id) on delete cascade,
+  period_start     date not null,
+  period_end       date not null,
+  gross_amount     numeric(10,2) not null default 0,
+  platform_charge  numeric(10,2) not null default 0,
+  gst_on_charge    numeric(10,2) not null default 0,
+  net_payable      numeric(10,2) not null default 0,
+  amount_paid      numeric(10,2) not null,
+  payment_mode     text not null check (payment_mode in ('upi','bank_transfer','cash','other')),
+  transaction_ref  text,
+  notes            text,
+  paid_by          uuid references auth.users,
+  created_at       timestamptz default now()
+);
+alter table settlement_payments enable row level security;
+create policy "settle_admin_only" on settlement_payments
+  for all using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+  );
+
+-- ============================================================
 -- DONE. Now create your admin user:
 --   1. Go to Authentication → Users → Add user
 --   2. Email: admin@canteen.app  Password: admin123  (or any)

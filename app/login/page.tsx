@@ -70,16 +70,8 @@ function LoginContent() {
   const [tab, setTab] = useState<Tab>(roleParam === "user" ? "phone" : "password");
 
   const [phone, setPhone]   = useState("");
-  const [email, setEmail]   = useState(
-    roleParam === "vendor"        ? "vendor@canteen.app"  :
-    roleParam === "super_admin"   ? "admin@canteen.app"   :
-    roleParam === "canteen_admin" ? "canteen@canteen.app" : ""
-  );
-  const [password, setPassword] = useState(
-    roleParam === "vendor"        ? "vendor123"  :
-    roleParam === "super_admin"   ? "admin123"   :
-    roleParam === "canteen_admin" ? "canteen123" : ""
-  );
+  const [email, setEmail]     = useState("");
+  const [password, setPassword] = useState("");
   const [otp,           setOtp]           = useState("");
   const [otpSentTo,     setOtpSentTo]     = useState<string | null>(null);
   const [otpTarget,     setOtpTarget]     = useState<"phone" | "email">("phone");
@@ -245,7 +237,7 @@ function LoginContent() {
         <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
           {(["phone", "email", "password"] as Tab[]).map(t => (
             <button key={t} onClick={() => switchTab(t)} style={{ flex: 1, padding: "0.55rem 0.25rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === t ? "var(--orange)" : "transparent", color: tab === t ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>
-              {t === "phone" ? "📱 Phone" : t === "email" ? "✉️ Email OTP" : "🔑 Password"}
+              {t === "phone" ? "📱 Student (Phone)" : t === "email" ? "📧 Student (Email)" : "🏢 Canteen Login"}
             </button>
           ))}
         </div>
@@ -258,7 +250,7 @@ function LoginContent() {
               <label className="form-label">Mobile Number</label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="7019986046" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
+                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="Enter mobile number" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
               </div>
             </div>
             {error && <p className="error-msg">{error}</p>}

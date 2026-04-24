@@ -60,6 +60,10 @@ export default function SuperAdminDashboard() {
               <strong>📊 Platform Analytics</strong>
               <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>View platform performance metrics</p>
             </Link>
+            <Link href="/system/settlements" style={{ display: "block", padding: "0.75rem", background: "#fff0e0", border: "1px solid #fdba74", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
+              <strong>💸 Settlement Dashboard</strong>
+              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Pay canteens · Track platform charges · View payment history</p>
+            </Link>
           </div>
         </div>
       </section>

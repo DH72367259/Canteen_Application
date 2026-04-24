@@ -33,6 +33,12 @@ export type CanteenOrder = {
   total: number;
   status: OrderStatus;
   createdAt: string;
+  // Extended fields (populated where available)
+  canteenId?: string;
+  canteenName?: string;
+  paymentId?: string;
+  slotName?: string;
+  rawStatus?: string;
 };
 
 export type CreateOrderRequest = {

@@ -13,14 +13,26 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
       }))
     : [];
 
+  const rawStatusMap: Record<string, "received" | "preparing" | "ready" | "completed" | "cancelled"> = {
+    placed: "received", confirmed: "preparing", preparing: "preparing",
+    ready_for_placement: "ready", placed_in_bin: "ready",
+    ready_for_pickup: "ready", collected: "completed", cancelled: "cancelled",
+  };
+  const rawSt = String(row.status ?? "placed");
+
   return {
     id:           String(row.id),
     uid:          String(row.user_id),
     customerName: String((row.profiles as Record<string, unknown> | null)?.name ?? row.user_id ?? ""),
     items,
     total:        Number(row.total_amount ?? 0),
-    status:       (row.status as OrderStatus) ?? "received",
+    status:       rawStatusMap[rawSt] ?? "received",
+    rawStatus:    rawSt,
     createdAt:    String(row.created_at ?? new Date().toISOString()),
+    canteenId:    row.canteen_id ? String(row.canteen_id) : undefined,
+    canteenName:  (row.canteens as Record<string, unknown> | null)?.name
+                    ? String((row.canteens as Record<string, unknown>).name) : undefined,
+    paymentId:    row.payment_id ? String(row.payment_id) : undefined,
   };
 }
 
@@ -28,7 +40,7 @@ export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("*, order_items(*, menu_items(name)), profiles(name)")
+    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name)")
     .eq("user_id", uid)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -40,7 +52,7 @@ export async function listRecentOrders(limitCount = 100): Promise<CanteenOrder[]
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("*, order_items(*, menu_items(name)), profiles(name)")
+    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name)")
     .order("created_at", { ascending: false })
     .limit(limitCount);
   if (error) throw error;
