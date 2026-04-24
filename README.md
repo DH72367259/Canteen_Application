@@ -16,14 +16,16 @@ at an assigned bin using a 6-digit OTP. No cash, no queue, no wasted food.
 4. [Security](#security)
 5. [Supabase Setup](#supabase-setup)
 6. [Razorpay Setup](#razorpay-setup)
-7. [Environment Variables](#environment-variables)
-8. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
-9. [iOS and Android Deployment](#ios-and-android-deployment)
-10. [Canteen Toggle](#canteen-toggle)
-11. [Full Workflow](#full-workflow)
-12. [API Reference](#api-reference)
-13. [Database Schema](#database-schema)
-14. [Troubleshooting](#troubleshooting)
+7. [Twilio Setup (SMS & WhatsApp OTP)](#twilio-setup-sms--whatsapp-otp)
+8. [Environment Variables](#environment-variables)
+9. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
+10. [iOS and Android Deployment](#ios-and-android-deployment)
+11. [Canteen Toggle](#canteen-toggle)
+12. [Location-Based Canteen Discovery](#location-based-canteen-discovery)
+13. [Full Workflow](#full-workflow)
+14. [API Reference](#api-reference)
+15. [Database Schema](#database-schema)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -78,8 +80,9 @@ Student / Vendor / Admin browsers
 - Frontend/Backend: Next.js 16 App Router, React 19, TypeScript
 - Styling: Tailwind CSS v4 + custom CSS design tokens
 - Database: Supabase (PostgreSQL 15) with Row Level Security
-- Auth: Supabase Auth (email OTP for students, email+password for staff)
+- Auth: Supabase Auth — phone OTP via Twilio Verify (SMS + WhatsApp), email OTP, email+password for staff
 - Payments: Razorpay (UPI, GPay, PhonePe, Cards, Net Banking, Wallets)
+- SMS/WhatsApp: Twilio Verify (OTP delivery, multi-channel)
 - Hosting: Railway (auto-deploy from GitHub, Docker standalone build)
 - PWA: Web App Manifest + Service Worker (installable on iOS and Android)
 
@@ -234,6 +237,110 @@ insert into profiles (id, role, name) values ('<USER_UUID>', 'super_admin', 'Sup
 
 ---
 
+## Twilio Setup (SMS & WhatsApp OTP)
+
+Students verify their phone number via a 6-digit OTP. The app uses **Twilio Verify** to deliver
+OTPs over SMS. WhatsApp delivery is also supported as a secondary channel (feature-flagged).
+
+### Step 1 - Create a Twilio account
+
+1. Go to https://twilio.com -> Sign Up (free trial available)
+2. Verify your own phone number during sign-up
+3. Skip the guided setup wizard
+
+### Step 2 - Create a Verify Service
+
+1. Twilio Console -> **Verify -> Services -> Create new Service**
+2. Name it (e.g., `Canteen-App OTP`)
+3. Copy the **Service SID** (starts with `VA...`) -> `TWILIO_VERIFY_SERVICE_SID`
+
+### Step 3 - Copy account credentials
+
+1. Twilio Console -> **Account -> API keys & tokens**
+2. Copy:
+   - **Account SID** (starts with `AC...`) -> `TWILIO_ACCOUNT_SID`
+   - **Auth Token** -> `TWILIO_AUTH_TOKEN`
+
+### Step 4 - Upgrade from Trial (important)
+
+> **Trial accounts can only send OTPs to phone numbers you have explicitly verified in the
+> Twilio console.** To send OTPs to all students, upgrade to a paid account.
+
+1. Twilio Console -> **Account -> Upgrade Account**
+2. Add a credit card and top up with the minimum amount (~$15-20)
+3. All phone numbers globally will receive OTPs immediately after upgrade
+
+While on trial: students who haven't verified their number in Twilio will see
+`"SMS could not be delivered. Please use Email OTP login instead."` — a graceful
+fallback that guides them to the email OTP option.
+
+### WhatsApp OTP (optional, feature-flagged)
+
+A secondary WhatsApp channel is implemented but disabled by default.
+
+To enable it:
+1. Apply for a **WhatsApp Business** account via Twilio Console -> Messaging -> Senders
+2. Once approved, in Railway Variables add: `TWILIO_WHATSAPP_ENABLED=true`
+3. No code changes needed — the `/api/auth/phone/whatsapp` route handles delivery automatically
+
+When enabled, the auth flow tries WhatsApp first, then falls back to SMS.
+
+---
+
+## Location-Based Canteen Discovery
+
+Students see only canteens within **10 km** of their current location. This is always-on
+when the device provides GPS coordinates, and overrides the manual area picker.
+
+### How it works
+
+1. On first visit, the app shows a **location picker bottom sheet** with:
+   - **🎯 Use My Location** — requests GPS from the browser; maps coordinates to the
+     nearest campus area via Haversine distance calculation
+   - **Text search** — live-filters the area buttons as you type
+   - **Area buttons** — manually pick a campus zone (Main Building, North Block, etc.)
+2. The chosen location (and GPS coordinates) are saved to `localStorage` so the picker
+   only appears once per device
+3. **10 km radius is enforced as the default baseline** — canteens beyond 10 km are
+   hidden from all views regardless of area selection
+4. Canteens are sorted **nearest-first** when GPS coordinates are available
+5. Each canteen card shows a **distance chip** (e.g. `📍 0.3 km away`) when GPS is active
+6. **"See all"** (shown when an area filter is active) clears the area filter but keeps the
+   10 km radius — it shows every canteen within 10 km sorted by distance
+
+### Section header behaviour
+
+| Condition | Header shows |
+|-----------|-------------|
+| GPS active, no area filter | `Within 10 km` + `📡 10 km radius` badge |
+| GPS active, area selected | `Canteens · Main Building` + `📡 10 km radius` badge |
+| No GPS, area selected | `Canteens · Main Building` |
+| No GPS, no filter | `All Canteens` |
+
+### Empty state
+
+When GPS is active but no canteens exist within 10 km, the student sees:
+> "No canteens found within 10 km of your location" — with a "Change location" CTA.
+
+### Admin — onboarding canteens with location
+
+When adding or editing a canteen in the **Admin Dashboard -> Manage Canteens**:
+
+| Field | Notes |
+|-------|-------|
+| Full Address | Street address for display |
+| Google Maps Link | Paste any Google Maps URL — latitude and longitude are auto-parsed |
+| Latitude / Longitude | Required; auto-filled from a Google Maps link, or enter manually |
+| Preview on Google Maps | Live link opens the entered coords in Google Maps for verification |
+
+The admin table shows a `📍 lat, lng` chip for each canteen that links to Google Maps.
+
+> **How to get coordinates**: Search for the canteen on Google Maps -> right-click on
+> the exact location -> the lat/lng appears at the top of the context menu.
+> Or paste the full Google Maps URL into the link field and the app parses it automatically.
+
+---
+
 ## Razorpay Setup
 
 ### Step 1 - Create account
@@ -295,11 +402,35 @@ RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxx
 RAZORPAY_WEBHOOK_SECRET=your-webhook-secret
 
+# Twilio Verify (SMS OTP + optional WhatsApp OTP)
+# Get from Twilio Console -> Account SID + Auth Token + Verify -> Services
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_VERIFY_SERVICE_SID=VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# WhatsApp OTP channel (set to true only after WhatsApp Business approval)
+TWILIO_WHATSAPP_ENABLED=false
+
 # App URL (used for auth redirects - must match your Railway domain)
 NEXT_PUBLIC_APP_URL=https://canteenapplication-production.up.railway.app
 ```
 
-Never commit `.env.local` to Git. The `.env.example` file in this repo shows all keys.
+Never commit `.env.local` to Git. The `.env.example` file in this repo shows all keys with inline setup instructions.
+
+### Current Railway Variables (10 active)
+
+| Variable | Source |
+|----------|--------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard -> Settings -> API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard -> Settings -> API |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard -> Settings -> API |
+| `RAZORPAY_KEY_ID` | Razorpay Dashboard -> Settings -> API Keys |
+| `RAZORPAY_KEY_SECRET` | Razorpay Dashboard -> Settings -> API Keys |
+| `RAZORPAY_WEBHOOK_SECRET` | Razorpay Dashboard -> Settings -> Webhooks |
+| `TWILIO_ACCOUNT_SID` | Twilio Console -> Account Info |
+| `TWILIO_AUTH_TOKEN` | Twilio Console -> Account Info |
+| `TWILIO_VERIFY_SERVICE_SID` | Twilio Console -> Verify -> Services |
+| `NEXT_PUBLIC_APP_URL` | Your Railway domain |
 
 ---
 
@@ -444,19 +575,22 @@ Access control:
 
 ```
 1.  Open app at https://canteenapplication-production.up.railway.app
-2.  Tap "Login" -> enter phone -> receive OTP -> enter OTP
-3.  Browse canteen list on home screen
-4.  Select a canteen (only OPEN canteens show add buttons)
-5.  Add items to cart - cart bar appears at bottom showing total
-6.  Tap cart bar -> Checkout page loads with items pre-filled
-7.  Choose a pickup time slot
-8.  (Optional) toggle on Canteen Cash wallet balance
-9.  Tap "Pay Rs X via Razorpay" -> Razorpay popup opens
-10. Pay via UPI / Card / Net Banking / Wallet
-11. Razorpay calls our webhook -> we verify HMAC-SHA256 signature
-12. On verified: order finalised -> student sees OTP + bin number
-13. Student goes to canteen, shows OTP to vendor
-14. Vendor enters OTP, confirms -> order completed, bin freed
+2.  Tap "Login" -> enter phone -> receive OTP via SMS (or WhatsApp if enabled)
+    -> enter OTP to sign in
+3.  On first visit: choose your campus area or tap "Use My Location" for GPS
+4.  Browse canteen list — only canteens within 10 km of your location are shown
+    Each card shows distance (e.g. 📍 0.3 km away) when GPS is active
+5.  Select a canteen (only OPEN canteens show add buttons)
+6.  Add items to cart - cart bar appears at bottom showing total
+7.  Tap cart bar -> Checkout page loads with items pre-filled
+8.  Choose a pickup time slot
+9.  (Optional) toggle on Canteen Cash wallet balance
+10. Tap "Pay Rs X via Razorpay" -> Razorpay popup opens
+11. Pay via UPI / Card / Net Banking / Wallet
+12. Razorpay calls our webhook -> we verify HMAC-SHA256 signature
+13. On verified: order finalised -> student sees OTP + bin number
+14. Student goes to canteen, shows OTP to vendor
+15. Vendor enters OTP, confirms -> order completed, bin freed
 ```
 
 ### Payment Security Chain
@@ -507,6 +641,7 @@ Razorpay webhook (payment.failed)
 | POST | /api/payments/razorpay-refund | None | Initiate refund for a payment |
 | POST | /api/payments/razorpay-webhook | Razorpay signature | Handle payment events (auto-refund on failure) |
 | PATCH | /api/canteens/[id]/toggle | Bearer JWT | Toggle canteen open or closed |
+| POST | /api/auth/phone/whatsapp | None | Send OTP via WhatsApp (feature-flagged; returns `{ whatsapp: false }` unless `TWILIO_WHATSAPP_ENABLED=true`) |
 | GET | /api/menu | None | Get menu items |
 | GET | /api/orders | None | Get orders |
 | POST | /api/orders | None | Create a new order |
@@ -528,12 +663,21 @@ Rate limits (per IP, enforced in middleware.ts):
 
 ```
 profiles      -> user roles, canteen assignment (extends auth.users)
-canteens      -> canteen list, is_active flag, status (open/busy/closed)
+canteens      -> canteen list, location coords (lat/lng), address, is_active flag, status
 menu_items    -> items per canteen, price, enabled flag
 orders        -> order record with OTP, bin, payment_id, refund_status
 ```
 
-Full schema SQL is in the Supabase Setup section above.
+Key canteens columns added for location:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `address` | text | Full street address |
+| `lat` | float8 | Latitude (required for distance filtering) |
+| `lng` | float8 | Longitude (required for distance filtering) |
+
+Full schema SQL (including RLS policies, triggers, and all tables) is in `supabase-setup.sql`
+at the root of this repository. Run it in the Supabase SQL Editor to bootstrap a fresh project.
 
 ---
 
@@ -550,6 +694,12 @@ Full schema SQL is in the Supabase Setup section above.
 | Auth redirects to wrong URL | Set NEXT_PUBLIC_APP_URL in Railway variables to your actual Railway domain |
 | iOS PWA: auth lost after minimising app | Auth state is persisted to localStorage - this is already implemented |
 | 429 Too Many Requests | Rate limiter triggered. Wait 60 seconds. For payment routes, the limit is 10/minute - this is intentional |
+| "SMS could not be delivered" / Twilio trial error | Twilio trial accounts only send to verified numbers. Upgrade your Twilio account, or use Email OTP as a fallback |
+| Student OTP never arrives | Check that TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID are all set in Railway |
+| WhatsApp OTP not sending | TWILIO_WHATSAPP_ENABLED is false by default. Set it to true in Railway after WhatsApp Business approval |
+| Canteens not showing on student dashboard | Canteens need lat/lng set in the Admin -> Canteens form. Without coordinates they cannot be distance-ranked |
+| All canteens filtered out (10 km) | The student's GPS location is more than 10 km from all canteens. Ask them to use the manual area picker or update canteen coordinates in admin |
+| Location picker appears on every visit | localStorage may be cleared or blocked. Check browser settings for the site |
 
 ---
 
@@ -574,10 +724,25 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | Railway Dashboard | https://railway.com/project/9ecacfbc-a63e-4962-b2e7-69565b15b131 |
 | Supabase | https://supabase.com (create your project here) |
 | Razorpay | https://razorpay.com (create your account here) |
+| Twilio | https://twilio.com (SMS & WhatsApp OTP) |
 | PWABuilder (app stores) | https://www.pwabuilder.com |
 
 ---
 
-**Last updated**: April 2026
+## Recent Changelog
+
+| Commit | Description |
+|--------|-------------|
+| `6d6f9b1` | fix: enforce 10 km radius as always-on baseline canteen filter |
+| `7eec070` | feat: distance display on cards, 10 km radius filter, admin location onboarding |
+| `28b9025` | feat: GPS detection + text search in location picker, fix See All button |
+| `f7d17f8` | feat: location-based canteen filter + hero card layout fix |
+| `faed93f` | feat: WhatsApp OTP channel (feature-flagged) + Twilio env docs + supabase-setup.sql |
+| `dffcc74` | fix: graceful SMS failure message with Email OTP fallback hint |
+| `23ffdf0` | feat: Twilio Verify SMS OTP + dual phone + email verification |
+
+---
+
+**Last updated**: 24 April 2026
 **Build status**: Passing (0 TypeScript errors)
-**Deployed**: Railway - auto-deploy from main branch
+**Deployed**: Railway — auto-deploy from `main` branch (latest: `6d6f9b1`)
