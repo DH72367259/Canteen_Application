@@ -50,7 +50,7 @@ interface AuthContextValue {
   logout: () => Promise<void>
   sendEmailOtp: (email: string) => Promise<void>
   verifyEmailOtp: (email: string, token: string) => Promise<void>
-  sendPhoneOtp: (phone: string) => Promise<void>
+  sendPhoneOtp: (phone: string) => Promise<{ channels: string[] }>
   verifyPhoneOtp: (phone: string, token: string) => Promise<void>
   linkEmail: (email: string) => Promise<void>
   verifyEmailLink: (email: string, token: string) => Promise<void>
@@ -200,10 +200,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error
   }
 
-  async function sendPhoneOtp(phone: string) {
-    if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
+  async function sendPhoneOtp(phone: string): Promise<{ channels: string[] }> {
+    if (!isSupabaseConfigured()) return { channels: ['demo'] }  // demo mode
+
+    const channels: string[] = []
+
+    // 1. Try WhatsApp via our server route (only active once WhatsApp Business is connected)
+    //    If WhatsApp is enabled, Twilio Verify creates the verification via WhatsApp first.
+    //    When Supabase subsequently calls Twilio Verify for SMS, Twilio keeps the SAME OTP code
+    //    and re-delivers it via SMS (resend same active verification = same code, different channel).
+    try {
+      const res = await fetch('/api/auth/phone/whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.whatsapp) channels.push('whatsapp')
+      }
+    } catch { /* WhatsApp API unavailable — continue to SMS */ }
+
+    // 2. Supabase sends SMS via Twilio Verify (creates or resends same verification code)
     const { error } = await supabase.auth.signInWithOtp({ phone })
     if (error) throw error
+    channels.push('sms')
+
+    return { channels }
   }
 
   async function verifyPhoneOtp(phone: string, token: string) {
