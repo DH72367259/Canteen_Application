@@ -123,12 +123,21 @@ function LoginContent() {
     setBusy(true); clearState();
     try {
       const fullPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-      await sendPhoneOtp(fullPhone);
+      const result = await sendPhoneOtp(fullPhone);
       setOtpTarget("phone");
       setOtpSentTo(fullPhone);
-      setInfo(`OTP sent to ${fullPhone}`);
+      const via = result.channels.includes("whatsapp") && result.channels.includes("sms")
+        ? "WhatsApp & SMS"
+        : result.channels.includes("whatsapp") ? "WhatsApp" : "SMS";
+      setInfo(`OTP sent to ${fullPhone} via ${via}`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send OTP.");
+      const msg = e instanceof Error ? e.message : "Failed to send OTP.";
+      const isDeliveryFailure = msg.toLowerCase().includes("unverified") || msg.toLowerCase().includes("trial") || msg.toLowerCase().includes("not a valid destination") || msg.toLowerCase().includes("sms");
+      setError(
+        isDeliveryFailure
+          ? "SMS could not be delivered to this number right now. Please use Email OTP login instead (✉️ Email OTP tab above)."
+          : msg
+      );
     } finally { setBusy(false); }
   }
 
