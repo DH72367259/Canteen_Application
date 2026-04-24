@@ -114,23 +114,59 @@ function OverviewSection() {
 
 function CanteensSection() {
   const INIT = [
-    { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", status: "active" as const, orders: 1240, revenue: "₹1.2L" },
-    { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", status: "active" as const, orders: 890, revenue: "₹86K" },
-    { id: "c3", name: "NIT Trichy – Block A Caf", college: "NIT Trichy", city: "Chennai", status: "inactive" as const, orders: 0, revenue: "₹0" },
-    { id: "c4", name: "VIT University – Canteen 2", college: "VIT Vellore", city: "Vellore", status: "active" as const, orders: 560, revenue: "₹55K" },
+    { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", address: "Main Gate Road, IIT Bombay, Powai", lat: "19.1334", lng: "72.9133", gmapLink: "https://maps.google.com/?q=19.1334,72.9133", status: "active" as const, orders: 1240, revenue: "₹1.2L" },
+    { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", address: "BITS Pilani Campus, Pilani, Rajasthan", lat: "28.3670", lng: "75.5882", gmapLink: "https://maps.google.com/?q=28.3670,75.5882", status: "active" as const, orders: 890, revenue: "₹86K" },
+    { id: "c3", name: "NIT Trichy – Block A Caf", college: "NIT Trichy", city: "Chennai", address: "NIT Campus, Tiruchirappalli", lat: "10.7639", lng: "78.8126", gmapLink: "https://maps.google.com/?q=10.7639,78.8126", status: "inactive" as const, orders: 0, revenue: "₹0" },
+    { id: "c4", name: "VIT University – Canteen 2", college: "VIT Vellore", city: "Vellore", address: "VIT University, Vellore, Tamil Nadu", lat: "12.9693", lng: "79.1559", gmapLink: "https://maps.google.com/?q=12.9693,79.1559", status: "active" as const, orders: 560, revenue: "₹55K" },
   ];
   type Canteen = typeof INIT[number];
   const [canteens, setCanteens] = useState<Canteen[]>(INIT);
   const [editing, setEditing] = useState<Canteen | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", college: "", city: "", status: "active" as "active" | "inactive" });
+  const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive" });
+  const [gmapParseError, setGmapParseError] = useState("");
 
-  const openEdit = (c: Canteen) => { setEditing(c); setForm({ name: c.name, college: c.college, city: c.city, status: c.status }); setAdding(false); };
-  const openAdd = () => { setEditing(null); setForm({ name: "", college: "", city: "", status: "active" }); setAdding(true); };
-  const closeModal = () => { setEditing(null); setAdding(false); };
+  // Auto-extract lat/lng when a Google Maps URL is pasted
+  const handleGmapLinkChange = (url: string) => {
+    setForm(p => ({ ...p, gmapLink: url }));
+    setGmapParseError("");
+    if (!url.trim()) return;
+    // Match /@lat,lng or ?q=lat,lng or &q=lat,lng patterns
+    const patterns = [
+      /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+      /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/,
+      /ll=(-?\d+\.\d+),(-?\d+\.\d+)/,
+    ];
+    for (const re of patterns) {
+      const m = url.match(re);
+      if (m) {
+        setForm(p => ({ ...p, lat: m[1], lng: m[2], gmapLink: url }));
+        return;
+      }
+    }
+    setGmapParseError("Could not extract coordinates — enter lat/lng manually below.");
+  };
+
+  const openEdit = (c: Canteen) => {
+    setEditing(c);
+    setForm({ name: c.name, college: c.college, city: c.city, address: c.address, lat: c.lat, lng: c.lng, gmapLink: c.gmapLink, status: c.status });
+    setAdding(false);
+    setGmapParseError("");
+  };
+  const openAdd = () => {
+    setEditing(null);
+    setForm({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" });
+    setAdding(true);
+    setGmapParseError("");
+  };
+  const closeModal = () => { setEditing(null); setAdding(false); setGmapParseError(""); };
 
   const saveEdit = () => {
     if (!form.name.trim()) return;
+    if (!form.lat.trim() || !form.lng.trim()) {
+      setGmapParseError("Latitude and Longitude are required.");
+      return;
+    }
     if (editing) {
       setCanteens(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } : c));
     } else {
@@ -171,13 +207,22 @@ function CanteensSection() {
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>CANTEEN</th><th>COLLEGE</th><th>CITY</th><th>ORDERS</th><th>REVENUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+          <thead><tr><th>CANTEEN</th><th>COLLEGE</th><th>CITY</th><th>LOCATION</th><th>ORDERS</th><th>REVENUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
           <tbody>
             {canteens.map(c => (
               <tr key={c.id}>
                 <td style={{ fontWeight: 600 }}>{c.name}</td>
                 <td style={{ fontSize: "0.82rem" }}>{c.college}</td>
                 <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{c.city}</td>
+                <td style={{ fontSize: "0.82rem" }}>
+                  {c.gmapLink ? (
+                    <a href={c.gmapLink} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)", textDecoration: "none", fontWeight: 600 }} title={c.address}>
+                      📍 {c.lat}, {c.lng}
+                    </a>
+                  ) : (
+                    <span style={{ color: "var(--ink-3)" }}>—</span>
+                  )}
+                </td>
                 <td>{c.orders.toLocaleString()}</td>
                 <td style={{ fontWeight: 600 }}>{c.revenue}</td>
                 <td>
@@ -201,24 +246,67 @@ function CanteensSection() {
 
       {(editing || adding) && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
               <h3>{adding ? "Add New Canteen" : "Edit Canteen"}</h3>
               <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "70vh", overflowY: "auto", paddingRight: "0.25rem" }}>
               <div>
-                <label className="form-label">Canteen Name</label>
+                <label className="form-label">Canteen Name *</label>
                 <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Main Canteen" />
               </div>
               <div>
-                <label className="form-label">College / Institution</label>
+                <label className="form-label">College / Institution *</label>
                 <input className="form-input" value={form.college} onChange={e => setForm(p => ({ ...p, college: e.target.value }))} placeholder="e.g. IIT Bombay" />
               </div>
               <div>
-                <label className="form-label">City</label>
+                <label className="form-label">City *</label>
                 <input className="form-input" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Mumbai" />
               </div>
+              <div>
+                <label className="form-label">Full Address</label>
+                <input className="form-input" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="e.g. Main Gate Road, IIT Bombay, Powai" />
+              </div>
+
+              {/* Google Maps URL — auto-extracts lat/lng */}
+              <div>
+                <label className="form-label">Google Maps Link <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(paste URL to auto-fill coordinates)</span></label>
+                <input
+                  className="form-input"
+                  value={form.gmapLink}
+                  onChange={e => handleGmapLinkChange(e.target.value)}
+                  placeholder="https://maps.google.com/?q=19.1334,72.9133"
+                />
+                <p style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
+                  💡 In Google Maps: right-click the location → Copy coordinates, or share the map link here.
+                </p>
+                {gmapParseError && (
+                  <p style={{ fontSize: "0.78rem", color: "var(--red)", marginTop: "0.2rem" }}>{gmapParseError}</p>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div>
+                  <label className="form-label">Latitude *</label>
+                  <input className="form-input" value={form.lat} onChange={e => setForm(p => ({ ...p, lat: e.target.value }))} placeholder="e.g. 19.1334" />
+                </div>
+                <div>
+                  <label className="form-label">Longitude *</label>
+                  <input className="form-input" value={form.lng} onChange={e => setForm(p => ({ ...p, lng: e.target.value }))} placeholder="e.g. 72.9133" />
+                </div>
+              </div>
+              {form.lat && form.lng && (
+                <a
+                  href={`https://maps.google.com/?q=${form.lat},${form.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: "0.78rem", color: "var(--blue)", fontWeight: 600 }}
+                >
+                  🗺️ Preview on Google Maps →
+                </a>
+              )}
+
               <div>
                 <label className="form-label">Status</label>
                 <select className="form-input" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as "active" | "inactive" }))}>

@@ -22,6 +22,7 @@ const CANTEENS = [
 ];
 
 const LOCATIONS = Array.from(new Set(CANTEENS.map(c => c.location)));
+const MAX_RADIUS_KM = 10;
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
@@ -29,6 +30,12 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDist(km: number) {
+  if (km < 0.1) return "< 100 m away";
+  if (km < 1)   return `${Math.round(km * 1000)} m away`;
+  return `${km.toFixed(1)} km away`;
 }
 
 export default function UserHomePage() {
@@ -41,6 +48,8 @@ export default function UserHomePage() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,6 +60,10 @@ export default function UserHomePage() {
       try { setActiveOrder(JSON.parse(order)); } catch { /* invalid data */ }
     }
     const savedLoc = localStorage.getItem("canteen_student_location");
+    const savedCoords = localStorage.getItem("canteen_student_coords");
+    if (savedCoords) {
+      try { setUserCoords(JSON.parse(savedCoords)); } catch { /* ignore */ }
+    }
     if (savedLoc) {
       setSelectedLocation(savedLoc);
     } else {
@@ -69,26 +82,26 @@ export default function UserHomePage() {
 
   const handleSelectLocation = (loc: string) => {
     setSelectedLocation(loc);
+    setShowAll(false);
     localStorage.setItem("canteen_student_location", loc);
     setShowLocationPicker(false);
   };
 
   const handleShowAll = () => {
-    setSelectedLocation("All");
-    localStorage.setItem("canteen_student_location", "All");
+    setShowAll(true);
     setShowLocationPicker(false);
   };
 
   const handleUseGPS = () => {
-    if (!navigator.geolocation) {
-      setGpsStatus("error");
-      return;
-    }
+    if (!navigator.geolocation) { setGpsStatus("error"); return; }
     setGpsStatus("loading");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        // Find the campus area whose canteen is closest to the user
+        const coords = { lat: latitude, lng: longitude };
+        setUserCoords(coords);
+        localStorage.setItem("canteen_student_coords", JSON.stringify(coords));
+        // Find nearest area
         let nearestArea = LOCATIONS[0];
         let minDist = Infinity;
         CANTEENS.forEach(c => {
@@ -109,9 +122,23 @@ export default function UserHomePage() {
     ? LOCATIONS.filter(l => l.toLowerCase().includes(locationSearch.toLowerCase()))
     : LOCATIONS;
 
-  const visibleCanteens = selectedLocation && selectedLocation !== "All"
-    ? CANTEENS.filter(c => c.location === selectedLocation)
-    : CANTEENS;
+  // Build canteen list with distance attached
+  const canteensWithDist = CANTEENS.map(c => ({
+    ...c,
+    distKm: userCoords ? haversineKm(userCoords.lat, userCoords.lng, c.lat, c.lng) : null,
+  }));
+
+  // "See all" with GPS → show all within 10km; without GPS → show all
+  // Filtered by area → show that area's canteens (always within campus = within 10km)
+  const visibleCanteens = showAll
+    ? (userCoords
+        ? canteensWithDist.filter(c => (c.distKm ?? 0) <= MAX_RADIUS_KM).sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
+        : canteensWithDist)
+    : (selectedLocation && selectedLocation !== "All"
+        ? canteensWithDist.filter(c => c.location === selectedLocation)
+        : canteensWithDist);
+
+  const isFiltered = !showAll && selectedLocation && selectedLocation !== "All";
 
   return (
     <div className="app-shell">
@@ -239,15 +266,15 @@ export default function UserHomePage() {
       <div id="canteens">
         <div className="section-header">
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-            <h3>{selectedLocation && selectedLocation !== "All" ? `Canteens nearby` : "All Canteens"}</h3>
-            {selectedLocation && selectedLocation !== "All" && (
+            <h3>{showAll ? (userCoords ? `Within ${MAX_RADIUS_KM} km` : "All Canteens") : (isFiltered ? "Canteens nearby" : "All Canteens")}</h3>
+            {isFiltered && (
               <span style={{ fontSize: "0.72rem", background: "var(--orange-light)", color: "var(--orange-dark)", borderRadius: 999, padding: "0.15rem 0.55rem", fontWeight: 600 }}>
                 📍 {selectedLocation}
               </span>
             )}
           </div>
           <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-            {selectedLocation && selectedLocation !== "All" && (
+            {isFiltered && (
               <button
                 onClick={handleShowAll}
                 style={{ background: "none", border: "none", color: "var(--orange)", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", padding: "0.2rem 0.4rem" }}
@@ -259,7 +286,7 @@ export default function UserHomePage() {
               onClick={() => setShowLocationPicker(true)}
               style={{ background: "var(--orange-light)", border: "none", color: "var(--orange-dark)", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", borderRadius: 999, padding: "0.25rem 0.65rem" }}
             >
-              📍 Change
+              📍 {userCoords ? "Change" : "Set location"}
             </button>
           </div>
         </div>
@@ -268,7 +295,9 @@ export default function UserHomePage() {
           {visibleCanteens.length === 0 ? (
             <div style={{ textAlign: "center", padding: "2rem 1rem", color: "var(--ink-3)" }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
-              <div style={{ fontWeight: 600 }}>No canteens in this area</div>
+              <div style={{ fontWeight: 600 }}>
+                {userCoords ? `No canteens within ${MAX_RADIUS_KM} km` : "No canteens in this area"}
+              </div>
               <button onClick={() => setShowLocationPicker(true)} style={{ marginTop: "0.75rem", background: "var(--orange)", color: "#fff", border: "none", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer" }}>
                 Change location
               </button>
@@ -279,12 +308,18 @@ export default function UserHomePage() {
               <div className="canteen-info">
                 <h4>{c.name}</h4>
                 <p>{c.desc}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.35rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>⭐ {c.rating}</span>
                   <span style={{ color: "var(--border)" }}>·</span>
                   <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{c.items} items</span>
                   <span style={{ color: "var(--border)" }}>·</span>
                   <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>Next: {c.nextSlot}</span>
+                  {c.distKm !== null && (
+                    <>
+                      <span style={{ color: "var(--border)" }}>·</span>
+                      <span style={{ fontSize: "0.72rem", color: "var(--blue)", fontWeight: 600 }}>📍 {formatDist(c.distKm)}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <span className={`canteen-badge badge-${c.status}`}>
