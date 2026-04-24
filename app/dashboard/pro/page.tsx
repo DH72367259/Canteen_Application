@@ -237,7 +237,7 @@ export default function ProPage() {
         {[
           { icon: "🏠", label: "Home",      href: "/dashboard", active: false },
           { icon: "📦", label: "My Orders", href: "/dashboard/orders", active: false },
-          { icon: "⭐", label: "Pro",        href: "/dashboard/pro", active: true },
+          { icon: "🎁", label: "Rewards",   href: "/dashboard/rewards", active: false },
           { icon: "👤", label: "Profile",   href: "/dashboard/profile", active: false },
         ].map(item => (
           <Link key={item.href} href={item.href} className={`bottom-nav-item ${item.active ? "active" : ""}`}>

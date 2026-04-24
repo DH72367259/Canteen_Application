@@ -6,7 +6,7 @@ Cashless, queue-free canteen ordering for universities and colleges.
 Students order on their phone, pay via Razorpay (UPI / Card / Wallet), and pick up at an
 assigned **bin** using a 4-digit OTP displayed in-app. No cash, no queue, no wasted food.
 
-A **NoQx Pro** monthly subscription (₹49/month) lets students skip the ₹4 per-order
+A **NoQx Pro** monthly subscription (₹69/month) lets students skip the ₹4 per-order
 convenience fee and get priority pickup — every order, every day.
 
 ---
@@ -19,7 +19,7 @@ convenience fee and get priority pickup — every order, every day.
 4. [Security](#security)
 5. [NoQx Pro Subscription](#noqx-pro-subscription)
 6. [Order Tracking Flow](#order-tracking-flow)
-7. [Wallet (NoQx Cash)](#wallet-noqx-cash)
+7. [Rewards (NoQx Cash)](#rewards-noqx-cash)
 8. [Settlement & Finance](#settlement--finance)
 9. [Supabase Setup](#supabase-setup)
 10. [Razorpay Setup](#razorpay-setup)
@@ -89,7 +89,7 @@ Student / Vendor / Admin browsers
 - Database: Supabase (PostgreSQL 15) with Row Level Security
 - Auth: Supabase Auth — phone OTP via Twilio Verify (SMS + WhatsApp), email OTP, email+password for staff
 - Payments: Razorpay (UPI, GPay, PhonePe, Cards, Net Banking, Wallets)
-- Subscriptions: Razorpay — ₹49/month NoQx Pro
+- Subscriptions: Razorpay — ₹69/month NoQx Pro
 - SMS/WhatsApp: Twilio Verify (OTP delivery, multi-channel)
 - Hosting: Railway (auto-deploy from GitHub, standalone Docker build)
 - PWA: Web App Manifest (installable on iOS and Android home screen)
@@ -122,8 +122,8 @@ Every layer of the stack has security controls already in place:
 
 ## NoQx Pro Subscription
 
-NoQx Pro is a **₹49/month** subscription that removes the ₹4 per-order convenience fee.
-Students who order 13+ times per month break even; heavy users save ₹200+/month.
+NoQx Pro is a **₹69/month** subscription that removes the ₹4 per-order convenience fee.
+Students who order 18+ times per month break even; heavy users save ₹200+/month.
 
 ### Home screen awareness (soft, non-aggressive)
 
@@ -131,7 +131,7 @@ A small banner below the canteen grid:
 ```
 ⚡ Skip queues every day
 With 0/- convenience fee
-Try Priority Pickup, Every Time →          ₹49/mo →
+Try Priority Pickup, Every Time →          ₹69/mo →
 ```
 
 ### Checkout page — main conversion point
@@ -141,21 +141,25 @@ Try Priority Pickup, Every Time →          ₹49/mo →
   ⚡ Convenience fee   ₹4
      Pro users pay ₹0
   ```
-- A highlighted **Pro card** appears below the bill summary:
+- Two **radio-button options** appear (the "money screen" — primary Pro conversion point):
   ```
   💎 NoQx Pro
-  Skip queues all month · Pay ₹0 per order · Just ₹49/month
-  💡 You'll save ₹40+ this month
-  [ Get Pro & Save → ]   [ Continue without · ₹4 convenience fee ]
+  ○ Go Pro & Save
+    Skip queues all month · Pay ₹0 convenience fee
+    Just ₹69/month
+    💡 You'll save ₹40+ this month
+
+  ○ Continue without    ₹4 fee
   ```
+- Selecting "Go Pro & Save" changes the CTA to **Get Pro & Save →** and routes to `/dashboard/pro`
 - Pro users see `₹0 (Pro — free)` and no Pro card
 
 ### Pro page (`/dashboard/pro`)
 
-- Hero card: 💎 NoQx Pro, ₹49/month
+- Hero card: 💎 NoQx Pro, ₹69/month
 - 4 features: Priority Pickup, Zero Convenience Fee, Instant Notifications, Pro Badge
-- Savings calculator: "Break-even in 13 orders"
-- Subscribe button → Razorpay ₹49 → `/api/subscriptions` POST → status saved
+- Savings calculator: "Break-even in 18 orders"
+- Subscribe button → Razorpay ₹69 → `/api/subscriptions` POST → status saved
 - Active badge shows if already subscribed
 
 ### Technical
@@ -164,8 +168,7 @@ Try Priority Pickup, Every Time →          ₹49/mo →
 - `GET /api/subscriptions` — check current user's Pro status
 - `POST /api/subscriptions` — upsert active subscription with 30-day expiry
 - Pro status cached in `localStorage("noqx_pro_active")` for instant UI
-- Bottom nav: NoQx Cash tab replaced with **Pro ⭐**
-- `/dashboard/rewards` redirects to `/dashboard/pro`
+- Bottom nav: **Rewards 🎁** tab (NoQx Cash balance, earn history, expiry warnings)
 
 ---
 
@@ -212,10 +215,19 @@ Auto-redirects to `/dashboard` and clears the active order from storage.
 
 ---
 
-## Wallet (NoQx Cash)
+## Rewards (NoQx Cash)
 
-> The "NoQx Cash" bottom-nav tab has been removed per the pricing plan.
-> The wallet feature still works; `/dashboard/rewards` redirects to `/dashboard/pro`.
+`/dashboard/rewards` is a full Rewards page showing:
+- **Balance card**: NoQx Cash balance, expiry warning (⚡ "₹X expiring in Y days"), total saved
+- **How it works**: Order → Earn rewards; Pickup → Earn more; Use on next order
+- **Expiry notice**: Rewards expire 7 days from earning (ℹ icon explains this)
+- **Transaction history**: earn / redeem entries with timestamps
+- **Pro upgrade link**: Banner linking students who aren't on Pro to `/dashboard/pro`
+
+NoQx Cash flow:
+- Earned after successful order collection (stored in `canteen_reward_transactions` via localStorage for demo; persisted in `wallet_transactions` Supabase table in full integration)
+- Checkout nudge: "Use ₹X before it expires" if balance about to expire
+- Redeem at checkout via "Use Canteen Cash" toggle
 
 ### Top-up
 
@@ -721,10 +733,13 @@ When a canteen is closed:
 ### From Vendor Dashboard
 
 1. Log in at `/vendor/dashboard`
-2. In the top header, there is a green OPEN toggle switch
-3. Click it -> canteen immediately goes CLOSED (optimistic update + API call)
-4. Click again -> canteen goes OPEN
-5. On API error, the toggle reverts automatically
+2. First, go to **Time Slots** and configure pickup slot durations + capacities, then click **Save Configuration**
+3. After saving slots, the top-header toggle becomes available
+4. Click the green OPEN toggle → canteen goes CLOSED (optimistic update + API call)
+5. Click again → canteen goes OPEN
+6. On API error, the toggle reverts automatically
+
+> **Slot-gate rule**: The canteen toggle cannot be turned ON until time slots have been configured and saved. This prevents students from ordering when no slots are set up. The vendor sees a warning if they try to enable before saving slots.
 
 ### From Super Admin Dashboard
 
@@ -797,12 +812,26 @@ Razorpay webhook (payment.failed)
 ### Vendor Processes an Order
 
 ```
-1. Login -> Vendor Dashboard -> Live Orders tab
-2. See bin cards: Preparing / Completed / Delayed / Empty
-3. Student arrives -> vendor taps bin card
-4. Enter 6-digit OTP from student's screen
-5. OTP matches -> tap "Mark Complete" -> bin freed for next order
-6. (Optional) toggle canteen closed when shutting down for the day
+1. Login -> Vendor Dashboard (auto-refreshes every 5 seconds, no page reload)
+2. Configure Time Slots -> click "Save Configuration" (one-time setup required to unlock toggle)
+3. Turn ON canteen with top-header toggle
+4. Live Orders tab: see bin cards grouped by slot (Preparing / Placed in bin / Completed)
+5. Student arrives -> vendor taps bin card -> side panel opens with order list
+6. Enter 4-digit OTP from student's screen
+7. OTP matches -> order auto-marked COMPLETED -> bin turns green
+8. (Optional) toggle canteen CLOSED when shutting down for the day
+```
+
+### Worker (Kitchen Staff) App
+
+```
+1. Login -> Worker App (3-tab bottom nav: Orders | Bins | OTP Verify)
+2. Orders tab: see current slot orders, assigned bin per order, "Ready to Place" button
+3. Click "Ready to Place" -> app highlights which bin to place food in
+4. Click "Placed in Bin" -> order marked ready for pickup
+5. Bins tab: view all bin states, move delayed bins to grace bins
+6. OTP Verify tab (backup mode): when dashboard unavailable, enter student OTP directly
+   -> System verifies and marks order COMPLETED + bin updated
 ```
 
 ### Super Admin Manages System
@@ -924,7 +953,7 @@ Full schema SQL is in `supabase-setup.sql` at the root of this repo.
 | All canteens filtered out (10 km) | Student's GPS is > 10 km from all canteens — use the manual area picker |
 | Location picker on every visit | `localStorage` blocked/cleared — check browser site settings |
 | Convenience fee not at checkout | Check `isPro` reads from `localStorage("noqx_pro_active")` and `noqx_pro_subscriptions` |
-| Pro card not visible at checkout | `showProCard` is `true` for non-Pro users — check `isPro` state loads correctly |
+| Pro upsell not visible at checkout | Non-Pro users always see the radio-button Pro upsell — check `isPro` reads from `localStorage("noqx_pro_active")` correctly |
 | Order-status page redirects away | No `canteen_active_order` in localStorage — order must be placed first |
 | Floating track button missing | `canteen_active_order` not set; created by `finaliseOrder()` in cart after payment |
 | Settlement page blank | `platform_charges` table needs a seed row — run: `insert into platform_charges (charge_pct, flat_charge, gst_pct) values (2.00, 0.00, 18.00);` |
@@ -961,6 +990,8 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Commit | Description |
 |--------|-------------|
+| `5109031` | feat: Rewards nav tab, radio-button Pro upsell (₹69/mo vs ₹4 fee), vendor 5s refresh, slot-gate canteen toggle |
+| `7393808` | fix: end-to-end order workflow — persist to Supabase, real vendor dashboard, real status polling |
 | `57cf7eb` | fix: PDF spec — banner 3-line copy, "Pro users pay ₹0" in cart, "Your order is ready" heading |
 | `2dc3e05` | fix: remove dead placedOrder state, redirect /rewards to /pro |
 | `85610a1` | fix: remove staff placeholder from canteen login email field |
@@ -979,4 +1010,4 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 **Last updated**: 24 April 2026  
 **Build status**: Passing — 0 TypeScript errors  
-**Deployed**: Railway — auto-deploy from `main` (latest: `57cf7eb`)
+**Deployed**: Railway — auto-deploy from `main` (latest: `5109031`)
