@@ -572,19 +572,225 @@ function SupportSection() {
 
 
 function AnalyticsSection() {
+  const revenueData = [
+    { month: "Nov", value: 148000 },
+    { month: "Dec", value: 192000 },
+    { month: "Jan", value: 176000 },
+    { month: "Feb", value: 214000 },
+    { month: "Mar", value: 198000 },
+    { month: "Apr", value: 240000 },
+  ];
+  const ordersData = [
+    { month: "Nov", value: 9200 },
+    { month: "Dec", value: 11800 },
+    { month: "Jan", value: 10600 },
+    { month: "Feb", value: 13400 },
+    { month: "Mar", value: 12200 },
+    { month: "Apr", value: 14820 },
+  ];
+  const canteenShare = [
+    { name: "IIT Bombay – Main", pct: 42, color: "#f97316" },
+    { name: "BITS Pilani – Mess", pct: 33, color: "#3b82f6" },
+    { name: "VIT Vellore – Caf 2", pct: 25, color: "#22c55e" },
+  ];
+  const topItems = [
+    { name: "Veg Thali", orders: 4820, revenue: "₹72,300", canteen: "IIT Bombay" },
+    { name: "Masala Dosa", orders: 3940, revenue: "₹59,100", canteen: "VIT Vellore" },
+    { name: "Chicken Curry", orders: 3210, revenue: "₹96,300", canteen: "BITS Pilani" },
+    { name: "Cold Coffee", orders: 2890, revenue: "₹57,800", canteen: "IIT Bombay" },
+    { name: "Samosa (2 pc)", orders: 2640, revenue: "₹26,400", canteen: "VIT Vellore" },
+  ];
+
+  const maxRev = Math.max(...revenueData.map(d => d.value));
+  const maxOrd = Math.max(...ordersData.map(d => d.value));
+
+  // Build SVG polyline points for revenue line chart
+  const chartW = 480, chartH = 120, padX = 10;
+  const revPoints = revenueData.map((d, i) => {
+    const x = padX + (i / (revenueData.length - 1)) * (chartW - padX * 2);
+    const y = chartH - (d.value / maxRev) * (chartH - 16) - 4;
+    return `${x},${y}`;
+  }).join(" ");
+
+  // Donut chart helpers
+  const donutR = 52, donutCX = 64, donutCY = 64, circumference = 2 * Math.PI * donutR;
+  let cumulativePct = 0;
+  const donutSegments = canteenShare.map(seg => {
+    const dash = (seg.pct / 100) * circumference;
+    const offset = circumference - cumulativePct / 100 * circumference;
+    cumulativePct += seg.pct;
+    return { ...seg, dash, offset };
+  });
+
   return (
     <div className="page-content">
-      <div className="page-header"><h2>Platform Analytics</h2></div>
+      <div className="page-header"><h2>Platform Analytics</h2><span className="tag tag-green">● Live</span></div>
+
+      {/* KPI row */}
       <div className="stats-row">
-        <div className="stat-card"><div className="stat-num">₹2.4L</div><div className="stat-label">Revenue This Month</div></div>
-        <div className="stat-card"><div className="stat-num">14,820</div><div className="stat-label">Orders This Month</div></div>
-        <div className="stat-card"><div className="stat-num">2,841</div><div className="stat-label">Active Users</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>4.4★</div><div className="stat-label">Avg Platform Rating</div></div>
+        <div className="stat-card">
+          <div className="stat-num">₹2.4L</div>
+          <div className="stat-label">Revenue This Month</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 21% vs last month</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">14,820</div>
+          <div className="stat-label">Orders This Month</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 18% vs last month</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">2,841</div>
+          <div className="stat-label">Active Users</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 128 new this week</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num" style={{ color: "var(--green)" }}>4.4★</div>
+          <div className="stat-label">Avg Platform Rating</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>across 3 canteens</div>
+        </div>
       </div>
-      <div className="card" style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>
-        <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📈</div>
-        <div style={{ fontWeight: 600 }}>Revenue chart coming soon</div>
-        <div style={{ fontSize: "0.8rem" }}>Connect to the API backend for live charts</div>
+
+      {/* Revenue line chart + Donut side by side */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: "1rem", marginBottom: "1rem" }}>
+
+        {/* Revenue line chart */}
+        <div className="card" style={{ padding: "1.25rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>Monthly Revenue (₹)</div>
+            <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>Last 6 months</span>
+          </div>
+          <svg viewBox={`0 0 ${chartW} ${chartH + 24}`} style={{ width: "100%", height: 140, overflow: "visible" }}>
+            {/* Grid lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map(t => {
+              const y = chartH - t * (chartH - 16) - 4;
+              return (
+                <g key={t}>
+                  <line x1={padX} y1={y} x2={chartW - padX} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                  <text x={padX - 2} y={y + 4} fontSize="8" fill="#9ca3af" textAnchor="end">
+                    {t === 0 ? "0" : `₹${(t * maxRev / 1000).toFixed(0)}k`}
+                  </text>
+                </g>
+              );
+            })}
+            {/* Area fill */}
+            <defs>
+              <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f97316" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <polygon
+              points={`${padX},${chartH - 4} ${revPoints} ${chartW - padX},${chartH - 4}`}
+              fill="url(#revGrad)"
+            />
+            {/* Line */}
+            <polyline points={revPoints} fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+            {/* Dots + month labels */}
+            {revenueData.map((d, i) => {
+              const x = padX + (i / (revenueData.length - 1)) * (chartW - padX * 2);
+              const y = chartH - (d.value / maxRev) * (chartH - 16) - 4;
+              return (
+                <g key={i}>
+                  <circle cx={x} cy={y} r="4" fill="#f97316" />
+                  <text x={x} y={chartH + 16} fontSize="9" fill="#6b7280" textAnchor="middle">{d.month}</text>
+                  <text x={x} y={y - 8} fontSize="8" fill="#f97316" textAnchor="middle">₹{(d.value / 1000).toFixed(0)}k</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Donut chart */}
+        <div className="card" style={{ padding: "1.25rem" }}>
+          <div style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.75rem" }}>Revenue by Canteen</div>
+          <svg viewBox="0 0 128 128" style={{ width: 128, height: 128, display: "block", margin: "0 auto" }}>
+            {donutSegments.map((seg, i) => (
+              <circle
+                key={i}
+                cx={donutCX} cy={donutCY} r={donutR}
+                fill="none"
+                stroke={seg.color}
+                strokeWidth="20"
+                strokeDasharray={`${seg.dash} ${circumference - seg.dash}`}
+                strokeDashoffset={seg.offset}
+                style={{ transform: "rotate(-90deg)", transformOrigin: `${donutCX}px ${donutCY}px` }}
+              />
+            ))}
+            <text x={donutCX} y={donutCY - 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#111">₹2.4L</text>
+            <text x={donutCX} y={donutCY + 10} textAnchor="middle" fontSize="7" fill="#6b7280">total</text>
+          </svg>
+          <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            {canteenShare.map(seg => (
+              <div key={seg.name} style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.72rem" }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: seg.color, flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{seg.name}</span>
+                <strong>{seg.pct}%</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Orders bar chart */}
+      <div className="card" style={{ padding: "1.25rem", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>Monthly Orders</div>
+          <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>Last 6 months</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem", height: 100 }}>
+          {ordersData.map((d, i) => {
+            const pct = d.value / maxOrd;
+            const isLast = i === ordersData.length - 1;
+            return (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+                <span style={{ fontSize: "0.65rem", color: isLast ? "var(--orange)" : "var(--ink-3)", fontWeight: isLast ? 700 : 400 }}>
+                  {(d.value / 1000).toFixed(1)}k
+                </span>
+                <div style={{
+                  width: "100%", background: isLast ? "var(--orange)" : "#e5e7eb",
+                  height: `${pct * 72}px`, borderRadius: "4px 4px 0 0",
+                  transition: "height 0.3s"
+                }} />
+                <span style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{d.month}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Top selling items */}
+      <div className="card" style={{ padding: "1.25rem" }}>
+        <div style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.75rem" }}>🏆 Top Selling Items</div>
+        <div className="table-wrap" style={{ margin: 0 }}>
+          <table>
+            <thead>
+              <tr><th>#</th><th>ITEM</th><th>CANTEEN</th><th>ORDERS</th><th>REVENUE</th><th>SHARE</th></tr>
+            </thead>
+            <tbody>
+              {topItems.map((item, i) => {
+                const maxOrders = topItems[0].orders;
+                const pct = Math.round((item.orders / maxOrders) * 100);
+                return (
+                  <tr key={i}>
+                    <td style={{ color: "var(--ink-3)", fontWeight: 600 }}>{i + 1}</td>
+                    <td style={{ fontWeight: 600 }}>{item.name}</td>
+                    <td style={{ fontSize: "0.8rem", color: "var(--ink-3)" }}>{item.canteen}</td>
+                    <td>{item.orders.toLocaleString()}</td>
+                    <td style={{ fontWeight: 700, color: "var(--green)" }}>{item.revenue}</td>
+                    <td style={{ minWidth: 80 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <div style={{ flex: 1, height: 6, background: "#f3f4f6", borderRadius: 3 }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "var(--orange)", borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{pct}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
