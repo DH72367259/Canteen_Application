@@ -63,7 +63,7 @@ function Divider({ label }: { label: string }) {
 function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user, sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, linkEmail, verifyEmailLink, signInWithPassword, resetPassword } = useAuth();
+  const { user, loading, sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, linkEmail, verifyEmailLink, signInWithPassword, resetPassword } = useAuth();
 
   type Tab = "phone" | "email" | "password" | "forgot";
   const roleParam = params.get("role") || "user";
@@ -243,6 +243,12 @@ function LoginContent() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to send reset link.");
     } finally { setBusy(false); }
+  }
+
+  // While auth is loading (e.g. arriving via magic link), show a spinner
+  // so the login form never flashes before the redirect happens
+  if (loading) {
+    return <div className="loading-screen"><div className="spinner" /></div>;
   }
 
   return (
