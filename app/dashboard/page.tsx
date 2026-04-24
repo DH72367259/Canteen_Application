@@ -445,8 +445,9 @@ export default function UserHomePage() {
       {/* ── NoQx Pro soft-awareness banner ── */}
       <div style={{ margin: "0.5rem 1rem 1rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "0.15rem" }}>⚡ Skip queues every day</div>
-          <div style={{ fontSize: "0.72rem", color: "#b45309" }}>With ₹0 convenience fee · Try Priority Pickup, Every Time</div>
+          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "0.1rem" }}>⚡ Skip queues every day</div>
+          <div style={{ fontSize: "0.72rem", color: "#b45309", marginBottom: "0.15rem" }}>With 0/- convenience fee</div>
+          <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400e" }}>Try Priority Pickup, Every Time →</div>
         </div>
         <a href="/dashboard/pro" style={{ background: "var(--orange)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.8rem", fontSize: "0.75rem", fontWeight: 800, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
           ₹49/mo →

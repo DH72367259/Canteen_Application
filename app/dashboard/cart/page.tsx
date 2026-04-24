@@ -287,11 +287,18 @@ function CartContent() {
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem" }}>
             <span>Subtotal</span><span>₹{subtotal}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem" }}>
-            <span style={{ color: isPro ? "var(--green)" : "var(--ink)" }}>
-              ⚡ Convenience fee {isPro && <span style={{ fontSize: "0.72rem", color: "var(--green)" }}>(Pro — free)</span>}
-            </span>
-            <span style={{ color: isPro ? "var(--green)" : "var(--ink)" }}>{isPro ? "₹0" : `₹${convFee}`}</span>
+          <div style={{ marginBottom: "0.4rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem" }}>
+              <span style={{ color: isPro ? "var(--green)" : "var(--ink)" }}>
+                ⚡ Convenience fee {isPro && <span style={{ fontSize: "0.72rem", color: "var(--green)" }}>(Pro — free)</span>}
+              </span>
+              <span style={{ color: isPro ? "var(--green)" : "var(--ink)" }}>{isPro ? "₹0" : `₹${convFee}`}</span>
+            </div>
+            {!isPro && (
+              <div style={{ fontSize: "0.7rem", color: "var(--green)", marginTop: "0.15rem" }}>
+                Pro users pay ₹0
+              </div>
+            )}
           </div>
           {useWallet && walletDisc > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "var(--green)", marginBottom: "0.4rem" }}>

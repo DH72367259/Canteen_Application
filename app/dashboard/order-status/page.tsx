@@ -146,6 +146,16 @@ export default function OrderStatusPage() {
 
         <div style={{ padding: "1.25rem 1rem", display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "2rem" }}>
 
+          {/* "Your order is ready" heading */}
+          <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
+            <h2 style={{ fontWeight: 900, fontSize: "1.3rem", color: "#15803d", marginBottom: "0.25rem" }}>
+              Your order is ready 🎉
+            </h2>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", fontWeight: 600 }}>
+              Collect Your Order and tell OTP if asked
+            </p>
+          </div>
+
           {/* Bin number */}
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", marginBottom: "0.5rem" }}>Your Bin</div>
@@ -168,7 +178,7 @@ export default function OrderStatusPage() {
           {/* OTP */}
           <div className="card" style={{ padding: "1rem", textAlign: "center" }}>
             <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", marginBottom: "0.75rem" }}>
-              Collect your order and tell OTP if asked
+              Your OTP
             </div>
             <div style={{ display: "flex", gap: "0.6rem", justifyContent: "center" }}>
               {otpDigits.map((d, i) => (
