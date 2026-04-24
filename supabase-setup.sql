@@ -336,6 +336,54 @@ create policy "settle_admin_only" on settlement_payments
   );
 
 -- ============================================================
+-- Support Tickets (raised by students or vendors; managed by super_admin)
+-- ============================================================
+create table if not exists support_tickets (
+  id             uuid primary key default gen_random_uuid(),
+  ticket_ref     text unique not null, -- e.g. TKT-20260424-0001
+  raised_by      uuid references auth.users on delete set null,
+  raised_by_role text not null check (raised_by_role in ('student','vendor','canteen_admin')),
+  canteen_id     uuid references canteens(id) on delete set null,
+  order_id       uuid references orders(id) on delete set null,
+  category       text not null check (category in (
+    'payment_issue','order_not_found','otp_mismatch','vendor_refused',
+    'refund_request','menu_issue','app_bug','other'
+  )),
+  subject        text not null,
+  description    text not null,
+  priority       text not null default 'medium' check (priority in ('low','medium','high','critical')),
+  status         text not null default 'open' check (status in ('open','in_progress','escalated','resolved','closed')),
+  admin_notes    text,
+  resolved_by    uuid references auth.users on delete set null,
+  resolved_at    timestamptz,
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+alter table support_tickets enable row level security;
+
+-- Students/vendors can create tickets and view their own
+create policy "support_insert_own" on support_tickets
+  for insert with check (raised_by = auth.uid());
+
+create policy "support_select_own" on support_tickets
+  for select using (
+    raised_by = auth.uid()
+    OR exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+    OR (
+      canteen_id is not null AND exists (
+        select 1 from profiles where id = auth.uid() and canteen_id = support_tickets.canteen_id
+          and role in ('canteen_admin','vendor')
+      )
+    )
+  );
+
+-- Only super_admin can update (triage, resolve, add notes)
+create policy "support_update_admin" on support_tickets
+  for update using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+  );
+
+-- ============================================================
 -- DONE. Now create your admin user:
 --   1. Go to Authentication → Users → Add user
 --   2. Email: admin@canteen.app  Password: admin123  (or any)

@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   { id: "sales", icon: "💰", label: "Sales" },
   { id: "logs", icon: "📋", label: "Logs" },
   { id: "settings", icon: "⚙️", label: "Settings" },
+  { id: "support", icon: "🎧", label: "Raise a Concern" },
 ];
 
 export default function VendorDashboard() {
@@ -373,6 +374,7 @@ export default function VendorDashboard() {
         {activeNav === "bins" && <VendorBinsView bins={bins} setBins={setBins} />}
         {activeNav === "logs" && <VendorLogsView />}
         {activeNav === "settings" && <VendorSettingsView canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
+        {activeNav === "support" && <VendorSupportView />}
       </main>
 
       {/* OTP Modal */}
@@ -931,6 +933,233 @@ function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: bool
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Vendor Support / Raise a Concern ─────────────────────────────────────────
+interface VendorTicket {
+  id: string; ticket_ref: string; category: string; subject: string;
+  description: string; status: string; admin_notes: string | null; created_at: string;
+}
+
+function VendorSupportView() {
+  const { session } = useAuth();
+  const CATEGORIES = [
+    { value: "payment_issue",   label: "💳 Payment / Settlement Issue", desc: "Settlement not received or incorrect amount" },
+    { value: "order_not_found", label: "📦 Order Related Issue",        desc: "Order discrepancy or missing order" },
+    { value: "otp_mismatch",    label: "🔑 OTP Verification Problem",   desc: "OTP not verifying correctly in system" },
+    { value: "menu_issue",      label: "🍽️ Menu / Item Issue",           desc: "Menu items not saving or showing incorrectly" },
+    { value: "app_bug",         label: "🐛 App / Dashboard Bug",        desc: "Dashboard malfunction or error" },
+    { value: "other",           label: "💬 Other",                      desc: "Something else" },
+  ];
+  const STATUS_COLORS: Record<string, string> = {
+    open: "#3b82f6", in_progress: "#f97316", escalated: "#ef4444",
+    resolved: "#16a34a", closed: "#6b7280",
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    open: "Open", in_progress: "In Progress", escalated: "Escalated",
+    resolved: "Resolved", closed: "Closed",
+  };
+
+  const [tab,        setTab]        = useState<"raise" | "track">("raise");
+  const [category,   setCategory]   = useState("");
+  const [subject,    setSubject]    = useState("");
+  const [desc,       setDesc]       = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr,  setSubmitErr]  = useState<string | null>(null);
+  const [submitted,  setSubmitted]  = useState<{ ticket_ref: string } | null>(null);
+  const [tickets,    setTickets]    = useState<VendorTicket[]>([]);
+  const [fetching,   setFetching]   = useState(false);
+  const [selected,   setSelected]   = useState<VendorTicket | null>(null);
+
+  const loadTickets = async () => {
+    if (!session?.access_token) return;
+    setFetching(true);
+    try {
+      const res = await fetch("/api/support", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (res.ok) setTickets(d.tickets ?? []);
+    } catch { /* ignore */ } finally { setFetching(false); }
+  };
+
+  useEffect(() => {
+    if (tab === "track") loadTickets();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!category)        { setSubmitErr("Please select a category."); return; }
+    if (!subject.trim())  { setSubmitErr("Please enter a subject."); return; }
+    if (!desc.trim())     { setSubmitErr("Please describe the issue."); return; }
+    if (!session?.access_token) { setSubmitErr("Not authenticated."); return; }
+    setSubmitting(true); setSubmitErr(null);
+    try {
+      const res = await fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ category, subject: subject.trim(), description: desc.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setSubmitErr(d.error ?? "Failed to submit."); return; }
+      setSubmitted(d.ticket);
+      setCategory(""); setSubject(""); setDesc("");
+    } catch { setSubmitErr("Network error. Please try again."); } finally { setSubmitting(false); }
+  }
+
+  function relativeTime(iso: string) {
+    const diff = Date.now() - new Date(iso).getTime();
+    if (diff < 60000)    return "Just now";
+    if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Raise a Concern</h2>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {(["raise", "track"] as const).map(t => (
+            <button key={t} className={`btn ${tab === t ? "btn-primary" : "btn-ghost"}`}
+              style={{ fontSize: "0.8rem" }} onClick={() => setTab(t)}>
+              {t === "raise" ? "🆕 New Ticket" : `📋 My Tickets (${tickets.length})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "raise" && (
+        submitted ? (
+          <div className="card" style={{ padding: "1.5rem", textAlign: "center", maxWidth: 480 }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>✅</div>
+            <h3 style={{ fontWeight: 800, marginBottom: "0.5rem" }}>Ticket Submitted!</h3>
+            <p style={{ color: "var(--ink-3)", marginBottom: "0.5rem" }}>
+              Reference: <strong style={{ fontFamily: "monospace", color: "var(--orange)" }}>{submitted.ticket_ref}</strong>
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginBottom: "1rem" }}>
+              Our admin team will review and respond within 24 hours.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+              <button className="btn btn-primary" onClick={() => setSubmitted(null)}>Raise Another</button>
+              <button className="btn btn-ghost" onClick={() => setTab("track")}>Track Tickets</button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ maxWidth: 540, display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div>
+              <label className="form-label" style={{ marginBottom: "0.6rem", display: "block" }}>Category *</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                {CATEGORIES.map(c => (
+                  <label key={c.value} style={{
+                    display: "flex", alignItems: "center", gap: "0.75rem",
+                    border: `2px solid ${category === c.value ? "var(--orange)" : "var(--border)"}`,
+                    borderRadius: 10, padding: "0.65rem 0.85rem", cursor: "pointer",
+                    background: category === c.value ? "#fff7ed" : "var(--surface)",
+                  }}>
+                    <input type="radio" name="vendorcat" value={c.value} checked={category === c.value}
+                      onChange={() => setCategory(c.value)} style={{ accentColor: "var(--orange)" }} />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{c.label}</div>
+                      <div style={{ fontSize: "0.74rem", color: "var(--ink-3)" }}>{c.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Subject *</label>
+              <input type="text" className="form-input" value={subject} maxLength={200}
+                onChange={e => setSubject(e.target.value)} placeholder="Brief summary of the issue" />
+            </div>
+            <div>
+              <label className="form-label">Description *</label>
+              <textarea className="form-input" rows={5} value={desc} maxLength={2000}
+                onChange={e => setDesc(e.target.value)}
+                placeholder="Describe the problem in detail — include date, timing, and what happened."
+                style={{ resize: "vertical" }} />
+              <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", textAlign: "right", marginTop: "0.2rem" }}>{desc.length}/2000</div>
+            </div>
+            {submitErr && <div className="error-msg">{submitErr}</div>}
+            <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.6rem 2rem" }} disabled={submitting}>
+              {submitting ? "Submitting…" : "Submit Ticket"}
+            </button>
+          </form>
+        )
+      )}
+
+      {tab === "track" && (
+        <div>
+          {fetching && <div style={{ color: "var(--ink-3)", padding: "1.5rem" }}>Loading…</div>}
+          {!fetching && tickets.length === 0 && (
+            <div className="empty-state">
+              <span className="empty-icon">🎫</span>
+              <h3>No tickets yet</h3>
+              <p>Your submitted tickets will appear here.</p>
+            </div>
+          )}
+          {!fetching && tickets.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>REF</th><th>SUBJECT</th><th>CATEGORY</th><th>STATUS</th><th>TIME</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {tickets.map(t => (
+                    <tr key={t.id} style={{ cursor: "pointer" }} onClick={() => setSelected(t)}>
+                      <td style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--ink-3)" }}>{t.ticket_ref}</td>
+                      <td style={{ fontWeight: 600, fontSize: "0.88rem" }}>{t.subject}</td>
+                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)", textTransform: "capitalize" }}>{t.category.replace("_", " ")}</td>
+                      <td>
+                        <span style={{
+                          fontSize: "0.72rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 20,
+                          background: (STATUS_COLORS[t.status] ?? "#6b7280") + "18",
+                          color: STATUS_COLORS[t.status] ?? "#6b7280",
+                        }}>{STATUS_LABELS[t.status] ?? t.status}</span>
+                      </td>
+                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{relativeTime(t.created_at)}</td>
+                      <td style={{ fontSize: "0.78rem", color: "var(--blue)" }}>View →</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selected && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: 480, maxWidth: "90vw", maxHeight: "75vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+              <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "var(--ink-3)" }}>{selected.ticket_ref}</span>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", fontSize: "1.2rem" }}>✕</button>
+            </div>
+            <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.5rem" }}>{selected.subject}</h3>
+            <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+              {selected.category.replace("_", " ")} · {relativeTime(selected.created_at)}
+              <span style={{
+                marginLeft: "0.5rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 10,
+                background: (STATUS_COLORS[selected.status] ?? "#6b7280") + "18",
+                color: STATUS_COLORS[selected.status] ?? "#6b7280",
+              }}>{STATUS_LABELS[selected.status] ?? selected.status}</span>
+            </div>
+            <div style={{ background: "var(--surface)", borderRadius: 8, padding: "0.75rem", fontSize: "0.88rem", lineHeight: 1.6, marginBottom: "0.75rem" }}>
+              {selected.description}
+            </div>
+            {selected.admin_notes && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "0.75rem", fontSize: "0.85rem", color: "#15803d" }}>
+                <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>💬 Admin Response</div>
+                {selected.admin_notes}
+              </div>
+            )}
+            <button className="btn btn-ghost btn-full" style={{ marginTop: "1rem" }} onClick={() => setSelected(null)}>Close</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

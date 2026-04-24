@@ -325,6 +325,8 @@ export default function UserHomePage() {
             style={{ background: "none", border: "none", fontSize: "1.15rem", cursor: "pointer", padding: "0.2rem" }}
             title="Logout"
           >🚪</button>
+          <Link href="/dashboard/support" onClick={e => e.stopPropagation()} title="Help & Support"
+            style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}>🎧</Link>
         </div>
       </div>
 

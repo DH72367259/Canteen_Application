@@ -577,84 +577,216 @@ function CitiesSection() {
 }
 
 function SupportSection() {
-  const TICKETS = [
-    { id: "T001", user: "Arjun Sharma", issue: "OTP mismatch – order not collected", canteen: "IIT Bombay – Main", priority: "high", status: "open", time: "2 hrs ago" },
-    { id: "T002", user: "Priya Menon", issue: "Payment deducted but order not placed", canteen: "BITS Pilani", priority: "critical", status: "open", time: "4 hrs ago" },
-    { id: "T003", user: "Karan Das", issue: "Menu item not available at slot", canteen: "NIT Trichy", priority: "medium", status: "resolved", time: "1 day ago" },
-    { id: "T004", user: "Sneha Joshi", issue: "Rewards not credited after order", canteen: "VIT Vellore", priority: "low", status: "resolved", time: "2 days ago" },
-    { id: "T005", user: "Rohan Kumar", issue: "Wrong item placed in bin", canteen: "IIT Bombay – Main", priority: "high", status: "escalated", time: "30 mins ago" },
-  ];
-  type StatusType = "open" | "resolved" | "escalated";
-  const [tickets, setTickets] = useState(TICKETS);
-  const [filterStatus, setFilterStatus] = useState<"all" | StatusType>("all");
+  const { session } = useAuth();
+  const [tickets,      setTickets]      = useState<SupportTicket[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [err,          setErr]          = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [selected,     setSelected]     = useState<SupportTicket | null>(null);
+  const [adminNotes,   setAdminNotes]   = useState("");
+  const [updating,     setUpdating]     = useState(false);
 
-  const filtered = filterStatus === "all" ? tickets : tickets.filter(t => t.status === filterStatus);
+  const load = async () => {
+    if (!session?.access_token) return;
+    setLoading(true); setErr(null);
+    try {
+      const url = filterStatus === "all" ? "/api/support" : `/api/support?status=${filterStatus}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "Failed"); return; }
+      setTickets(d.tickets ?? []);
+    } catch { setErr("Network error"); } finally { setLoading(false); }
+  };
 
-  const resolve = (id: string) => setTickets(prev => prev.map(t => t.id === id ? { ...t, status: "resolved" } : t));
-  const escalate = (id: string) => setTickets(prev => prev.map(t => t.id === id ? { ...t, status: "escalated" } : t));
+  useEffect(() => { load(); }, [filterStatus, session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateTicket = async (id: string, patch: Record<string, string>) => {
+    if (!session?.access_token) return;
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/support/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(patch),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setTickets(prev => prev.map(t => t.id === id ? { ...t, ...d.ticket } : t));
+        if (selected?.id === id) setSelected(prev => prev ? { ...prev, ...d.ticket } : null);
+      }
+    } finally { setUpdating(false); }
+  };
+
+  const saveNotes = () => {
+    if (!selected) return;
+    updateTicket(selected.id, { admin_notes: adminNotes });
+  };
+
+  const openTicket = (t: SupportTicket) => {
+    setSelected(t);
+    setAdminNotes(t.admin_notes ?? "");
+  };
 
   const priorityColor: Record<string, string> = { critical: "var(--red)", high: "var(--orange)", medium: "var(--yellow)", low: "var(--ink-3)" };
-  const statusTag: Record<string, string> = { open: "tag-blue", resolved: "tag-green", escalated: "tag-orange" };
+  const statusTag: Record<string, string> = { open: "tag-blue", in_progress: "tag-orange", escalated: "tag-orange", resolved: "tag-green", closed: "tag-green" };
+  const categoryLabel: Record<string, string> = {
+    payment_issue: "Payment Issue", order_not_found: "Order Not Found",
+    otp_mismatch: "OTP Mismatch", vendor_refused: "Vendor Refused",
+    refund_request: "Refund Request", menu_issue: "Menu Issue",
+    app_bug: "App Bug", other: "Other",
+  };
 
-  const counts = { open: tickets.filter(t => t.status === "open").length, escalated: tickets.filter(t => t.status === "escalated").length };
+  const counts = {
+    open: tickets.filter(t => t.status === "open").length,
+    escalated: tickets.filter(t => t.status === "escalated").length,
+    resolved: tickets.filter(t => ["resolved", "closed"].includes(t.status)).length,
+  };
 
   return (
     <div className="page-content">
       <div className="page-header">
-        <h2>Complaints & Escalations</h2>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          {(["all", "open", "escalated", "resolved"] as const).map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)} className={`btn ${filterStatus === s ? "btn-primary" : "btn-ghost"}`} style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem", textTransform: "capitalize" }}>{s}</button>
+        <h2>Complaints &amp; Escalations</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button className="btn btn-ghost" style={{ fontSize: "0.78rem" }} onClick={load}>↻</button>
+          {(["all", "open", "in_progress", "escalated", "resolved"] as const).map(s => (
+            <button key={s} onClick={() => setFilterStatus(s)} className={`btn ${filterStatus === s ? "btn-primary" : "btn-ghost"}`}
+              style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem", textTransform: "capitalize" }}>
+              {s === "in_progress" ? "In Progress" : s}
+            </button>
           ))}
         </div>
       </div>
 
       <div className="stats-row" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1rem" }}>
-        <div className="stat-card">
-          <div className="stat-num" style={{ color: "var(--red)" }}>{counts.open}</div>
-          <div className="stat-label">Open Tickets</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-num" style={{ color: "var(--orange)" }}>{counts.escalated}</div>
-          <div className="stat-label">Escalated</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-num" style={{ color: "var(--green)" }}>{tickets.filter(t => t.status === "resolved").length}</div>
-          <div className="stat-label">Resolved</div>
-        </div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--red)" }}>{counts.open}</div><div className="stat-label">Open Tickets</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--orange)" }}>{counts.escalated}</div><div className="stat-label">Escalated</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>{counts.resolved}</div><div className="stat-label">Resolved</div></div>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>USER</th><th>ISSUE</th><th>CANTEEN</th><th>PRIORITY</th><th>STATUS</th><th>TIME</th><th>ACTIONS</th></tr></thead>
-          <tbody>
-            {filtered.map(t => (
-              <tr key={t.id}>
-                <td style={{ fontSize: "0.78rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{t.id}</td>
-                <td style={{ fontWeight: 600 }}>{t.user}</td>
-                <td style={{ fontSize: "0.82rem", maxWidth: 200 }}>{t.issue}</td>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{t.canteen}</td>
-                <td><span style={{ fontSize: "0.75rem", fontWeight: 700, color: priorityColor[t.priority], textTransform: "uppercase" }}>{t.priority}</span></td>
-                <td><span className={`tag ${statusTag[t.status]}`}>{t.status}</span></td>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{t.time}</td>
-                <td style={{ display: "flex", gap: "0.25rem" }}>
-                  {t.status !== "resolved" && (
-                    <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--green)" }} onClick={() => resolve(t.id)}>Resolve</button>
-                  )}
-                  {t.status === "open" && (
-                    <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--orange)" }} onClick={() => escalate(t.id)}>Escalate</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No tickets found</td></tr>
+      {loading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading tickets…</div>}
+      {!loading && err && <div className="error-msg">{err}</div>}
+
+      {!loading && !err && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>REF</th><th>BY</th><th>CATEGORY</th><th>SUBJECT</th><th>CANTEEN</th><th>PRIORITY</th><th>STATUS</th><th>TIME</th><th>ACTIONS</th></tr></thead>
+            <tbody>
+              {tickets.map(t => (
+                <tr key={t.id} style={{ cursor: "pointer" }} onClick={() => openTicket(t)}>
+                  <td style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{t.ticket_ref}</td>
+                  <td style={{ fontWeight: 600, fontSize: "0.82rem" }}>{(t.raised_profile as { name?: string } | null)?.name ?? "—"}<div style={{ fontSize: "0.68rem", color: "var(--ink-3)", textTransform: "capitalize" }}>{t.raised_by_role}</div></td>
+                  <td><span className="tag tag-blue" style={{ fontSize: "0.68rem" }}>{categoryLabel[t.category] ?? t.category}</span></td>
+                  <td style={{ fontSize: "0.82rem", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.subject}</td>
+                  <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{(t.canteen as { name?: string } | null)?.name ?? "—"}</td>
+                  <td><span style={{ fontSize: "0.72rem", fontWeight: 700, color: priorityColor[t.priority], textTransform: "uppercase" }}>{t.priority}</span></td>
+                  <td><span className={`tag ${statusTag[t.status] ?? "tag-yellow"}`} style={{ textTransform: "capitalize" }}>{t.status.replace("_", " ")}</span></td>
+                  <td style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{relativeTime(t.created_at)}</td>
+                  <td style={{ display: "flex", gap: "0.25rem" }}>
+                    {t.status === "open" && (
+                      <button className="btn btn-ghost" style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", color: "var(--orange)" }}
+                        onClick={e => { e.stopPropagation(); updateTicket(t.id, { status: "in_progress" }); }}>In Progress</button>
+                    )}
+                    {["open","in_progress"].includes(t.status) && (
+                      <button className="btn btn-ghost" style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", color: "var(--orange)" }}
+                        onClick={e => { e.stopPropagation(); updateTicket(t.id, { status: "escalated" }); }}>Escalate</button>
+                    )}
+                    {t.status !== "resolved" && t.status !== "closed" && (
+                      <button className="btn btn-ghost" style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", color: "var(--green)" }}
+                        onClick={e => { e.stopPropagation(); updateTicket(t.id, { status: "resolved" }); }}>Resolve</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {tickets.length === 0 && (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No tickets found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Ticket Detail Modal ── */}
+      {selected && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: 520, maxWidth: "92vw", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+              <div>
+                <div style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--ink-3)" }}>{selected.ticket_ref}</div>
+                <h3 style={{ fontWeight: 800, fontSize: "1.05rem", margin: "0.2rem 0" }}>{selected.subject}</h3>
+                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                  <span className={`tag ${statusTag[selected.status]}`} style={{ textTransform: "capitalize" }}>{selected.status.replace("_"," ")}</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: priorityColor[selected.priority], textTransform: "uppercase" }}>{selected.priority}</span>
+                  <span className="tag tag-blue" style={{ fontSize: "0.68rem" }}>{categoryLabel[selected.category] ?? selected.category}</span>
+                </div>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
+            </div>
+
+            <div style={{ marginBottom: "0.75rem" }}>
+              <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.25rem", textTransform: "uppercase" }}>Raised by</div>
+              <div style={{ fontSize: "0.85rem" }}>{(selected.raised_profile as { name?: string; email?: string } | null)?.name ?? "Unknown"} <span style={{ color: "var(--ink-3)" }}>· {selected.raised_by_role} · {relativeTime(selected.created_at)}</span></div>
+            </div>
+
+            {(selected.canteen as { name?: string } | null)?.name && (
+              <div style={{ marginBottom: "0.75rem" }}>
+                <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.25rem", textTransform: "uppercase" }}>Canteen</div>
+                <div style={{ fontSize: "0.85rem" }}>{(selected.canteen as { name?: string }).name}</div>
+              </div>
             )}
-          </tbody>
-        </table>
-      </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.25rem", textTransform: "uppercase" }}>Description</div>
+              <div style={{ fontSize: "0.88rem", background: "var(--surface)", borderRadius: 8, padding: "0.65rem", lineHeight: 1.6 }}>{selected.description}</div>
+            </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.4rem", textTransform: "uppercase" }}>Admin Notes</div>
+              <textarea rows={3} value={adminNotes} onChange={e => setAdminNotes(e.target.value)}
+                placeholder="Add internal notes here…"
+                style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.85rem", resize: "vertical", boxSizing: "border-box" }} />
+              <button className="btn btn-ghost" style={{ fontSize: "0.78rem", marginTop: "0.35rem" }} disabled={updating} onClick={saveNotes}>
+                {updating ? "Saving…" : "Save Notes"}
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {selected.status !== "resolved" && selected.status !== "closed" && (
+                <button className="btn btn-primary" style={{ fontSize: "0.82rem" }} disabled={updating}
+                  onClick={() => updateTicket(selected.id, { status: "resolved", admin_notes: adminNotes })}>
+                  ✓ Mark Resolved
+                </button>
+              )}
+              {selected.status === "open" && (
+                <button className="btn btn-ghost" style={{ fontSize: "0.82rem", color: "var(--orange)" }} disabled={updating}
+                  onClick={() => updateTicket(selected.id, { status: "escalated" })}>Escalate</button>
+              )}
+              {selected.status === "open" && (
+                <button className="btn btn-ghost" style={{ fontSize: "0.82rem" }} disabled={updating}
+                  onClick={() => updateTicket(selected.id, { status: "in_progress" })}>Mark In Progress</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+interface SupportTicket {
+  id: string; ticket_ref: string; raised_by_role: string;
+  category: string; subject: string; description: string;
+  priority: string; status: string; admin_notes: string | null;
+  created_at: string; resolved_at: string | null;
+  raised_profile: unknown; canteen: unknown;
+}
+function relativeTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000)     return "Just now";
+  if (diff < 3600000)   return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000)  return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
 
@@ -885,33 +1017,238 @@ function AnalyticsSection() {
 }
 
 function PaymentsSection() {
+  const { session } = useAuth();
+  const [data,    setData]    = useState<SettlementRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err,     setErr]     = useState<string | null>(null);
+  const [settle,  setSettle]  = useState<SettlementRow | null>(null); // open modal
+  const [form,    setForm]    = useState({ amount: "", mode: "upi", ref: "", notes: "" });
+  const [saving,  setSaving]  = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [saveOk,  setSaveOk]  = useState(false);
+
+  const load = async () => {
+    if (!session?.access_token) return;
+    setLoading(true); setErr(null);
+    try {
+      const res = await fetch("/api/admin/settlements", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "Failed to load"); return; }
+      setData(d.canteens ?? []);
+    } catch { setErr("Network error"); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openSettle = (row: SettlementRow) => {
+    setSettle(row);
+    setForm({ amount: String(row.amount_remaining > 0 ? row.amount_remaining : row.net_payable), mode: "upi", ref: "", notes: "" });
+    setSaveErr(null); setSaveOk(false);
+  };
+
+  const handleSettle = async () => {
+    if (!settle || !session?.access_token) return;
+    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
+      setSaveErr("Enter a valid amount."); return;
+    }
+    setSaving(true); setSaveErr(null); setSaveOk(false);
+    try {
+      const res = await fetch("/api/admin/settlements/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          canteen_id:      settle.canteen_id,
+          amount_paid:     Number(form.amount),
+          payment_mode:    form.mode,
+          transaction_ref: form.ref || undefined,
+          notes:           form.notes || undefined,
+          period_start:    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+          period_end:      new Date().toISOString().slice(0, 10),
+          gross_amount:    settle.gross_amount,
+          platform_charge: settle.platform_charge_amount,
+          gst_on_charge:   settle.gst_on_charge,
+          net_payable:     settle.net_payable,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setSaveErr(d.error ?? "Failed"); setSaving(false); return; }
+      setSaveOk(true);
+      setTimeout(() => { setSettle(null); setSaveOk(false); load(); }, 1200);
+    } catch { setSaveErr("Network error"); } finally { setSaving(false); }
+  };
+
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const statusTag: Record<string, string> = { paid: "tag-green", partial: "tag-orange", pending: "tag-yellow" };
+  const statusLabel: Record<string, string> = { paid: "Settled", partial: "Partial", pending: "Pending" };
+
+  // Summary stats
+  const total_gross   = (data ?? []).reduce((s, r) => s + r.gross_amount, 0);
+  const total_net     = (data ?? []).reduce((s, r) => s + r.net_payable, 0);
+  const total_paid    = (data ?? []).reduce((s, r) => s + r.amount_paid, 0);
+  const total_pending = (data ?? []).reduce((s, r) => s + r.amount_remaining, 0);
+
   return (
     <div className="page-content">
-      <div className="page-header"><h2>Payments & Settlements</h2></div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>DATE</th><th>CANTEEN</th><th>ORDERS</th><th>GROSS</th><th>PLATFORM FEE</th><th>NET</th><th>STATUS</th></tr></thead>
-          <tbody>
-            {[
-              { date: "Jul 28, 2025", canteen: "IIT Bombay – Main", orders: 42, gross: "₹3,240", fee: "₹162", net: "₹3,078", status: "settled" },
-              { date: "Jul 27, 2025", canteen: "BITS Pilani – Mess", orders: 38, gross: "₹2,940", fee: "₹147", net: "₹2,793", status: "settled" },
-              { date: "Jul 28, 2025", canteen: "VIT Vellore – Caf 2", orders: 24, gross: "₹1,880", fee: "₹94", net: "₹1,786", status: "pending" },
-            ].map((r, i) => (
-              <tr key={i}>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{r.date}</td>
-                <td style={{ fontSize: "0.82rem" }}>{r.canteen}</td>
-                <td>{r.orders}</td>
-                <td style={{ fontWeight: 600 }}>{r.gross}</td>
-                <td style={{ color: "var(--red)" }}>{r.fee}</td>
-                <td style={{ fontWeight: 700, color: "var(--green)" }}>{r.net}</td>
-                <td><span className={`tag ${r.status === "settled" ? "tag-green" : "tag-yellow"}`}>{r.status}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="page-header">
+        <h2>Payments &amp; Settlements</h2>
+        <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={load}>↻ Refresh</button>
       </div>
+
+      {/* Summary cards */}
+      {data && (
+        <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
+          {[
+            { label: "Gross Collected",    value: fmt(total_gross),   color: "var(--ink)"   },
+            { label: "Platform Earnings",  value: fmt(total_gross - total_net), color: "var(--blue)"  },
+            { label: "Net Payable",        value: fmt(total_net),     color: "var(--orange)" },
+            { label: "Amount Paid Out",    value: fmt(total_paid),    color: "var(--green)" },
+            { label: "Pending Payout",     value: fmt(total_pending), color: "var(--red)"   },
+          ].map(c => (
+            <div key={c.label} className="stat-card">
+              <div className="stat-num" style={{ color: c.color, fontSize: "1.15rem" }}>{c.value}</div>
+              <div className="stat-label">{c.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading settlements…</div>}
+      {!loading && err && <div className="error-msg">{err}</div>}
+      {!loading && data && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CANTEEN</th><th>ORDERS</th><th>GROSS</th>
+                <th>PLATFORM FEE</th><th>NET PAYABLE</th>
+                <th>PAID</th><th>PENDING</th><th>STATUS</th><th>ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(r => (
+                <tr key={r.canteen_id}>
+                  <td style={{ fontWeight: 600 }}>{r.canteen_name}<div style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{r.city}</div></td>
+                  <td style={{ fontSize: "0.82rem" }}>{r.completed_orders} / {r.total_orders}</td>
+                  <td style={{ fontWeight: 600 }}>{fmt(r.gross_amount)}</td>
+                  <td style={{ color: "var(--red)" }}>{fmt(r.platform_charge_amount)}</td>
+                  <td style={{ fontWeight: 700 }}>{fmt(r.net_payable)}</td>
+                  <td style={{ color: "var(--green)" }}>{fmt(r.amount_paid)}</td>
+                  <td style={{ color: r.amount_remaining > 0 ? "var(--red)" : "var(--ink-3)" }}>
+                    {fmt(r.amount_remaining)}
+                  </td>
+                  <td><span className={`tag ${statusTag[r.payment_status] ?? "tag-yellow"}`}>{statusLabel[r.payment_status] ?? r.payment_status}</span></td>
+                  <td>
+                    {r.amount_remaining > 0 && (
+                      <button className="btn btn-primary" style={{ fontSize: "0.72rem", padding: "0.25rem 0.6rem" }} onClick={() => openSettle(r)}>
+                        Record Payment
+                      </button>
+                    )}
+                    {r.amount_remaining <= 0 && r.net_payable > 0 && (
+                      <span style={{ fontSize: "0.72rem", color: "var(--green)" }}>✓ Fully settled</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {data.length === 0 && (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No settlement data for this period.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Payment history per canteen (expandable) */}
+      {!loading && data && data.some(r => r.payments && r.payments.length > 0) && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.75rem" }}>Payment History</h3>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>DATE</th><th>CANTEEN</th><th>AMOUNT PAID</th><th>MODE</th><th>REF</th><th>NOTES</th></tr></thead>
+              <tbody>
+                {data.flatMap(r =>
+                  (r.payments ?? []).map((p: PaymentRecord) => (
+                    <tr key={p.id}>
+                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{new Date(p.created_at).toLocaleDateString("en-IN")}</td>
+                      <td style={{ fontSize: "0.82rem" }}>{r.canteen_name}</td>
+                      <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(p.amount_paid)}</td>
+                      <td><span className="tag tag-blue" style={{ textTransform: "uppercase" }}>{p.payment_mode}</span></td>
+                      <td style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{p.transaction_ref || "—"}</td>
+                      <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{p.notes || "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Record Payment Modal ── */}
+      {settle && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={e => { if (e.target === e.currentTarget) setSettle(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: 420, maxWidth: "92vw", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.25rem" }}>Record Settlement Payment</h3>
+            <p style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "1.25rem" }}>{settle.canteen_name} — pending: {fmt(settle.amount_remaining)}</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Amount Paid (₹) *</label>
+                <input type="number" min="1" step="0.01" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
+                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.9rem", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Payment Mode *</label>
+                <select value={form.mode} onChange={e => setForm(p => ({ ...p, mode: e.target.value }))}
+                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem" }}>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
+                  <option value="cash">Cash</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Transaction Reference / UTR</label>
+                <input type="text" placeholder="e.g. UTR123456 or TXN ID" value={form.ref} onChange={e => setForm(p => ({ ...p, ref: e.target.value }))}
+                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Notes (optional)</label>
+                <input type="text" placeholder="e.g. July batch payment" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
+              </div>
+            </div>
+
+            {saveErr && <div className="error-msg" style={{ marginTop: "0.75rem" }}>{saveErr}</div>}
+            {saveOk  && <div style={{ marginTop: "0.75rem", color: "var(--green)", fontSize: "0.85rem", fontWeight: 600 }}>✓ Payment recorded!</div>}
+
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={saving} onClick={handleSettle}>
+                {saving ? "Saving…" : "Record Payment"}
+              </button>
+              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSettle(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+interface SettlementRow {
+  canteen_id: string; canteen_name: string; city: string;
+  total_orders: number; completed_orders: number;
+  gross_amount: number; platform_charge_amount: number; gst_on_charge: number;
+  net_payable: number; amount_paid: number; amount_remaining: number;
+  payment_status: string;
+  payments: PaymentRecord[];
+}
+interface PaymentRecord {
+  id: string; amount_paid: number; payment_mode: string;
+  transaction_ref: string | null; notes: string | null; created_at: string;
 }
 
 
