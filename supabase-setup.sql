@@ -235,6 +235,41 @@ $$;
 
 
 -- ============================================================
+-- Wallet transactions (top-up / withdrawal / earned / redeemed)
+-- ============================================================
+create table if not exists wallet_transactions (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid references auth.users on delete cascade,
+  type              text not null check (type in ('topup','withdrawal','earned','redeemed','expired')),
+  amount            numeric(10,2) not null,
+  payment_id        text,
+  razorpay_order_id text,
+  payment_method    text default 'unknown',
+  status            text default 'completed' check (status in ('completed','processing','failed')),
+  description       text,
+  created_at        timestamptz default now()
+);
+alter table wallet_transactions enable row level security;
+create policy "wallet_own_select" on wallet_transactions
+  for select using (auth.uid() = user_id);
+
+-- ============================================================
+-- Active sessions (concurrent-session enforcement)
+-- SHA-256 hash of IP is stored, never raw IP. Only service role accesses this.
+-- ============================================================
+create table if not exists active_sessions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users on delete cascade,
+  device_info text,
+  ip_hash     text,
+  is_active   boolean default true,
+  last_seen   timestamptz default now(),
+  created_at  timestamptz default now()
+);
+alter table active_sessions enable row level security;
+-- No user-facing policies — all access via service role in API routes only.
+
+-- ============================================================
 -- DONE. Now create your admin user:
 --   1. Go to Authentication → Users → Add user
 --   2. Email: admin@canteen.app  Password: admin123  (or any)

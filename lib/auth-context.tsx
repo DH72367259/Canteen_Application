@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { getSupabaseClient, isSupabaseConfigured } from './supabase-client'
 
@@ -47,6 +47,10 @@ interface AuthContextValue {
   user: AuthUser | null
   session: Session | null
   loading: boolean
+  // Concurrent-session state — set when another session is detected on login
+  concurrentSession: { existingDevice: string; sessionId: string } | null
+  clearConcurrentSession: () => void
+  forceLogoutAllSessions: () => Promise<void>
   logout: () => Promise<void>
   sendEmailOtp: (email: string) => Promise<void>
   verifyEmailOtp: (email: string, token: string) => Promise<void>
@@ -108,6 +112,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [concurrentSession, setConcurrentSession] = useState<{ existingDevice: string; sessionId: string } | null>(null)
+  const activeSessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     // If Supabase env vars are placeholders (not real credentials), skip the
@@ -138,6 +144,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session?.user) {
           const profile = await fetchProfile(session.user.id)
           setUser(buildAuthUser(session.user.id, session.user.email, profile))
+          // Register session (non-blocking — don't block UI on this)
+          registerSession(session.access_token).catch(() => {})
         }
         setLoading(false)
       })
@@ -155,8 +163,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
         setUser(buildAuthUser(session.user.id, session.user.email, profile))
+        registerSession(session.access_token).catch(() => {})
       } else {
         setUser(null)
+        activeSessionIdRef.current = null
       }
       setLoading(false)
     })
@@ -164,10 +174,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Session heartbeat — keep active_sessions table up to date every 5 minutes
+  useEffect(() => {
+    if (!session?.access_token || !activeSessionIdRef.current) return
+    const interval = setInterval(() => {
+      fetch('/api/auth/session', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionIdRef.current }),
+      }).catch(() => {})
+    }, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [session?.access_token])
+
+  // ---- Session helpers ----
+
+  async function registerSession(token: string) {
+    if (!isSupabaseConfigured()) return
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.alreadyActive) {
+        // Another session is active — surface the conflict to the UI
+        setConcurrentSession({ existingDevice: data.existingDevice, sessionId: data.sessionId })
+      } else {
+        activeSessionIdRef.current = data.sessionId ?? null
+        setConcurrentSession(null)
+      }
+    } catch { /* network — ignore, don't block login */ }
+  }
+
+  function clearConcurrentSession() {
+    setConcurrentSession(null)
+  }
+
+  async function forceLogoutAllSessions() {
+    if (!session?.access_token) return
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = await res.json()
+      activeSessionIdRef.current = data.sessionId ?? null
+      setConcurrentSession(null)
+    } catch { /* ignore */ }
+  }
+
   // ---- Auth methods ----
 
   async function logout() {
     try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
+    // Mark session as inactive before signing out
+    if (session?.access_token && activeSessionIdRef.current) {
+      fetch('/api/auth/session', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionIdRef.current, markInactive: true }),
+      }).catch(() => {})
+    }
+    activeSessionIdRef.current = null
     await supabase.auth.signOut()
   }
 
@@ -297,6 +366,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         session,
         loading,
+        concurrentSession,
+        clearConcurrentSession,
+        forceLogoutAllSessions,
         logout,
         sendEmailOtp,
         verifyEmailOtp,
