@@ -48,8 +48,14 @@ export default function ChangePasswordPage() {
       const { error: updateErr } = await supabase.auth.updateUser({ password: newPwd });
       if (updateErr) throw updateErr;
 
-      // 2. Clear the must_change_password flag in user metadata
-      await supabase.auth.updateUser({ data: { must_change_password: false } });
+      // 2. Clear the must_change_password flag and mark has_password + password_changed_at
+      await supabase.auth.updateUser({
+        data: {
+          must_change_password: false,
+          has_password: true,
+          password_changed_at: new Date().toISOString(),
+        },
+      });
 
       // 3. Also clear it via our server-side API (which uses service role to be certain)
       if (session?.access_token) {

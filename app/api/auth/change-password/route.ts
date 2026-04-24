@@ -29,7 +29,11 @@ export async function POST(request: Request) {
   const supabase = createAdminClient();
   const { error } = await supabase.auth.admin.updateUserById(ctx.uid, {
     password,
-    user_metadata: { must_change_password: false },
+    user_metadata: {
+      must_change_password: false,
+      has_password: true,
+      password_changed_at: new Date().toISOString(),
+    },
   });
 
   if (error) {

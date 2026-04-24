@@ -50,6 +50,7 @@ export interface AuthUser {
   phone?: string | null
   walletBalance: number
   mustChangePassword?: boolean
+  hasPassword?: boolean
 }
 
 interface AuthContextValue {
@@ -68,6 +69,7 @@ interface AuthContextValue {
   linkEmail: (email: string) => Promise<void>
   verifyEmailLink: (email: string, token: string) => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<void>
+  signInWithIdentifier: (identifier: string, password: string) => Promise<void>
   signUp: (
     email: string,
     password: string,
@@ -115,6 +117,7 @@ function buildAuthUser(
     phone: profile.phone ?? null,
     walletBalance: profile.walletBalance ?? 0,
     mustChangePassword: profile.mustChangePassword ?? false,
+    hasPassword: profile.hasPassword ?? false,
   }
 }
 
@@ -174,8 +177,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session)
         if (session?.user) {
           const profile = await fetchProfile(session.user.id)
-          const mustChangePassword = session.user.user_metadata?.must_change_password === true
-          setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword }))
+          const meta = session.user.user_metadata ?? {}
+          const hasPassword = meta.has_password === true
+          const pwChangedAt: string | undefined = meta.password_changed_at
+          const passwordExpired = hasPassword && pwChangedAt &&
+            Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000
+          const mustChangePassword = meta.must_change_password === true || !!passwordExpired
+          setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
           // Register session (non-blocking — don't block UI on this)
           registerSession(session.access_token).catch(() => {})
         }
@@ -194,8 +202,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
-        const mustChangePassword = session.user.user_metadata?.must_change_password === true
-        setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword }))
+        const meta = session.user.user_metadata ?? {}
+        const hasPassword = meta.has_password === true
+        const pwChangedAt: string | undefined = meta.password_changed_at
+        const passwordExpired = hasPassword && pwChangedAt &&
+          Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000
+        const mustChangePassword = meta.must_change_password === true || !!passwordExpired
+        setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
         registerSession(session.access_token).catch(() => {})
       } else {
         setUser(null)
@@ -350,13 +363,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured()) {
       const role = demoRoleFor(email)
       const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : role === 'vendor' ? 'Vendor (Demo)' : 'Student (Demo)'
-      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
+      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100, hasPassword: true }))
       return
     }
     const { error } = await withTimeout(
       supabase.auth.signInWithPassword({ email, password })
     )
     if (error) throw error
+  }
+
+  /** Sign in with email, phone number, or any string identifier.
+   *  Detects whether the identifier is a phone (digits/+) or email. */
+  async function signInWithIdentifier(identifier: string, password: string) {
+    if (!isSupabaseConfigured()) {
+      const id = identifier.trim()
+      const role = demoRoleFor(id.includes('@') ? id : null)
+      const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : 'Student (Demo)'
+      setUser(buildAuthUser('demo-user', id.includes('@') ? id : undefined, { role, displayName: name, walletBalance: 100, hasPassword: true }))
+      return
+    }
+    const id = identifier.trim()
+    const isPhone = /^\+?[\d\s\-()+]{7,}$/.test(id) && !id.includes('@')
+    if (isPhone) {
+      const digits = id.replace(/\D/g, '')
+      const e164 = digits.length === 10 ? `+91${digits}` :
+                   digits.length === 12 && digits.startsWith('91') ? `+${digits}` : `+${digits}`
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ phone: e164, password })
+      )
+      if (error) throw error
+    } else {
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email: id, password })
+      )
+      if (error) throw error
+    }
   }
 
   async function signUp(
@@ -404,6 +445,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         linkEmail,
         verifyEmailLink,
         signInWithPassword,
+        signInWithIdentifier,
         signUp,
         resetPassword,
       }}
