@@ -19,7 +19,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self' https://*.supabase.co https://api.razorpay.com https://lumberjack.razorpay.com",
-      "script-src-elem 'self' https://checkout.razorpay.com",
+      "script-src-elem 'self' 'unsafe-inline' https://checkout.razorpay.com",
       "frame-src https://api.razorpay.com https://checkout.razorpay.com",
       "worker-src 'self' blob:",
     ].join("; "),
