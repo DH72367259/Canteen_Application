@@ -207,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function verifyPhoneOtp(phone: string, token: string) {
     if (!isSupabaseConfigured()) {
       // Phone OTP is the student flow
-      setUser(buildAuthUser('demo-user', null, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
+      setUser(buildAuthUser('demo-user', undefined, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
       return
     }
     const { error } = await supabase.auth.verifyOtp({
