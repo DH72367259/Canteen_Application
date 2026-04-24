@@ -349,7 +349,13 @@ export default function UserHomePage() {
         <div style={{ maxWidth: "60%", position: "relative", zIndex: 1 }}>
           <h2>Skip the queue.<br />Pre-order now.</h2>
           <p>Choose your meal, pick a slot, collect from your bin.</p>
-          <a href="#canteens" className="hero-cta" style={{ display: "inline-block", marginTop: "0.75rem" }}>Browse canteens ↓</a>
+          <button
+            className="hero-cta"
+            style={{ display: "inline-block", marginTop: "0.75rem", border: "none", cursor: "pointer" }}
+            onClick={() => document.getElementById("canteens")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          >
+            Browse canteens ↓
+          </button>
         </div>
       </div>
 
