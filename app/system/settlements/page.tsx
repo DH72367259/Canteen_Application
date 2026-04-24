@@ -565,7 +565,7 @@ export default function SettlementsPage() {
           <div style={{ background: "#fff", borderRadius: 20, padding: "1.5rem", width: "100%", maxWidth: 400 }}>
             <h3 style={{ fontWeight: 800, marginBottom: "0.5rem" }}>⚙️ Platform Charges Config</h3>
             <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "1rem" }}>
-              These charges are deducted from the canteen's gross revenue before you pay them. GST is charged on top of your platform fee.
+              These charges are deducted from the canteen&apos;s gross revenue before you pay them. GST is charged on top of your platform fee.
             </p>
 
             {[

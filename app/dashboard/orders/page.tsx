@@ -107,8 +107,6 @@ export default function MyOrdersPage() {
 
   if (loading) return <div className="page-loading"><div className="spinner" /></div>;
 
-  const fmt = (n: number) => `₹${n.toFixed(2)}`;
-
   return (
     <div className="app-shell">
       {/* Top bar */}

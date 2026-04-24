@@ -1,6 +1,5 @@
 import { getRequestContext } from '@/lib/authServer';
 import { getBins } from '@/lib/db';
-import { canManageOrders } from '@/lib/roleChecks';
 
 export async function GET(request: Request) {
   try {

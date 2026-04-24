@@ -943,6 +943,14 @@ interface VendorTicket {
   description: string; status: string; admin_notes: string | null; created_at: string;
 }
 
+function relativeTimeVendor(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000)    return "Just now";
+  if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
 function VendorSupportView() {
   const { session } = useAuth();
   const CATEGORIES = [
@@ -1007,14 +1015,6 @@ function VendorSupportView() {
       setSubmitted(d.ticket);
       setCategory(""); setSubject(""); setDesc("");
     } catch { setSubmitErr("Network error. Please try again."); } finally { setSubmitting(false); }
-  }
-
-  function relativeTime(iso: string) {
-    const diff = Date.now() - new Date(iso).getTime();
-    if (diff < 60000)    return "Just now";
-    if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   }
 
   return (
@@ -1119,7 +1119,7 @@ function VendorSupportView() {
                           color: STATUS_COLORS[t.status] ?? "#6b7280",
                         }}>{STATUS_LABELS[t.status] ?? t.status}</span>
                       </td>
-                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{relativeTime(t.created_at)}</td>
+                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{relativeTimeVendor(t.created_at)}</td>
                       <td style={{ fontSize: "0.78rem", color: "var(--blue)" }}>View →</td>
                     </tr>
                   ))}
@@ -1140,7 +1140,7 @@ function VendorSupportView() {
             </div>
             <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.5rem" }}>{selected.subject}</h3>
             <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
-              {selected.category.replace("_", " ")} · {relativeTime(selected.created_at)}
+              {selected.category.replace("_", " ")} · {relativeTimeVendor(selected.created_at)}
               <span style={{
                 marginLeft: "0.5rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 10,
                 background: (STATUS_COLORS[selected.status] ?? "#6b7280") + "18",

@@ -115,6 +115,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [concurrentSession, setConcurrentSession] = useState<{ existingDevice: string; sessionId: string } | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
 
+  // Declared before useEffect to satisfy React Compiler linting (hoisted at runtime)
+  async function registerSession(token: string) {
+    if (!isSupabaseConfigured()) return
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.alreadyActive) {
+        setConcurrentSession({ existingDevice: data.existingDevice, sessionId: data.sessionId })
+      } else {
+        activeSessionIdRef.current = data.sessionId ?? null
+        setConcurrentSession(null)
+      }
+    } catch { /* network — ignore, don't block login */ }
+  }
+
   useEffect(() => {
     // If Supabase env vars are placeholders (not real credentials), skip the
     // getSession() call entirely — it would hang indefinitely on an invalid host
@@ -188,24 +206,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.access_token])
 
   // ---- Session helpers ----
-
-  async function registerSession(token: string) {
-    if (!isSupabaseConfigured()) return
-    try {
-      const res = await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (data.alreadyActive) {
-        // Another session is active — surface the conflict to the UI
-        setConcurrentSession({ existingDevice: data.existingDevice, sessionId: data.sessionId })
-      } else {
-        activeSessionIdRef.current = data.sessionId ?? null
-        setConcurrentSession(null)
-      }
-    } catch { /* network — ignore, don't block login */ }
-  }
 
   function clearConcurrentSession() {
     setConcurrentSession(null)

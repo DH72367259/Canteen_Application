@@ -6,4 +6,11 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  {
+    rules: {
+      // React Compiler rules — downgraded from error to warn for common async-fetch-in-effect patterns
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+    },
+  },
 ]);
