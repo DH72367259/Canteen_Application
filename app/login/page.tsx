@@ -100,6 +100,16 @@ function LoginContent() {
   const [setupBusy,       setSetupBusy]       = useState(false);
   const [setupShowPwd,    setSetupShowPwd]    = useState(false);
 
+  // ── Password-expired banner (set by hard 30-day signOut in auth-context) ──
+  const [pwExpired, setPwExpired] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("canteen_pw_expired") === "1") {
+      setPwExpired(true);
+      localStorage.removeItem("canteen_pw_expired");
+    }
+  }, []);
+
   // ── Auth redirect logic ───────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -130,7 +140,21 @@ function LoginContent() {
   }, [user, router, params, showSetup]);
 
   function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); }
-  function switchTab(t: Tab) { clearState(); setTab(t); setRegisterMode(false); setShowSetup(false); }
+  function switchTab(t: Tab) {
+    // Clear ALL form state so nothing carries over between tabs
+    setEmail("");
+    setPhone("");
+    setPassword("");
+    setIdentifier("");
+    setOtp("");
+    setOtpSentTo(null);
+    setError(null);
+    setInfo(null);
+    setRegisterMode(false);
+    setShowSetup(false);
+    setShowPwd(false);
+    setTab(t);
+  }
 
   // ── Student password sign-in (returning users, both phone & email tabs) ───
   async function handleSignIn() {
@@ -305,6 +329,17 @@ function LoginContent() {
   return (
     <div className="login-page">
       <div className="login-card">
+        {/* Password-expired warning */}
+        {pwExpired && (
+          <div style={{
+            background: "#fff3cd", border: "1px solid #ffc107", borderRadius: 10,
+            padding: "0.65rem 1rem", fontSize: "0.82rem", color: "#7a5800",
+            fontWeight: 600, marginBottom: "0.5rem", lineHeight: 1.5,
+          }}>
+            ⚠️ Your password expired after 30 days. Please sign in again and update your password.
+          </div>
+        )}
+
         {/* Logo */}
         <div className="login-logo">
           <span style={{ width: 48, height: 48, background: "var(--orange)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", margin: "0 auto 0.5rem" }}>🍽️</span>

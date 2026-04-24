@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       category, subject, description, priority, status,
       admin_notes, resolved_at, created_at, updated_at,
       order_id,
-      raised_profile:profiles!support_tickets_raised_by_fkey(name, email),
+      raised_profile:profiles(name, email),
       canteen:canteens(name)
     `)
     .order("created_at", { ascending: false });

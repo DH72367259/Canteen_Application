@@ -1069,7 +1069,10 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Commit | Description |
 |--------|-------------|
-| latest | fix: auth all flows — buildAuthUser passes mustChangePassword, change-password API clears flag, linkEmail/verifyEmailLink timeouts, README updated |
+| latest | fix: tab state isolation (no field carry-over between login tabs), 30-day hard signOut + pw-expired banner, location picker moved to dedicated button, support API join fix |
+| `f987f2b` | fix: one-time OTP registration → set name+password, then login with email/phone+password forever; 30-day password expiry; signInWithIdentifier |
+| `fa33722` | fix: login page shows spinner while auth loads — no login form flash on magic link; /dashboard/profile page |
+| `aaf1ff4` | fix: buildAuthUser passes mustChangePassword, change-password API clears flag, linkEmail/verifyEmailLink timeouts |
 | `48b7b8f` | fix: implicit flow auth client, 15s timeouts on all auth calls, mustChangePassword forced redirect, /change-password page, admin canteen onboarding API |
 | `a718a59` | fix: auth guard, session persistence, fetchProfile timeout |
 | `5109031` | feat: Rewards nav tab, radio-button Pro upsell (₹69/mo vs ₹4 fee), vendor 5s refresh, slot-gate canteen toggle |
@@ -1090,6 +1093,6 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 ---
 
-**Last updated**: 24 April 2026  
+**Last updated**: 25 April 2026  
 **Build status**: Passing — 0 TypeScript errors  
-**Deployed**: Railway — auto-deploy from `main` (latest: `48b7b8f`)
+**Deployed**: Railway — auto-deploy from `main` (latest: `f987f2b`)

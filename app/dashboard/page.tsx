@@ -290,17 +290,21 @@ export default function UserHomePage() {
 
       {/* ── Zomato-style location header (sticky, always visible at top) ── */}
       <div
-        onClick={() => setShowLocationPicker(true)}
         style={{
           position: "sticky", top: 0, zIndex: 40,
           background: "#fff",
           borderBottom: "1px solid var(--border)",
           padding: "0.6rem 1rem",
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          cursor: "pointer",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+        <button
+          onClick={() => setShowLocationPicker(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0,
+            background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left",
+          }}
+        >
           <span style={{ color: "var(--orange)", fontSize: "1.1rem", flexShrink: 0 }}>📍</span>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 500, lineHeight: 1.2 }}>Delivering to</div>
@@ -311,7 +315,7 @@ export default function UserHomePage() {
               <span style={{ color: "var(--ink-3)", fontSize: "0.8rem", flexShrink: 0 }}>▾</span>
             </div>
           </div>
-        </div>
+        </button>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <Link
             href="/dashboard/rewards"
