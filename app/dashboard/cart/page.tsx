@@ -13,13 +13,7 @@ declare global {
 }
 
 interface CartItem { id: string; name: string; price: number; qty: number; }
-
-const SLOTS = [
-  { id: "s1", label: "12:30 PM", available: true  },
-  { id: "s2", label: "1:00 PM",  available: true  },
-  { id: "s3", label: "1:30 PM",  available: true  },
-  { id: "s4", label: "2:00 PM",  available: false },
-];
+interface SlotOption { id: string; label: string; available: boolean; is_full: boolean; }
 
 function loadRazorpay(): Promise<boolean> {
   return new Promise(resolve => {
@@ -50,6 +44,8 @@ function CartContent() {
   });
 
   const [slot,        setSlot]        = useState<string | null>(null);
+  const [slots,       setSlots]       = useState<SlotOption[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(true);
   const [walletBal]                   = useState(12);
   const [useWallet,   setUseWallet]   = useState(false);
   const [isPro,       setIsPro]       = useState(false);
@@ -63,6 +59,34 @@ function CartContent() {
     if (proStatus === "true") setIsPro(true);
   }, []);
 
+  // ── Fetch live slots from canteen, auto-refresh every 60s ──────────────
+  useEffect(() => {
+    if (!canteenId) return;
+    let cancelled = false;
+    async function fetchSlots() {
+      setSlotsLoading(true);
+      try {
+        const res = await fetch(`/api/slots?canteenId=${encodeURIComponent(canteenId)}`);
+        const json = await res.json();
+        if (!cancelled && Array.isArray(json.slots)) {
+          setSlots(json.slots);
+          // Auto-select first available slot if current selection is gone
+          setSlot(prev => {
+            const stillValid = json.slots.some((s: SlotOption) => s.id === prev && s.available);
+            if (stillValid) return prev;
+            const first = json.slots.find((s: SlotOption) => s.available);
+            return first ? first.id : null;
+          });
+        }
+      } finally {
+        if (!cancelled) setSlotsLoading(false);
+      }
+    }
+    fetchSlots();
+    const timer = setInterval(fetchSlots, 60_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [canteenId]);
+
   const convFee    = isPro ? 0 : 4;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const walletDisc = useWallet ? Math.min(walletBal, subtotal) : 0;
@@ -73,7 +97,7 @@ function CartContent() {
   }
 
   async function finaliseOrder(paymentId: string) {
-    const slotLabel = SLOTS.find(s => s.id === slot)?.label || "";
+    const slotLabel = slots.find(s => s.id === slot)?.label || "";
 
     // Create the order in Supabase via API
     let orderId: string;
@@ -268,10 +292,14 @@ function CartContent() {
         <section>
           <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.6rem" }}>Pickup Time Slot</h2>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-            {SLOTS.map(s => (
+            {slotsLoading ? (
+              <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Loading slots…</span>
+            ) : slots.length === 0 ? (
+              <span style={{ fontSize: "0.82rem", color: "var(--orange)", fontWeight: 600 }}>No slots available right now. Check back later.</span>
+            ) : slots.map(s => (
               <button key={s.id} disabled={!s.available} onClick={() => setSlot(s.id)}
                 style={{ padding: "0.5rem 0.9rem", borderRadius: 10, border: `1.5px solid ${slot === s.id ? "var(--orange)" : "var(--border)"}`, background: slot === s.id ? "var(--orange)" : "var(--surface)", color: slot === s.id ? "#fff" : s.available ? "var(--ink)" : "var(--ink-3)", fontWeight: 600, fontSize: "0.85rem", cursor: s.available ? "pointer" : "not-allowed", opacity: s.available ? 1 : 0.45 }}>
-                {s.label}{!s.available && <span style={{ fontSize: "0.7rem", marginLeft: 4 }}>Full</span>}
+                {s.label}{s.is_full && <span style={{ fontSize: "0.7rem", marginLeft: 4 }}>Full</span>}
               </button>
             ))}
           </div>
