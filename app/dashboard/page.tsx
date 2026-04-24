@@ -39,7 +39,7 @@ function formatDist(km: number) {
 }
 
 export default function UserHomePage() {
-  const { user, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const router = useRouter();
   const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
   const [walletBalance, setWalletBalance] = useState(0);
@@ -47,10 +47,17 @@ export default function UserHomePage() {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
-  const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showAll, setShowAll] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Auth guard — redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login?role=user");
+    }
+  }, [user, loading, router]);
 
   useEffect(() => {
     const bal = localStorage.getItem("canteen_wallet_balance");
@@ -71,7 +78,7 @@ export default function UserHomePage() {
     }
   }, []);
 
-  // Auto-focus search input when picker opens
+  // Auto-focus search + reset GPS error state when picker opens
   useEffect(() => {
     if (showLocationPicker) {
       setLocationSearch("");
@@ -108,7 +115,7 @@ export default function UserHomePage() {
           const d = haversineKm(latitude, longitude, c.lat, c.lng);
           if (d < minDist) { minDist = d; nearestArea = c.location; }
         });
-        setGpsStatus("idle");
+        setGpsStatus("success");
         handleSelectLocation(nearestArea);
       },
       () => setGpsStatus("error"),
@@ -118,9 +125,13 @@ export default function UserHomePage() {
 
   const handleLogout = async () => { await logout(); router.push("/login"); };
 
-  const filteredLocations = locationSearch.trim()
-    ? LOCATIONS.filter(l => l.toLowerCase().includes(locationSearch.toLowerCase()))
+  // Text search: only filter when there's a match; otherwise show all (fallback)
+  const searchTrimmed = locationSearch.trim();
+  const matched = searchTrimmed
+    ? LOCATIONS.filter(l => l.toLowerCase().includes(searchTrimmed.toLowerCase()))
     : LOCATIONS;
+  const filteredLocations = matched.length > 0 ? matched : LOCATIONS;
+  const noMatchFallback = searchTrimmed !== "" && matched.length === 0;
 
   // Build canteen list with distance attached
   const canteensWithDist = CANTEENS.map(c => ({
@@ -129,8 +140,6 @@ export default function UserHomePage() {
   }));
 
   // Always enforce 10km radius when GPS is available.
-  // Within that pool: filter by selected area, or show all within radius.
-  // Without GPS: filter by selected area name only (no radius).
   const inRadius = userCoords
     ? canteensWithDist.filter(c => (c.distKm ?? 0) <= MAX_RADIUS_KM)
     : canteensWithDist;
@@ -138,12 +147,10 @@ export default function UserHomePage() {
   const visibleCanteens = (() => {
     const pool = inRadius;
     if (showAll || !selectedLocation || selectedLocation === "All") {
-      // Show everything in radius, sorted by distance
       return userCoords
         ? [...pool].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
         : pool;
     }
-    // Area filter — still honour radius
     const areaFiltered = pool.filter(c => c.location === selectedLocation);
     return userCoords
       ? [...areaFiltered].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
@@ -152,75 +159,117 @@ export default function UserHomePage() {
 
   const isFiltered = !showAll && selectedLocation && selectedLocation !== "All";
 
+  // Don't render anything while auth is loading or user is being redirected
+  if (loading || !user) {
+    return <div className="loading-screen"><div className="spinner" /></div>;
+  }
+
+  const locationLabel = selectedLocation
+    ? (showAll ? "All campuses" : selectedLocation)
+    : "Set location";
+
   return (
     <div className="app-shell">
-      {/* Location picker bottom-sheet */}
+      {/* ── Location picker bottom-sheet ── */}
       {showLocationPicker && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
           onClick={(e) => { if (e.target === e.currentTarget && selectedLocation) setShowLocationPicker(false); }}
         >
-          <div style={{ background: "#fff", borderRadius: "24px 24px 0 0", padding: "1.25rem 1.25rem 2.5rem", width: "100%", maxWidth: 430 }}>
-            <div style={{ width: 40, height: 4, background: "#e5e7eb", borderRadius: 99, margin: "0 auto 1.1rem" }} />
-            <h3 style={{ fontSize: "1.1rem", fontWeight: 800, marginBottom: "0.25rem" }}>📍 Where are you?</h3>
-            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginBottom: "1rem" }}>
-              We&apos;ll show only the canteens near your area.
-            </p>
+          <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", padding: "1rem 1.25rem 2.5rem", width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+            {/* Drag handle */}
+            <div style={{ width: 40, height: 4, background: "#e5e7eb", borderRadius: 99, margin: "0 auto 1rem" }} />
 
-            {/* GPS button */}
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 800, marginBottom: "0.15rem" }}>📍 Where are you?</h3>
+                <p style={{ fontSize: "0.8rem", color: "var(--ink-3)" }}>We&apos;ll show canteens near your campus area.</p>
+              </div>
+              {selectedLocation && (
+                <button
+                  onClick={() => setShowLocationPicker(false)}
+                  style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "var(--ink-3)", lineHeight: 1 }}
+                  aria-label="Close"
+                >✕</button>
+              )}
+            </div>
+
+            {/* GPS button — always shows normal text; error shown separately */}
             <button
               onClick={handleUseGPS}
               disabled={gpsStatus === "loading"}
               style={{
                 width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
-                background: gpsStatus === "error" ? "var(--red-light)" : "var(--blue-light)",
-                border: `1.5px solid ${gpsStatus === "error" ? "var(--red)" : "var(--blue)"}`,
-                borderRadius: 14, padding: "0.7rem 1rem", fontSize: "0.88rem", fontWeight: 700,
-                color: gpsStatus === "error" ? "var(--red)" : "var(--blue)", cursor: gpsStatus === "loading" ? "not-allowed" : "pointer",
-                marginBottom: "0.9rem", opacity: gpsStatus === "loading" ? 0.7 : 1,
+                background: "var(--blue-light)",
+                border: "1.5px solid var(--blue)",
+                borderRadius: 14, padding: "0.75rem 1rem", fontSize: "0.9rem", fontWeight: 700,
+                color: "var(--blue)", cursor: gpsStatus === "loading" ? "not-allowed" : "pointer",
+                opacity: gpsStatus === "loading" ? 0.7 : 1,
               }}
             >
-              {gpsStatus === "loading" ? "⏳ Detecting your location…" : gpsStatus === "error" ? "⚠️ GPS unavailable — pick manually" : "🎯 Use my current location"}
+              {gpsStatus === "loading" ? "⏳ Detecting your location…" : "🎯 Use my current location"}
             </button>
 
+            {/* GPS error — shown as inline message, NOT on the button */}
+            {gpsStatus === "error" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.5rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "0.5rem 0.75rem" }}>
+                <span style={{ fontSize: "0.95rem" }}>⚠️</span>
+                <span style={{ fontSize: "0.78rem", color: "#dc2626" }}>Location access was denied. Enable location in your browser settings, or pick an area below.</span>
+              </div>
+            )}
+
             {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.9rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", margin: "1rem 0 0.75rem" }}>
               <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-              <span style={{ fontSize: "0.75rem", color: "var(--ink-3)", fontWeight: 600 }}>or type your location</span>
+              <span style={{ fontSize: "0.72rem", color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>or pick your campus area</span>
               <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
             </div>
 
             {/* Search input */}
-            <input
-              ref={searchRef}
-              type="text"
-              placeholder="e.g. Hostel, North Block…"
-              value={locationSearch}
-              onChange={e => setLocationSearch(e.target.value)}
-              style={{
-                width: "100%", border: "1.5px solid var(--border)", borderRadius: 12, padding: "0.65rem 0.9rem",
-                fontSize: "0.9rem", outline: "none", marginBottom: "0.75rem", boxSizing: "border-box",
-              }}
-              onFocus={e => (e.target.style.borderColor = "var(--orange)")}
-              onBlur={e => (e.target.style.borderColor = "var(--border)")}
-            />
+            <div style={{ position: "relative", marginBottom: "0.75rem" }}>
+              <span style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", fontSize: "0.9rem", color: "var(--ink-3)" }}>🔍</span>
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search campus zone (e.g. Hostel, North Block)…"
+                value={locationSearch}
+                onChange={e => setLocationSearch(e.target.value)}
+                style={{
+                  width: "100%", border: "1.5px solid var(--border)", borderRadius: 12,
+                  padding: "0.65rem 0.9rem 0.65rem 2.2rem",
+                  fontSize: "0.88rem", outline: "none", boxSizing: "border-box",
+                  background: "#f9fafb",
+                }}
+                onFocus={e => (e.target.style.borderColor = "var(--orange)")}
+                onBlur={e => (e.target.style.borderColor = "var(--border)")}
+              />
+            </div>
+
+            {/* No-match fallback notice */}
+            {noMatchFallback && (
+              <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "0.5rem", paddingLeft: "0.25rem" }}>
+                No area matches &ldquo;{searchTrimmed}&rdquo; — showing all campus zones:
+              </p>
+            )}
 
             {/* Location options */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: 220, overflowY: "auto" }}>
-              {filteredLocations.length === 0 ? (
-                <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", padding: "0.5rem 0" }}>No matching area found</p>
-              ) : filteredLocations.map(loc => (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {filteredLocations.map(loc => (
                 <button
                   key={loc}
                   onClick={() => handleSelectLocation(loc)}
                   style={{
                     background: selectedLocation === loc ? "var(--orange-light)" : "#f9fafb",
                     border: `1.5px solid ${selectedLocation === loc ? "var(--orange)" : "var(--border)"}`,
-                    borderRadius: 12, padding: "0.65rem 1rem", fontSize: "0.9rem", fontWeight: 600,
-                    color: selectedLocation === loc ? "var(--orange-dark)" : "var(--ink)", cursor: "pointer", textAlign: "left",
+                    borderRadius: 12, padding: "0.7rem 1rem", fontSize: "0.9rem", fontWeight: 600,
+                    color: selectedLocation === loc ? "var(--orange-dark)" : "var(--ink)",
+                    cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "0.5rem",
                   }}
                 >
-                  📍 {loc}
+                  <span style={{ fontSize: "1.1rem" }}>📍</span>
+                  <span>{loc}</span>
+                  {selectedLocation === loc && <span style={{ marginLeft: "auto", color: "var(--orange)" }}>✓</span>}
                 </button>
               ))}
             </div>
@@ -229,31 +278,67 @@ export default function UserHomePage() {
               onClick={handleShowAll}
               style={{
                 width: "100%", background: "none", border: "1.5px solid var(--border)", borderRadius: 12,
-                padding: "0.65rem 1rem", fontSize: "0.85rem", fontWeight: 600, color: "var(--ink-3)",
+                padding: "0.7rem 1rem", fontSize: "0.85rem", fontWeight: 600, color: "var(--ink-3)",
                 cursor: "pointer", textAlign: "center", marginTop: "0.75rem",
               }}
             >
-              Show all canteens
+              Show all canteens →
             </button>
           </div>
         </div>
       )}
 
-      {/* Top bar */}
-      <div className="app-topbar">
-        <div className="greeting-block">
-          <div className="greeting">Good morning 👋</div>
-          <div className="name">{user?.displayName || user?.email?.split("@")[0] || "Guest"}</div>
+      {/* ── Zomato-style location header (sticky, always visible at top) ── */}
+      <div
+        onClick={() => setShowLocationPicker(true)}
+        style={{
+          position: "sticky", top: 0, zIndex: 40,
+          background: "#fff",
+          borderBottom: "1px solid var(--border)",
+          padding: "0.6rem 1rem",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+          <span style={{ color: "var(--orange)", fontSize: "1.1rem", flexShrink: 0 }}>📍</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 500, lineHeight: 1.2 }}>Delivering to</div>
+            <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "var(--ink)", display: "flex", alignItems: "center", gap: "0.25rem", lineHeight: 1.3 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+                {locationLabel}
+              </span>
+              <span style={{ color: "var(--ink-3)", fontSize: "0.8rem", flexShrink: 0 }}>▾</span>
+            </div>
+          </div>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <Link href="/dashboard/rewards" style={{ background: "var(--orange-light)", borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.78rem", fontWeight: 700, color: "var(--orange-dark)", textDecoration: "none" }}>
-            {walletBalance > 0 ? `₹${walletBalance} Canteen Cash` : "Top Up"}
+          <Link
+            href="/dashboard/rewards"
+            onClick={e => e.stopPropagation()}
+            style={{ background: "var(--orange-light)", borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.78rem", fontWeight: 700, color: "var(--orange-dark)", textDecoration: "none" }}
+          >
+            {walletBalance > 0 ? `₹${walletBalance}` : "Top Up"}
           </Link>
-          <button onClick={handleLogout} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }} title="Logout">🚪</button>
+          <button
+            onClick={e => { e.stopPropagation(); handleLogout(); }}
+            style={{ background: "none", border: "none", fontSize: "1.15rem", cursor: "pointer", padding: "0.2rem" }}
+            title="Logout"
+          >🚪</button>
         </div>
       </div>
 
-      {/* Hero card */}
+      {/* ── Greeting row ── */}
+      <div style={{ padding: "0.75rem 1rem 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>Good morning 👋</div>
+          <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--ink)" }}>
+            {user?.displayName || user?.email?.split("@")[0] || "Guest"}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Hero card ── */}
       <div className="hero-card">
         <div style={{ maxWidth: "60%", position: "relative", zIndex: 1 }}>
           <h2>Skip the queue.<br />Pre-order now.</h2>
@@ -262,7 +347,7 @@ export default function UserHomePage() {
         </div>
       </div>
 
-      {/* Active order banner */}
+      {/* ── Active order banner ── */}
       {activeOrder && (
         <div style={{ margin: "0 1rem 0.25rem", background: "var(--green-light)", borderRadius: 14, padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #bbf7d0" }}>
           <div>
@@ -274,7 +359,7 @@ export default function UserHomePage() {
         </div>
       )}
 
-      {/* Canteen list */}
+      {/* ── Canteen list ── */}
       <div id="canteens">
         <div className="section-header">
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -285,26 +370,18 @@ export default function UserHomePage() {
             </h3>
             {userCoords && (
               <span style={{ fontSize: "0.7rem", background: "var(--blue-light)", color: "var(--blue)", borderRadius: 999, padding: "0.15rem 0.5rem", fontWeight: 600 }}>
-                📡 10 km radius
+                📡 10 km
               </span>
             )}
           </div>
-          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-            {isFiltered && (
-              <button
-                onClick={handleShowAll}
-                style={{ background: "none", border: "none", color: "var(--orange)", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", padding: "0.2rem 0.4rem" }}
-              >
-                See all
-              </button>
-            )}
+          {isFiltered && (
             <button
-              onClick={() => setShowLocationPicker(true)}
-              style={{ background: "var(--orange-light)", border: "none", color: "var(--orange-dark)", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", borderRadius: 999, padding: "0.25rem 0.65rem" }}
+              onClick={handleShowAll}
+              style={{ background: "none", border: "none", color: "var(--orange)", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", padding: "0.2rem 0.4rem" }}
             >
-              📍 {userCoords ? "Change" : "Set location"}
+              See all
             </button>
-          </div>
+          )}
         </div>
 
         <div className="canteen-list">
@@ -313,13 +390,14 @@ export default function UserHomePage() {
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
               <div style={{ fontWeight: 600 }}>
                 {userCoords
-                  ? `No canteens found within ${MAX_RADIUS_KM} km of your location`
+                  ? `No canteens found within ${MAX_RADIUS_KM} km`
                   : "No canteens in this area"}
               </div>
-              <p style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
-                {userCoords ? "Try expanding your search area." : "Try a different location."}
-              </p>
-              <button onClick={() => setShowLocationPicker(true)} style={{ marginTop: "0.75rem", background: "var(--orange)", color: "#fff", border: "none", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer" }}>
+              <p style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>Try a different location.</p>
+              <button
+                onClick={() => setShowLocationPicker(true)}
+                style={{ marginTop: "0.75rem", background: "var(--orange)", color: "#fff", border: "none", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer" }}
+              >
                 Change location
               </button>
             </div>
@@ -351,7 +429,7 @@ export default function UserHomePage() {
         </div>
       </div>
 
-      {/* Bottom navigation */}
+      {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">
         {(["home", "orders", "rewards", "profile"] as const).map(tab => {
           const icons: Record<string, string> = { home: "🏠", orders: "📦", rewards: "💰", profile: "👤" };

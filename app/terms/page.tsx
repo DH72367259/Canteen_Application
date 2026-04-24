@@ -1,9 +1,12 @@
+"use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function TermsOfServicePage() {
+  const router = useRouter();
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1.25rem", fontFamily: "inherit" }}>
-      <Link href="/" style={{ color: "var(--orange)", textDecoration: "none", fontSize: "0.875rem" }}>← Back to Home</Link>
+      <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "var(--orange)", textDecoration: "none", fontSize: "0.875rem", cursor: "pointer", padding: 0 }}>← Back</button>
       <h1 style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>Terms of Service</h1>
       <p style={{ color: "var(--ink-3)", fontSize: "0.875rem", marginBottom: "2rem" }}>
         Last updated: {new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}
