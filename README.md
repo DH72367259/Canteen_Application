@@ -1,10 +1,13 @@
-# Canteen-Application - Smart Institutional Dining
+# NoQx — Smart Institutional Dining
 
-> **Live URL** - https://canteenapplication-production.up.railway.app
+> **Live URL** → https://canteenapplication-production.up.railway.app
 
 Cashless, queue-free canteen ordering for universities and colleges.
-Students order on their phone, pay via Razorpay (UPI/Card/Wallet), and pick up
-at an assigned bin using a 6-digit OTP. No cash, no queue, no wasted food.
+Students order on their phone, pay via Razorpay (UPI / Card / Wallet), and pick up at an
+assigned **bin** using a 4-digit OTP displayed in-app. No cash, no queue, no wasted food.
+
+A **NoQx Pro** monthly subscription (₹49/month) lets students skip the ₹4 per-order
+convenience fee and get priority pickup — every order, every day.
 
 ---
 
@@ -14,18 +17,23 @@ at an assigned bin using a 6-digit OTP. No cash, no queue, no wasted food.
 2. [Login Credentials](#login-credentials)
 3. [Architecture](#architecture)
 4. [Security](#security)
-5. [Supabase Setup](#supabase-setup)
-6. [Razorpay Setup](#razorpay-setup)
-7. [Twilio Setup (SMS & WhatsApp OTP)](#twilio-setup-sms--whatsapp-otp)
-8. [Environment Variables](#environment-variables)
-9. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
-10. [iOS and Android Deployment](#ios-and-android-deployment)
-11. [Canteen Toggle](#canteen-toggle)
-12. [Location-Based Canteen Discovery](#location-based-canteen-discovery)
-13. [Full Workflow](#full-workflow)
-14. [API Reference](#api-reference)
-15. [Database Schema](#database-schema)
-16. [Troubleshooting](#troubleshooting)
+5. [NoQx Pro Subscription](#noqx-pro-subscription)
+6. [Order Tracking Flow](#order-tracking-flow)
+7. [Wallet (NoQx Cash)](#wallet-noqx-cash)
+8. [Settlement & Finance](#settlement--finance)
+9. [Supabase Setup](#supabase-setup)
+10. [Razorpay Setup](#razorpay-setup)
+11. [Twilio Setup (SMS & WhatsApp OTP)](#twilio-setup-sms--whatsapp-otp)
+12. [Environment Variables](#environment-variables)
+13. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
+14. [iOS and Android Deployment](#ios-and-android-deployment)
+15. [Location-Based Canteen Discovery](#location-based-canteen-discovery)
+16. [Canteen Toggle](#canteen-toggle)
+17. [Full Workflow](#full-workflow)
+18. [API Reference](#api-reference)
+19. [Database Schema](#database-schema)
+20. [Troubleshooting](#troubleshooting)
+21. [Recent Changelog](#recent-changelog)
 
 ---
 
@@ -37,26 +45,21 @@ at an assigned bin using a 6-digit OTP. No cash, no queue, no wasted food.
 | GitHub Repository | https://github.com/DH72367259/Canteen_Application |
 | Railway Dashboard | https://railway.com/project/9ecacfbc-a63e-4962-b2e7-69565b15b131 |
 
-The app auto-deploys from the `main` branch via Railway's GitHub integration.
-Every `git push origin main` triggers a new production build within ~2 minutes.
-
-> **Note on the URL**: Railway assigns a subdomain like `canteenapplication-production.up.railway.app`.
-> Check your exact URL at Railway Dashboard -> your service -> Settings -> Domains.
-> You can also set a custom domain (e.g. `app.canteen-application.in`) from that same page.
+Every `git push origin main` triggers a new production build on Railway within ~2 minutes.
 
 ---
 
 ## Login Credentials
 
-| Role | Email | Password | Access |
-|------|-------|----------|--------|
-| Super Admin | admin@canteen-application.in | admin123 | Full system - canteens, users, analytics, payments |
-| Vendor / Canteen Admin | vendor@canteen-application.in | vendor123 | Their canteen - live orders, menu, slots, toggle |
-| Worker | worker@canteen-application.in | worker123 | Bin management, OTP verify, waste tracking |
-| Student | any phone number | OTP: 1234 | Browse, order, pay, track |
+| Role | Method | Access |
+|------|--------|--------|
+| Student | Phone OTP via SMS / WhatsApp | Browse, order, pay, track, NoQx Pro |
+| Student (email) | Email OTP (passwordless) | Same as above |
+| Canteen / Vendor | Email + password at **Canteen Login** tab | Live orders, menu, slots, toggle |
+| Super Admin | Email + password at **Canteen Login** tab | Full system — canteens, users, analytics, settlements |
 
-When Supabase is connected, replace demo credentials with real users created
-via the Supabase Auth dashboard.
+All users are created via the Supabase Auth dashboard.
+No default credentials are pre-filled in the login form.
 
 ---
 
@@ -66,25 +69,30 @@ via the Supabase Auth dashboard.
 Student / Vendor / Admin browsers
           |
           v
-   Next.js 16 (Railway)         <- single deployable app
+   Next.js 14 (Railway)          ← single deployable monorepo
      App Router + API Routes
-          |               |
-          v               v
-  Supabase PostgreSQL   Razorpay API
-  (database + auth)     (payments + refunds + webhooks)
-  Row Level Security    HMAC-SHA256 signature verification
+          |                |
+          v                v
+  Supabase PostgreSQL    Razorpay API
+  (database + auth)      (payments + refunds + webhooks)
+  Row Level Security     HMAC-SHA256 signature verification
+          |
+          v
+      Twilio Verify
+      (SMS + WhatsApp OTP)
 ```
 
 **Stack:**
 
-- Frontend/Backend: Next.js 16 App Router, React 19, TypeScript
-- Styling: Tailwind CSS v4 + custom CSS design tokens
+- Frontend/Backend: Next.js 14 App Router, React 18, TypeScript
+- Styling: Custom CSS design tokens
 - Database: Supabase (PostgreSQL 15) with Row Level Security
 - Auth: Supabase Auth — phone OTP via Twilio Verify (SMS + WhatsApp), email OTP, email+password for staff
 - Payments: Razorpay (UPI, GPay, PhonePe, Cards, Net Banking, Wallets)
+- Subscriptions: Razorpay — ₹49/month NoQx Pro
 - SMS/WhatsApp: Twilio Verify (OTP delivery, multi-channel)
-- Hosting: Railway (auto-deploy from GitHub, Docker standalone build)
-- PWA: Web App Manifest + Service Worker (installable on iOS and Android)
+- Hosting: Railway (auto-deploy from GitHub, standalone Docker build)
+- PWA: Web App Manifest (installable on iOS and Android home screen)
 
 ---
 
@@ -101,13 +109,168 @@ Every layer of the stack has security controls already in place:
 | Webhook Security | X-Razorpay-Signature verified before processing any webhook event |
 | Auto-Refund | Signature verification failure -> refund triggered automatically |
 | JWT Auth | Canteen toggle API and admin APIs validate Supabase JWT server-side |
-| RBAC | super_admin, canteen_admin, vendor, worker, student - enforced in every API route |
-| Secrets never in browser | RAZORPAY_KEY_SECRET and SUPABASE_SERVICE_ROLE_KEY are server-only |
-| Input Validation | All API bodies validated with strict type checks, 400 on invalid input |
-| XSS Prevention | No dangerouslySetInnerHTML. React escapes all output automatically |
-| SQL Injection | Supabase parameterised queries only. No raw SQL string concatenation |
-| X-Frame-Options | SAMEORIGIN - prevents clickjacking |
-| X-Content-Type-Options | nosniff - prevents MIME sniffing attacks |
+| RBAC | `super_admin`, `canteen_admin`, `vendor`, `worker`, `student` — enforced in every route |
+| Secrets never in browser | `RAZORPAY_KEY_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` are server-only |
+| Input Validation | All API bodies validated with strict type checks, `400` on invalid input |
+| XSS Prevention | No `dangerouslySetInnerHTML`. React escapes all output |
+| SQL Injection | Supabase parameterised queries only — no raw string concatenation |
+| Session Enforcement | Concurrent sessions detected; duplicate login logs out older device |
+| X-Frame-Options | `SAMEORIGIN` — prevents clickjacking |
+| X-Content-Type-Options | `nosniff` — prevents MIME sniffing |
+
+---
+
+## NoQx Pro Subscription
+
+NoQx Pro is a **₹49/month** subscription that removes the ₹4 per-order convenience fee.
+Students who order 13+ times per month break even; heavy users save ₹200+/month.
+
+### Home screen awareness (soft, non-aggressive)
+
+A small banner below the canteen grid:
+```
+⚡ Skip queues every day
+With 0/- convenience fee
+Try Priority Pickup, Every Time →          ₹49/mo →
+```
+
+### Checkout page — main conversion point
+
+- Non-Pro users see:
+  ```
+  ⚡ Convenience fee   ₹4
+     Pro users pay ₹0
+  ```
+- A highlighted **Pro card** appears below the bill summary:
+  ```
+  💎 NoQx Pro
+  Skip queues all month · Pay ₹0 per order · Just ₹49/month
+  💡 You'll save ₹40+ this month
+  [ Get Pro & Save → ]   [ Continue without · ₹4 convenience fee ]
+  ```
+- Pro users see `₹0 (Pro — free)` and no Pro card
+
+### Pro page (`/dashboard/pro`)
+
+- Hero card: 💎 NoQx Pro, ₹49/month
+- 4 features: Priority Pickup, Zero Convenience Fee, Instant Notifications, Pro Badge
+- Savings calculator: "Break-even in 13 orders"
+- Subscribe button → Razorpay ₹49 → `/api/subscriptions` POST → status saved
+- Active badge shows if already subscribed
+
+### Technical
+
+- `noqx_pro_subscriptions` table — `user_id`, `payment_id`, `active_until`, `status`
+- `GET /api/subscriptions` — check current user's Pro status
+- `POST /api/subscriptions` — upsert active subscription with 30-day expiry
+- Pro status cached in `localStorage("noqx_pro_active")` for instant UI
+- Bottom nav: NoQx Cash tab replaced with **Pro ⭐**
+- `/dashboard/rewards` redirects to `/dashboard/pro`
+
+---
+
+## Order Tracking Flow
+
+After payment, students land on `/dashboard/order-status` — a 3-phase tracking page.
+
+### Phase 1 — Preparing (navigable)
+
+- Order placed ✓ → **Preparing your order… (active)** → Ready for pickup
+- Shows estimated ready time and "Bin will appear when ready"
+- Full bottom nav accessible — student can browse freely
+- A **floating green button** appears on the home screen:
+  ```
+  🍽️ Order in progress
+     12:30 PM · Bin 2          Track →
+  ```
+  Tapping returns to order-status. Also reachable from **My Orders**.
+
+### Phase 2 — Ready for Pickup (navigation locked)
+
+No back button, no bottom nav. Shows:
+- **"Your order is ready 🎉"** heading
+- **"Collect Your Order and tell OTP if asked"**
+- Large **coloured bin square** (RED / BLU / GRN / YEL)
+  - Colour derived from bin code prefix: `#RED002` → red, `#BLU001` → blue, etc.
+- **4 OTP digit boxes** showing the code
+- Items list
+- **"✅ Mark as Collected"** button
+
+> If a canteen has multiple bins the OTP is the same for all orders from that student.
+> Staff verify by checking the app screen or asking OTP verbally.
+
+### Phase 3 — Collected (3-second splash)
+
+```
+✅
+Order collected
+Hope you enjoyed your meal.
+
+Returning home in 3s…
+```
+Auto-redirects to `/dashboard` and clears the active order from storage.
+
+---
+
+## Wallet (NoQx Cash)
+
+> The "NoQx Cash" bottom-nav tab has been removed per the pricing plan.
+> The wallet feature still works; `/dashboard/rewards` redirects to `/dashboard/pro`.
+
+### Top-up
+
+- Minimum: ₹100
+- Via Razorpay (UPI / Card / Net Banking / Wallet)
+- Balance credited to `wallet_transactions` on success
+
+### Withdrawal
+
+- Minimum: ₹100, only to the same payment method used for the last top-up
+- Processed via Razorpay refund API
+
+### Concurrent Session Enforcement
+
+Only one active session per student is permitted. A second login from a new device
+triggers `/api/auth/session` which invalidates the older session — the first device
+sees "You have been signed in from another device."
+
+---
+
+## Settlement & Finance
+
+Super Admin settlement dashboard: `/system/settlements`
+
+### Per-canteen breakdown
+
+| Column | Description |
+|--------|-------------|
+| Canteen | Name + order count |
+| Gross Revenue | Sum of all order totals |
+| Platform Fee | `charge_pct` × revenue + 18% GST |
+| Net Payable | Gross minus platform fee |
+| Status | Pending / Paid |
+
+### Recording a payment
+
+1. Click **Pay** on a canteen row
+2. Enter transaction ref, amount, date, mode (NEFT / RTGS / UPI / Cheque)
+3. Saved to `settlement_payments` — history visible in a collapsible modal
+
+### Platform charges
+
+`GET/PATCH /api/admin/platform-charges` — adjust `charge_pct`, `flat_charge`, `gst_pct` live.
+Default seed: 2% + ₹0 flat + 18% GST = 2.36% effective.
+
+### Canteen bank details
+
+`GET/POST /api/admin/canteen-bank` — store account number, IFSC, UPI ID per canteen.
+Visible in the **Bank Details** modal on the settlements page.
+
+### GST Invoices
+
+Students download a GST invoice from My Orders:
+- CGST (9%) + SGST (9%) breakdown
+- `GET /api/orders/[id]/invoice`
 
 **PCI DSS note**: Card data is never stored or processed by our servers.
 Razorpay (PCI DSS Level 1 certified) handles all card data in their secure iframe.
@@ -134,9 +297,25 @@ anon public key        ->  NEXT_PUBLIC_SUPABASE_ANON_KEY
 service_role key       ->  SUPABASE_SERVICE_ROLE_KEY  (keep this SECRET - never expose to browser)
 ```
 
-### Step 3 - Run the database schema
+### Step 3 — Run the database schema
 
-Open **SQL Editor** in Supabase dashboard and run this SQL:
+Open **SQL Editor** and run `supabase-setup.sql` from the root of this repository.
+It creates all tables, RLS policies, and triggers in one shot.
+
+Key tables created:
+```
+profiles               -- user roles + canteen assignment
+canteens               -- canteen list, lat/lng, address, is_active
+menu_items             -- items per canteen, price, enabled flag
+orders                 -- order records with OTP, bin, payment, status
+wallet_transactions    -- top-up / withdrawal / earned / redeemed
+canteen_bank_details   -- bank account per canteen for settlements
+platform_charges       -- commission %, flat charge, GST % (single row)
+settlement_payments    -- history of payments to canteens
+noqx_pro_subscriptions -- Pro subscribers with start/expiry dates
+```
+
+To bootstrap from scratch, you can also run this core SQL manually:
 
 ```sql
 -- User profiles (extends Supabase auth.users)
@@ -219,16 +398,23 @@ create policy "orders_staff_read" on orders for select
   );
 ```
 
-### Step 4 - Configure Auth
+### Step 4 — Seed platform charges
 
-1. **Authentication -> Providers -> Email**: enable "Email OTP" (passwordless for students)
-2. **Authentication -> URL Configuration**:
+```sql
+insert into platform_charges (charge_pct, flat_charge, gst_pct)
+values (2.00, 0.00, 18.00);
+```
+
+### Step 5 — Configure Auth
+
+1. **Authentication → Providers → Phone**: enable and link Twilio Verify credentials
+2. **Authentication → URL Configuration**:
    - Site URL: `https://canteenapplication-production.up.railway.app`
    - Redirect URLs: `https://canteenapplication-production.up.railway.app/**`
 
-### Step 5 - Create the first Super Admin
+### Step 6 — Create the first Super Admin
 
-After creating a user via the Supabase Auth dashboard (Authentication -> Users -> Invite User):
+After creating the user via Supabase Auth dashboard → Users → Invite User:
 
 ```sql
 -- Replace <USER_UUID> with the actual UUID shown in the Auth dashboard
@@ -634,50 +820,87 @@ Razorpay webhook (payment.failed)
 
 ## API Reference
 
-| Method | Path | Auth Required | Description |
-|--------|------|---------------|-------------|
-| POST | /api/payments/razorpay-order | None | Create Razorpay order, returns order ID |
-| POST | /api/payments/razorpay-verify | None | Verify HMAC-SHA256 payment signature |
-| POST | /api/payments/razorpay-refund | None | Initiate refund for a payment |
-| POST | /api/payments/razorpay-webhook | Razorpay signature | Handle payment events (auto-refund on failure) |
-| PATCH | /api/canteens/[id]/toggle | Bearer JWT | Toggle canteen open or closed |
-| POST | /api/auth/phone/whatsapp | None | Send OTP via WhatsApp (feature-flagged; returns `{ whatsapp: false }` unless `TWILIO_WHATSAPP_ENABLED=true`) |
-| GET | /api/menu | None | Get menu items |
-| GET | /api/orders | None | Get orders |
-| POST | /api/orders | None | Create a new order |
-| PATCH | /api/orders/[id]/status | None | Update order status |
-| GET | /api/slots | None | Get available time slots |
-| GET | /api/bins | None | Get bin status |
-| POST | /api/waste-reports | None | Submit worker waste report |
-| GET | /api/admin/users | Bearer JWT | List all users (super_admin only) |
+### Payments
 
-Rate limits (per IP, enforced in middleware.ts):
-- /api/payments/* -> 10 requests per minute
-- /api/admin/* -> 30 requests per minute
-- /api/canteens/* -> 20 requests per minute
-- /api/* (all others) -> 120 requests per minute
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/payments/razorpay-order` | Create Razorpay order |
+| POST | `/api/payments/razorpay-verify` | Verify HMAC-SHA256 signature |
+| POST | `/api/payments/razorpay-refund` | Initiate refund |
+| POST | `/api/payments/razorpay-webhook` | Handle Razorpay events (auto-refund on failure) |
+
+### Orders
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/orders` | List orders |
+| POST | `/api/orders` | Create order |
+| GET | `/api/orders/[id]` | Get single order |
+| PATCH | `/api/orders/[id]/status` | Update status |
+| GET | `/api/orders/[id]/invoice` | GST invoice (CGST + SGST) |
+
+### NoQx Pro
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/subscriptions` | Check current user's Pro status |
+| POST | `/api/subscriptions` | Activate Pro after Razorpay payment |
+
+### Wallet
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/wallet` | Get balance + transactions |
+| POST | `/api/wallet/topup` | Create top-up Razorpay order |
+| POST | `/api/wallet/topup/verify` | Verify top-up payment |
+| POST | `/api/wallet/withdraw` | Initiate withdrawal |
+
+### Admin — Settlements & Finance
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/admin/settlements` | Per-canteen settlement breakdown |
+| POST | `/api/admin/settlements/pay` | Record settlement payment |
+| GET/POST | `/api/admin/canteen-bank` | Get / update canteen bank details |
+| GET/PATCH | `/api/admin/platform-charges` | Get / update commission config |
+| GET | `/api/admin/users` | List all users (super_admin only) |
+
+### General
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PATCH | `/api/canteens/[id]/toggle` | Toggle canteen open/closed |
+| GET | `/api/menu` | Menu items |
+| GET | `/api/slots` | Pickup slots |
+| GET | `/api/bins` | Bin status |
+| POST | `/api/waste-reports` | Submit waste report |
+| POST | `/api/auth/phone/whatsapp` | WhatsApp OTP (feature-flagged) |
+| GET | `/api/auth/session` | Concurrent session check |
+| GET | `/api/version` | App version |
+
+**Rate limits (per IP):**
+- `/api/payments/*` → 10 req/min
+- `/api/admin/*` → 30 req/min
+- `/api/canteens/*` → 20 req/min
+- All others → 120 req/min
 
 ---
 
 ## Database Schema
 
-```
-profiles      -> user roles, canteen assignment (extends auth.users)
-canteens      -> canteen list, location coords (lat/lng), address, is_active flag, status
-menu_items    -> items per canteen, price, enabled flag
-orders        -> order record with OTP, bin, payment_id, refund_status
-```
+| Table | Purpose |
+|-------|--------|
+| `profiles` | User roles + canteen assignment (extends `auth.users`) |
+| `canteens` | Canteen list, `lat`/`lng`, address, `is_active`, status |
+| `menu_items` | Items per canteen, price, `enabled` flag |
+| `orders` | Order records — OTP, bin, `payment_id`, `status`, `razorpay_order_id` |
+| `wallet_transactions` | Top-up / withdrawal / earned / redeemed / expired |
+| `canteen_bank_details` | Bank account per canteen (account no, IFSC, UPI) |
+| `platform_charges` | Commission %, flat charge, GST % — single configurable row |
+| `settlement_payments` | History of NEFT/RTGS/UPI payments to canteens |
+| `noqx_pro_subscriptions` | Pro subscribers — `user_id`, `payment_id`, `active_until` |
 
-Key canteens columns added for location:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `address` | text | Full street address |
-| `lat` | float8 | Latitude (required for distance filtering) |
-| `lng` | float8 | Longitude (required for distance filtering) |
-
-Full schema SQL (including RLS policies, triggers, and all tables) is in `supabase-setup.sql`
-at the root of this repository. Run it in the Supabase SQL Editor to bootstrap a fresh project.
+Full schema SQL is in `supabase-setup.sql` at the root of this repo.
 
 ---
 
@@ -697,9 +920,14 @@ at the root of this repository. Run it in the Supabase SQL Editor to bootstrap a
 | "SMS could not be delivered" / Twilio trial error | Twilio trial accounts only send to verified numbers. Upgrade your Twilio account, or use Email OTP as a fallback |
 | Student OTP never arrives | Check that TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID are all set in Railway |
 | WhatsApp OTP not sending | TWILIO_WHATSAPP_ENABLED is false by default. Set it to true in Railway after WhatsApp Business approval |
-| Canteens not showing on student dashboard | Canteens need lat/lng set in the Admin -> Canteens form. Without coordinates they cannot be distance-ranked |
-| All canteens filtered out (10 km) | The student's GPS location is more than 10 km from all canteens. Ask them to use the manual area picker or update canteen coordinates in admin |
-| Location picker appears on every visit | localStorage may be cleared or blocked. Check browser settings for the site |
+| Canteens not showing | Canteens need `lat`/`lng` set in Admin → Canteens — required for distance ranking |
+| All canteens filtered out (10 km) | Student's GPS is > 10 km from all canteens — use the manual area picker |
+| Location picker on every visit | `localStorage` blocked/cleared — check browser site settings |
+| Convenience fee not at checkout | Check `isPro` reads from `localStorage("noqx_pro_active")` and `noqx_pro_subscriptions` |
+| Pro card not visible at checkout | `showProCard` is `true` for non-Pro users — check `isPro` state loads correctly |
+| Order-status page redirects away | No `canteen_active_order` in localStorage — order must be placed first |
+| Floating track button missing | `canteen_active_order` not set; created by `finaliseOrder()` in cart after payment |
+| Settlement page blank | `platform_charges` table needs a seed row — run: `insert into platform_charges (charge_pct, flat_charge, gst_pct) values (2.00, 0.00, 18.00);` |
 
 ---
 
@@ -733,16 +961,22 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Commit | Description |
 |--------|-------------|
+| `57cf7eb` | fix: PDF spec — banner 3-line copy, "Pro users pay ₹0" in cart, "Your order is ready" heading |
+| `2dc3e05` | fix: remove dead placedOrder state, redirect /rewards to /pro |
+| `85610a1` | fix: remove staff placeholder from canteen login email field |
+| `8eb01ea` | feat: NoQx Pro subscription + full order tracking flow (preparing → ready → collected) |
+| `7f4ea39` | feat: settlement dashboard, GST invoices, reorder, canteen bank details, login UI cleanup |
+| `508311b` | feat: wallet top-up/withdraw (₹100 min), same-gateway withdrawal, concurrent session enforcement |
+| `11689e2` | fix: auth guard, Zomato-style location header, GPS error inline, search fallback |
 | `6d6f9b1` | fix: enforce 10 km radius as always-on baseline canteen filter |
-| `7eec070` | feat: distance display on cards, 10 km radius filter, admin location onboarding |
-| `28b9025` | feat: GPS detection + text search in location picker, fix See All button |
-| `f7d17f8` | feat: location-based canteen filter + hero card layout fix |
-| `faed93f` | feat: WhatsApp OTP channel (feature-flagged) + Twilio env docs + supabase-setup.sql |
-| `dffcc74` | fix: graceful SMS failure message with Email OTP fallback hint |
-| `23ffdf0` | feat: Twilio Verify SMS OTP + dual phone + email verification |
+| `7eec070` | feat: distance display on canteen cards, 10 km radius filter, admin location onboarding |
+| `28b9025` | feat: GPS auto-detect + text search in location picker, fix See All button |
+| `f7d17f8` | feat: location-based canteen filter + hero card layout |
+| `faed93f` | feat: WhatsApp OTP channel (feature-flagged), Twilio docs |
+| `23ffdf0` | feat: Twilio Verify SMS OTP, dual phone + email verification |
 
 ---
 
-**Last updated**: 24 April 2026
-**Build status**: Passing (0 TypeScript errors)
-**Deployed**: Railway — auto-deploy from `main` branch (latest: `6d6f9b1`)
+**Last updated**: 24 April 2026  
+**Build status**: Passing — 0 TypeScript errors  
+**Deployed**: Railway — auto-deploy from `main` (latest: `57cf7eb`)
