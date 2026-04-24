@@ -565,10 +565,9 @@ function LoginContent() {
             <button className="btn btn-primary btn-full" disabled={busy} onClick={handlePasswordLogin} style={{ padding: "0.8rem" }}>
               {busy ? "Signing in…" : "Sign In →"}
             </button>
-            <Divider label="forgot password?" />
-            <button className="btn btn-ghost btn-full" onClick={() => switchTab("forgot")} style={{ fontSize: "0.82rem" }}>
-              Reset Password
-            </button>
+            <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
+              🔐 Passwords are managed by your super admin. Contact them if you need access.
+            </p>
           </div>
         )}
 
