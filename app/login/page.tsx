@@ -346,7 +346,7 @@ function LoginContent() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div className="form-group">
               <label className="form-label">Email</label>
-              <input className="form-input" type="email" placeholder="staff@canteen.app" value={email} onChange={e => setEmail(e.target.value)} />
+              <input className="form-input" type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
