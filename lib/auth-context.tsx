@@ -250,7 +250,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function sendEmailOtp(email: string) {
     if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
-    const { error } = await supabase.auth.signInWithOtp({ email })
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/auth/confirm`
+      : undefined
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: redirectTo },
+    })
     if (error) throw error
   }
 
@@ -345,17 +351,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     metadata?: Record<string, unknown>
   ) {
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/auth/confirm`
+      : undefined
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: metadata },
+      options: { data: metadata, emailRedirectTo: redirectTo },
     })
     if (error) throw error
   }
 
   async function resetPassword(email: string) {
+    const origin = typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL ?? '')
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
+      redirectTo: `${origin}/auth/reset-password`,
     })
     if (error) throw error
   }

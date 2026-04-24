@@ -204,8 +204,18 @@ function LoginContent() {
     setBusy(true); setError(null);
     try {
       await signInWithPassword(email, password);
+      // signInWithPassword succeeded — onAuthStateChange will fire and the
+      // useEffect above will redirect. Keep busy=true so button stays "Signing in…"
+      // but set a safety fallback in case the redirect stalls.
+      setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Login failed.");
+      const msg = e instanceof Error ? e.message : "Login failed.";
+      // Surface a friendlier message for the most common Supabase error
+      setError(
+        msg.toLowerCase().includes("email not confirmed")
+          ? "Your email address has not been confirmed yet. Please check your inbox for a confirmation email and click the link, then try again."
+          : msg
+      );
       setBusy(false);
     }
   }
