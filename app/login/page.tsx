@@ -69,7 +69,7 @@ function LoginContent() {
   const roleParam = params.get("role") || "user";
   const [tab, setTab] = useState<Tab>(roleParam === "user" ? "phone" : "password");
 
-  const [phone, setPhone]   = useState("");
+  const [phone, setPhone]   = useState("7019986046");
   const [email, setEmail]   = useState(
     roleParam === "vendor"        ? "vendor@canteen.app"  :
     roleParam === "super_admin"   ? "admin@canteen.app"   :
@@ -204,7 +204,7 @@ function LoginContent() {
               <label className="form-label">Mobile Number</label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="98765 43210" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
+                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="7019986046" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
               </div>
             </div>
             {error && <p className="error-msg">{error}</p>}
@@ -217,6 +217,9 @@ function LoginContent() {
         {tab === "phone" && otpSentTo && otpTarget === "phone" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            {otpSentTo === "+917019986046" && (
+              <p style={{ fontSize: "0.75rem", color: "var(--ink-3)", textAlign: "center" }}>Demo: enter <strong>123456</strong> to sign in</p>
+            )}
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
             <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyPhoneOtp} style={{ padding: "0.8rem" }}>
