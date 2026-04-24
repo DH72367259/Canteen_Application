@@ -41,7 +41,7 @@ function formatDist(km: number) {
 export default function UserHomePage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
-  const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
+  const [activeNav, setActiveNav] = useState<"home" | "orders" | "pro" | "profile">("home");
   const [walletBalance, setWalletBalance] = useState(0);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
@@ -347,16 +347,29 @@ export default function UserHomePage() {
         </div>
       </div>
 
-      {/* ── Active order banner ── */}
+      {/* ── Active order floating button ── */}
       {activeOrder && (
-        <div style={{ margin: "0 1rem 0.25rem", background: "var(--green-light)", borderRadius: 14, padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #bbf7d0" }}>
-          <div>
-            <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600, textTransform: "uppercase" }}>Active Order</div>
-            <div style={{ fontSize: "0.88rem", fontWeight: 700 }}>{activeOrder.slot} · {activeOrder.bin}</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{activeOrder.items}</div>
+        <Link
+          href="/dashboard/order-status"
+          style={{
+            position: "fixed", bottom: 70, left: "50%", transform: "translateX(-50%)",
+            zIndex: 50, maxWidth: 360, width: "calc(100% - 2rem)",
+            background: "linear-gradient(135deg, #16a34a, #15803d)",
+            color: "#fff", borderRadius: 16, padding: "0.7rem 1rem",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            boxShadow: "0 4px 20px rgba(22,163,74,0.4)",
+            textDecoration: "none",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>🍽️</span>
+            <div>
+              <div style={{ fontSize: "0.72rem", fontWeight: 600, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.03em" }}>Order in progress</div>
+              <div style={{ fontSize: "0.88rem", fontWeight: 800 }}>{activeOrder.slot} · {activeOrder.bin}</div>
+            </div>
           </div>
-          <Link href="/dashboard/orders" style={{ background: "var(--green)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.75rem", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}>Track →</Link>
-        </div>
+          <span style={{ fontSize: "0.82rem", fontWeight: 700, opacity: 0.9 }}>Track →</span>
+        </Link>
       )}
 
       {/* ── Canteen list ── */}
@@ -429,12 +442,23 @@ export default function UserHomePage() {
         </div>
       </div>
 
+      {/* ── NoQx Pro soft-awareness banner ── */}
+      <div style={{ margin: "0.5rem 1rem 1rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "0.15rem" }}>⚡ Skip queues every day</div>
+          <div style={{ fontSize: "0.72rem", color: "#b45309" }}>With ₹0 convenience fee · Try Priority Pickup, Every Time</div>
+        </div>
+        <a href="/dashboard/pro" style={{ background: "var(--orange)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.8rem", fontSize: "0.75rem", fontWeight: 800, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+          ₹49/mo →
+        </a>
+      </div>
+
       {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">
-        {(["home", "orders", "rewards", "profile"] as const).map(tab => {
-          const icons: Record<string, string> = { home: "🏠", orders: "📦", rewards: "💰", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", rewards: "Rewards", profile: "Profile" };
-          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", rewards: "/dashboard/rewards", profile: "/dashboard/profile" };
+        {(["home", "orders", "pro", "profile"] as const).map(tab => {
+          const icons: Record<string, string> = { home: "🏠", orders: "📦", pro: "⭐", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "My Orders", pro: "Pro", profile: "Profile" };
+          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", pro: "/dashboard/pro", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}

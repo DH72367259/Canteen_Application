@@ -198,7 +198,7 @@ export default function MyOrdersPage() {
         {[
           { tab: "home",    icon: "🏠", label: "Home",      href: "/dashboard" },
           { tab: "orders",  icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { tab: "rewards", icon: "💰", label: "Rewards",   href: "/dashboard/rewards" },
+          { tab: "pro",     icon: "⭐", label: "Pro",       href: "/dashboard/pro" },
           { tab: "profile", icon: "👤", label: "Profile",   href: "/dashboard/profile" },
         ].map(item => (
           <Link key={item.tab} href={item.href} className={`bottom-nav-item ${item.tab === "orders" ? "active" : ""}`}>
