@@ -41,7 +41,7 @@ function formatDist(km: number) {
 export default function UserHomePage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
-  const [activeNav, setActiveNav] = useState<"home" | "orders" | "pro" | "profile">("home");
+  const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
   const [walletBalance, setWalletBalance] = useState(0);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
@@ -456,10 +456,10 @@ export default function UserHomePage() {
 
       {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">
-        {(["home", "orders", "pro", "profile"] as const).map(tab => {
-          const icons: Record<string, string> = { home: "🏠", orders: "📦", pro: "⭐", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", pro: "Pro", profile: "Profile" };
-          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", pro: "/dashboard/pro", profile: "/dashboard/profile" };
+        {(["home", "orders", "rewards", "profile"] as const).map(tab => {
+          const icons: Record<string, string> = { home: "🏠", orders: "📦", rewards: "🎁", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "My Orders", rewards: "Rewards", profile: "Profile" };
+          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", rewards: "/dashboard/rewards", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}

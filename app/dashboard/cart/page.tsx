@@ -53,7 +53,8 @@ function CartContent() {
   const [walletBal]                   = useState(12);
   const [useWallet,   setUseWallet]   = useState(false);
   const [isPro,       setIsPro]       = useState(false);
-  const [showProCard, setShowProCard] = useState(true);
+  // "go_pro" = user selected the ₹69/mo upsell; "skip" = continue without (pay ₹4)
+  const [proChoice,   setProChoice]   = useState<"go_pro" | "skip">("skip");
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
@@ -139,6 +140,13 @@ function CartContent() {
   async function handleCheckout() {
     if (!slot)            { setError("Please choose a pickup time slot."); return; }
     if (cart.length === 0) { setError("Your cart is empty."); return; }
+
+    // If user chose go_pro, redirect to pro page first
+    if (!isPro && proChoice === "go_pro") {
+      router.push("/dashboard/pro");
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
@@ -285,35 +293,73 @@ function CartContent() {
           </section>
         )}
 
-        {/* ── NoQx Pro card (non-Pro users only) ── */}
-        {!isPro && showProCard && (
-          <section style={{ background: "linear-gradient(135deg, #fff7ed, #fef3c7)", border: "2px solid #f97316", borderRadius: 16, padding: "1rem", position: "relative" }}>
-            <button
-              onClick={() => setShowProCard(false)}
-              style={{ position: "absolute", top: "0.5rem", right: "0.6rem", background: "none", border: "none", fontSize: "1rem", color: "var(--ink-3)", cursor: "pointer", lineHeight: 1 }}
-              aria-label="Dismiss"
-            >✕</button>
-            <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#92400e", marginBottom: "0.25rem" }}>💎 NoQx Pro</div>
-            <div style={{ fontSize: "0.8rem", color: "#b45309", marginBottom: "0.75rem" }}>
-              Skip queues all month · Pay ₹0 convenience fee per order · Just ₹49/month
+        {/* ── NoQx Pro upsell (radio choice, non-Pro users only) ── */}
+        {!isPro && (
+          <section className="card" style={{ padding: "1rem", border: "2px solid #f97316" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+              <span style={{ fontSize: "1rem" }}>💎</span>
+              <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#92400e" }}>NoQx Pro</span>
             </div>
-            <div style={{ fontSize: "0.72rem", color: "#92400e", marginBottom: "0.75rem", background: "#fef9c3", borderRadius: 8, padding: "0.35rem 0.6rem", display: "inline-block" }}>
-              💡 You&apos;ll save ₹40+ this month
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <a
-                href="/dashboard/pro"
-                style={{ display: "block", textAlign: "center", background: "var(--orange)", color: "#fff", borderRadius: 12, padding: "0.65rem", fontSize: "0.9rem", fontWeight: 800, textDecoration: "none" }}
-              >
-                Get Pro & Save →
-              </a>
-              <button
-                onClick={() => setShowProCard(false)}
-                style={{ background: "none", border: "1.5px solid #f97316", borderRadius: 12, padding: "0.55rem", fontSize: "0.82rem", fontWeight: 600, color: "#c2410c", cursor: "pointer" }}
-              >
-                Continue without · ₹4 convenience fee
-              </button>
-            </div>
+
+            {/* Go Pro option */}
+            <label
+              style={{
+                display: "flex", alignItems: "flex-start", gap: "0.75rem",
+                border: `2px solid ${proChoice === "go_pro" ? "#f97316" : "var(--border)"}`,
+                borderRadius: 12, padding: "0.85rem", marginBottom: "0.5rem",
+                cursor: "pointer", background: proChoice === "go_pro" ? "#fff7ed" : "#fff",
+              }}
+            >
+              <input
+                type="radio"
+                name="pro_choice"
+                value="go_pro"
+                checked={proChoice === "go_pro"}
+                onChange={() => setProChoice("go_pro")}
+                style={{ marginTop: 2, accentColor: "#f97316", flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--ink)" }}>
+                  Go Pro &amp; Save
+                </div>
+                <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>
+                  Skip queues all month · Pay ₹0 convenience fee per order
+                </div>
+                <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#f97316", marginTop: "0.2rem" }}>
+                  Just ₹69/month
+                </div>
+                {proChoice === "go_pro" && (
+                  <div style={{ fontSize: "0.72rem", color: "#16a34a", marginTop: "0.3rem", fontWeight: 600 }}>
+                    💡 You&apos;ll save ₹40+ this month
+                  </div>
+                )}
+              </div>
+            </label>
+
+            {/* Continue without option */}
+            <label
+              style={{
+                display: "flex", alignItems: "flex-start", gap: "0.75rem",
+                border: `2px solid ${proChoice === "skip" ? "var(--border)" : "var(--border)"}`,
+                borderRadius: 12, padding: "0.7rem 0.85rem",
+                cursor: "pointer", background: "#fff",
+              }}
+            >
+              <input
+                type="radio"
+                name="pro_choice"
+                value="skip"
+                checked={proChoice === "skip"}
+                onChange={() => setProChoice("skip")}
+                style={{ marginTop: 2, accentColor: "#f97316", flexShrink: 0 }}
+              />
+              <div style={{ display: "flex", flex: 1, justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.85rem", color: "var(--ink-3)", fontWeight: 500 }}>
+                  Continue without
+                </span>
+                <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--ink)" }}>₹4 fee</span>
+              </div>
+            </label>
           </section>
         )}
 
@@ -365,7 +411,7 @@ function CartContent() {
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35 }}>
         <button className="btn btn-primary btn-full" disabled={busy || cart.length === 0} onClick={handleCheckout}
           style={{ padding: "0.9rem", fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-          {busy ? "Processing…" : payable === 0 ? "Place Order (Wallet)" : `Pay ₹${payable} via Razorpay →`}
+          {busy ? "Processing…" : (!isPro && proChoice === "go_pro") ? "Get Pro & Save →" : payable === 0 ? "Place Order (Wallet)" : `Pay ₹${payable} via Razorpay →`}
         </button>
       </div>
     </div>

@@ -41,6 +41,7 @@ export default function VendorDashboard() {
   const [bins, setBins] = useState<Bin[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
+  const [slotsConfigured, setSlotsConfigured] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
@@ -56,9 +57,23 @@ export default function VendorDashboard() {
     }
   }, [user, router]);
 
+  // Load slots-configured flag from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setSlotsConfigured(localStorage.getItem("vendor_slots_configured") === "true");
+    }
+  }, []);
+
   const handleToggleCanteen = async () => {
     if (toggleBusy) return;
+    // Gate: cannot turn ON unless slots have been configured (check localStorage fresh)
     const next = !canteenOpen;
+    const configured = typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true";
+    if (next && !configured) {
+      setToggleError("Please configure and save your time slots first (Time Slots → Save Configuration).");
+      return;
+    }
+    setSlotsConfigured(configured);
     setToggleBusy(true);
     setToggleError(null);
     // Optimistic update
@@ -159,10 +174,10 @@ export default function VendorDashboard() {
     await fetchOrders();
   }, [session?.access_token, fetchOrders]);
 
-  // Auto-refresh every 15 seconds
+  // Auto-refresh every 5 seconds
   useEffect(() => {
     fetchOrders();
-    refreshRef.current = setInterval(fetchOrders, 15_000);
+    refreshRef.current = setInterval(fetchOrders, 5_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
   }, [fetchOrders]);
 
@@ -236,16 +251,16 @@ export default function VendorDashboard() {
         {/* Topbar */}
         <div className="topbar">
           <div>
-            <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>
+            <div style={{ fontWeight: 700 }}>
               {NAV_ITEMS.find(n => n.id === activeNav)?.label}
-            </h1>
-            <div className="topbar-sub">Auto-refreshes every 15 seconds</div>
+            </div>
+            <div className="topbar-sub">Auto-refreshes every 5 seconds</div>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600 }}>Canteen</span>
               {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 180 }}>{toggleError}</span>}
-              <label className="toggle-switch" title={canteenOpen ? "Canteen is OPEN – click to close" : "Canteen is CLOSED – click to open"} style={{ opacity: toggleBusy ? 0.6 : 1 }}>
+              <label className="toggle-switch" title={!slotsConfigured && !canteenOpen ? "Save slot configuration first before turning ON" : canteenOpen ? "Canteen is OPEN – click to close" : "Canteen is CLOSED – click to open"} style={{ opacity: toggleBusy ? 0.6 : 1 }}>
                 <input type="checkbox" checked={canteenOpen} disabled={toggleBusy} onChange={handleToggleCanteen} />
                 <span className="toggle-track" />
               </label>
@@ -563,10 +578,19 @@ function VendorSlotsView() {
   const [slots, setSlots] = useState<Slot[]>(INIT);
   const [modal, setModal] = useState<Slot | null | false>(false); // null = add new
   const [form, setForm] = useState({ time: "", type: "Lunch" as Slot["type"], capacity: "" });
+  const [saved, setSaved] = useState(false);
 
   const openEdit = (s: Slot) => { setModal(s); setForm({ time: s.time, type: s.type, capacity: String(s.capacity) }); };
   const openAdd = () => { setModal(null); setForm({ time: "", type: "Lunch", capacity: "" }); };
   const closeModal = () => setModal(false);
+
+  const handleSaveConfiguration = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("vendor_slots_configured", "true");
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
 
   const saveModal = () => {
     if (!form.time.trim()) return;
@@ -587,7 +611,16 @@ function VendorSlotsView() {
     <div className="page-content">
       <div className="page-header">
         <h2>Time Slots</h2>
-        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Slot</button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {saved && <span style={{ fontSize: "0.78rem", color: "var(--green)", fontWeight: 600 }}>✅ Configuration saved!</span>}
+          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Slot</button>
+          <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={handleSaveConfiguration}>
+            Save Configuration
+          </button>
+        </div>
+      </div>
+      <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: "0.6rem 0.9rem", fontSize: "0.78rem", color: "#92400e", marginBottom: "0.75rem" }}>
+        ⚡ You must click <strong>Save Configuration</strong> before you can turn the canteen ON.
       </div>
       <div className="table-wrap">
         <table>
