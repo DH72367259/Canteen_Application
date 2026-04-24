@@ -218,10 +218,8 @@ body {
   color: #fff;
   position: relative;
   overflow: hidden;
-  /* Prevent overflow on small screens */
   min-height: 0;
-  width: calc(100% - 2rem);
-  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .hero-card::after {
@@ -233,20 +231,31 @@ body {
   height: 120px;
   background: rgba(255,255,255,0.1);
   border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero-card::before {
+  content: '';
+  position: absolute;
+  right: 10px;
+  bottom: -30px;
+  width: 90px;
+  height: 90px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .hero-card h2 {
   font-size: 1.3rem;
   font-weight: 800;
   line-height: 1.2;
-  position: relative;
 }
 
 .hero-card p {
   font-size: 0.8rem;
   opacity: 0.85;
   margin-top: 0.35rem;
-  position: relative;
 }
 
 .hero-card .hero-cta {
@@ -257,11 +266,9 @@ body {
   padding: 0.35rem 0.9rem;
   font-size: 0.78rem;
   font-weight: 600;
-  margin-top: 0.75rem;
   color: #fff;
   text-decoration: none;
   cursor: pointer;
-  position: relative;
 }
 
 /* ─── Section Headers ─── */
