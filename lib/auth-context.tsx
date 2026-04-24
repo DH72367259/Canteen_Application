@@ -40,6 +40,7 @@ export type UserRole =
   | 'vendor'
   | 'worker'
   | 'super_admin'
+  | 'co_admin'
   | null
 
 export interface AuthUser {
@@ -165,9 +166,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(async ({ data: { session } }) => {
         clearTimeout(fallback)
 
-        // 30-day inactivity check — if the user hasn't been active, sign them out
+        // 30-day inactivity check — hard sign out, user must re-authenticate
         if (session?.user && isInactive()) {
           await supabase.auth.signOut()
+          setUser(null)
+          setSession(null)
           setLoading(false)
           return
         }
@@ -180,9 +183,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const meta = session.user.user_metadata ?? {}
           const hasPassword = meta.has_password === true
           const pwChangedAt: string | undefined = meta.password_changed_at
-          const passwordExpired = hasPassword && pwChangedAt &&
-            Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000
-          const mustChangePassword = meta.must_change_password === true || !!passwordExpired
+          // 30-day password expiry — hard sign out the user, force re-login with new password
+          if (hasPassword && pwChangedAt &&
+            Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
+            // Sign out and redirect to login with an expiry message
+            await supabase.auth.signOut()
+            setUser(null)
+            setSession(null)
+            try { localStorage.setItem('canteen_pw_expired', '1') } catch { /* SSR */ }
+            setLoading(false)
+            return
+          }
+          const mustChangePassword = meta.must_change_password === true
           setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
           // Register session (non-blocking — don't block UI on this)
           registerSession(session.access_token).catch(() => {})
@@ -205,9 +217,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
         const pwChangedAt: string | undefined = meta.password_changed_at
-        const passwordExpired = hasPassword && pwChangedAt &&
-          Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000
-        const mustChangePassword = meta.must_change_password === true || !!passwordExpired
+        // 30-day password expiry — hard sign out
+        if (hasPassword && pwChangedAt &&
+          Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
+          await supabase.auth.signOut()
+          setUser(null)
+          setSession(null)
+          try { localStorage.setItem('canteen_pw_expired', '1') } catch { /* SSR */ }
+          setLoading(false)
+          return
+        }
+        const mustChangePassword = meta.must_change_password === true
         setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
         registerSession(session.access_token).catch(() => {})
       } else {

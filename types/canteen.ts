@@ -1,4 +1,4 @@
-export type UserRole = "user" | "canteen_admin" | "vendor" | "worker" | "super_admin";
+export type UserRole = "user" | "canteen_admin" | "vendor" | "worker" | "super_admin" | "co_admin";
 
 export type MenuCategory = "meal" | "drink" | "snack";
 

@@ -34,14 +34,14 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
-  // 1. Create Supabase auth user (email already confirmed — no email needed)
+  // 1. Create Supabase auth user — admin sets a permanent password; no forced change
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email: email.trim().toLowerCase(),
     password,
     email_confirm: true,
     user_metadata: {
-      // Flag forces a password change on the very first login
-      must_change_password: true,
+      has_password: true,
+      password_changed_at: new Date().toISOString(),
     },
   });
 

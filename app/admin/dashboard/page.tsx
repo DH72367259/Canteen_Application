@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
-type AdminSection = "overview" | "canteens" | "users" | "cities" | "analytics" | "payments" | "support" | "account";
+type AdminSection = "overview" | "canteens" | "users" | "managers" | "cities" | "analytics" | "payments" | "support" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
   { id: "canteens",  icon: "🏪", label: "Manage Canteens" },
+  { id: "managers",  icon: "👨‍💼", label: "Canteen Managers" },
   { id: "users",     icon: "👥", label: "All Users" },
   { id: "cities",    icon: "🏫", label: "Cities & Colleges" },
   { id: "analytics", icon: "📈", label: "Analytics" },
@@ -21,9 +22,10 @@ export default function SuperAdminDashboard() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [section, setSection] = useState<AdminSection>("overview");
+  const isSuperAdmin = user?.role === "super_admin";
 
   useEffect(() => {
-    if (user && user.role !== "super_admin") router.push("/login");
+    if (user && user.role !== "super_admin" && user.role !== "co_admin") router.push("/login");
   }, [user, router]);
 
   const handleLogout = async () => { await logout(); router.push("/login"); };
@@ -34,7 +36,7 @@ export default function SuperAdminDashboard() {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="logo-badge"><span className="dot" />Canteen Admin</div>
-          <p>Super Administrator</p>
+          <p>{isSuperAdmin ? "Super Administrator" : "Co-Administrator"}</p>
         </div>
         <nav className="sidebar-nav">
           {ADMIN_NAV.map(item => (
@@ -51,14 +53,15 @@ export default function SuperAdminDashboard() {
       </aside>
 
       <main className="main-with-sidebar">
-        {section === "overview" && <OverviewSection />}
-        {section === "canteens" && <CanteensSection />}
-        {section === "users" && <UsersSection />}
+        {section === "overview"  && <OverviewSection />}
+        {section === "canteens"  && <CanteensSection />}
+        {section === "managers"  && <ManagersSection isSuperAdmin={isSuperAdmin} session={user} />}
+        {section === "users"     && <UsersSection isSuperAdmin={isSuperAdmin} session={user} />}
         {section === "analytics" && <AnalyticsSection />}
-        {section === "payments" && <PaymentsSection />}
-        {section === "cities" && <CitiesSection />}
-        {section === "support" && <SupportSection />}
-        {section === "account" && <AccountSection />}
+        {section === "payments"  && <PaymentsSection />}
+        {section === "cities"    && <CitiesSection />}
+        {section === "support"   && <SupportSection />}
+        {section === "account"   && <AccountSection />}
       </main>
     </div>
   );
@@ -446,91 +449,198 @@ function CanteensSection() {
   );
 }
 
-function UsersSection() {
-  const INIT = [
-    { id: "u1", name: "Arjun Sharma", phone: "+91 98765 43210", college: "IIT Bombay", orders: 28, rewards: "₹42", joined: "Jun 2025", role: "user" },
-    { id: "u2", name: "Priya Menon", phone: "+91 90123 45678", college: "BITS Pilani", orders: 14, rewards: "₹18", joined: "Jul 2025", role: "user" },
-    { id: "u3", name: "Karan Das", phone: "+91 87654 32109", college: "NIT Trichy", orders: 6, rewards: "₹8", joined: "Jul 2025", role: "worker" },
-    { id: "u4", name: "Sneha Joshi", phone: "+91 81234 56789", college: "VIT Vellore", orders: 35, rewards: "₹62", joined: "May 2025", role: "canteen_admin" },
-    { id: "u5", name: "Rohan Kumar", phone: "+91 77654 32100", college: "IIT Bombay", orders: 52, rewards: "₹88", joined: "Apr 2025", role: "user" },
-  ];
-  const [users, setUsers] = useState(INIT);
-  const [search, setSearch] = useState("");
-  const [editUser, setEditUser] = useState<typeof INIT[number] | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", college: "", role: "user" });
+// ── Shared API helper ──────────────────────────────────────────────────────
+async function adminFetch(path: string, session: { uid?: string } | null, opts?: RequestInit) {
+  const { getSupabaseClient } = await import("@/lib/supabase-client");
+  const sb = getSupabaseClient();
+  const { data: { session: s } } = await sb.auth.getSession();
+  const token = s?.access_token ?? "";
+  return fetch(path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(opts?.headers ?? {}) },
+  });
+}
 
-  const filtered = users.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.phone.includes(search) ||
-    u.college.toLowerCase().includes(search.toLowerCase())
+// ── ManagersSection — onboard / offboard canteen managers ─────────────────
+interface ManagerRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+
+function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { uid?: string } | null }) {
+  const [managers, setManagers] = useState<ManagerRow[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
+  const [search,   setSearch]   = useState("");
+
+  // Create form
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "" });
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Password reset modal
+  const [resetTarget, setResetTarget] = useState<ManagerRow | null>(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<ManagerRow | null>(null);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session);
+      const j = await r.json();
+      if (!r.ok) { setError(j.error ?? "Failed to load"); return; }
+      const staffRoles = ["canteen_admin", "vendor", "worker"];
+      setManagers((j.users as ManagerRow[]).filter(u => staffRoles.includes(u.role)));
+    } catch { setError("Network error"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreate() {
+    setFormBusy(true); setFormError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session, { method: "POST", body: JSON.stringify(form) });
+      const j = await r.json();
+      if (!r.ok) { setFormError(j.error ?? "Failed"); return; }
+      setShowCreate(false); setForm({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "" });
+      await load();
+    } catch { setFormError("Network error"); }
+    finally { setFormBusy(false); }
+  }
+
+  async function handleResetPassword() {
+    if (!resetTarget) return;
+    if (newPwd.length < 8) return;
+    setResetBusy(true);
+    try {
+      const r = await adminFetch("/api/admin/users", session, { method: "PATCH", body: JSON.stringify({ uid: resetTarget.uid, new_password: newPwd }) });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed to reset password"); return; }
+      setResetTarget(null); setNewPwd("");
+      alert("Password reset successfully.");
+    } catch { alert("Network error"); }
+    finally { setResetBusy(false); }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      const r = await adminFetch("/api/admin/users", session, { method: "DELETE", body: JSON.stringify({ uid: deleteTarget.uid }) });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed to delete"); return; }
+      setDeleteTarget(null); await load();
+    } catch { alert("Network error"); }
+  }
+
+  const filtered = managers.filter(m =>
+    m.name?.toLowerCase().includes(search.toLowerCase()) ||
+    m.email?.toLowerCase().includes(search.toLowerCase())
   );
-
-  const openEdit = (u: typeof INIT[number]) => { setEditUser(u); setForm({ name: u.name, phone: u.phone, college: u.college, role: u.role }); };
-  const saveEdit = () => {
-    if (editUser) setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, ...form } : u));
-    setEditUser(null);
-  };
 
   return (
     <div className="page-content">
       <div className="page-header">
-        <h2>All Users</h2>
-        <input className="form-input" type="search" placeholder="Search users…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
+        <h2>Canteen Managers</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input className="form-input" type="search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200 }} />
+          {isSuperAdmin && <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Onboard Manager</button>}
+        </div>
       </div>
+
+      {!isSuperAdmin && (
+        <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 10, padding: "0.6rem 1rem", fontSize: "0.82rem", color: "#78350f", marginBottom: "1rem" }}>
+          👁️ View-only mode — only super_admin can create, delete, or reset passwords.
+        </div>
+      )}
+
+      {error && <p className="error-msg">{error}</p>}
+
       <div className="table-wrap">
         <table>
-          <thead><tr><th>USER</th><th>PHONE</th><th>COLLEGE</th><th>ROLE</th><th>ORDERS</th><th>REWARDS</th><th>JOINED</th><th>ACTION</th></tr></thead>
+          <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>CANTEEN</th><th>JOINED</th>{isSuperAdmin && <th>ACTIONS</th>}</tr></thead>
           <tbody>
-            {filtered.map(u => (
-              <tr key={u.id}>
-                <td style={{ fontWeight: 600 }}>{u.name}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{u.phone}</td>
-                <td style={{ fontSize: "0.82rem" }}>{u.college}</td>
-                <td><span className={`tag ${u.role === "super_admin" ? "tag-orange" : u.role === "canteen_admin" || u.role === "vendor" ? "tag-blue" : u.role === "worker" ? "tag-yellow" : "tag-gray"}`}>{u.role}</span></td>
-                <td>{u.orders}</td>
-                <td style={{ color: "var(--green)", fontWeight: 600 }}>{u.rewards}</td>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{u.joined}</td>
-                <td><button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEdit(u)}>Edit</button></td>
+            {loading ? (
+              <tr><td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>Loading…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No managers found</td></tr>
+            ) : filtered.map(m => (
+              <tr key={m.uid}>
+                <td style={{ fontWeight: 600 }}>{m.name || "—"}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{m.email}</td>
+                <td><span className="tag tag-blue">{m.role}</span></td>
+                <td style={{ fontSize: "0.82rem" }}>{m.canteen_id || "—"}</td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString("en-IN") : "—"}</td>
+                {isSuperAdmin && (
+                  <td style={{ display: "flex", gap: "0.4rem" }}>
+                    <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => { setResetTarget(m); setNewPwd(""); }}>🔑 Reset PW</button>
+                    <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem", color: "#ef4444" }} onClick={() => setDeleteTarget(m)}>🗑 Remove</button>
+                  </td>
+                )}
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No users found</td></tr>
-            )}
           </tbody>
         </table>
       </div>
 
-      {editUser && (
-        <div className="modal-overlay" onClick={() => setEditUser(null)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+      {/* Create Manager Modal */}
+      {showCreate && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <h3>Edit User</h3>
-              <button onClick={() => setEditUser(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+              <h3>Onboard New Manager</h3>
+              <button onClick={() => setShowCreate(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div>
-                <label className="form-label">Name</label>
-                <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
-              </div>
-              <div>
-                <label className="form-label">Phone</label>
-                <input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
-              </div>
-              <div>
-                <label className="form-label">College</label>
-                <input className="form-input" value={form.college} onChange={e => setForm(p => ({ ...p, college: e.target.value }))} />
-              </div>
+              <div><label className="form-label">Full Name</label><input className="form-input" placeholder="e.g. Ramesh Kumar" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label className="form-label">Login Email</label><input className="form-input" type="email" placeholder="manager@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
+              <div><label className="form-label">Password (min 8 chars)</label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
               <div>
                 <label className="form-label">Role</label>
                 <select className="form-input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-                  <option value="user">User</option>
-                  <option value="worker">Worker</option>
                   <option value="canteen_admin">Canteen Admin</option>
                   <option value="vendor">Vendor</option>
-                  <option value="super_admin">Super Admin</option>
+                  <option value="worker">Worker</option>
                 </select>
               </div>
-              <button className="btn btn-primary btn-full" onClick={saveEdit} style={{ marginTop: "0.5rem" }}>Save Changes</button>
+              <div><label className="form-label">Canteen ID (optional)</label><input className="form-input" placeholder="Paste canteen UUID" value={form.canteen_id} onChange={e => setForm(p => ({ ...p, canteen_id: e.target.value }))} /></div>
+              {formError && <p className="error-msg">{formError}</p>}
+              <button className="btn btn-primary btn-full" disabled={formBusy} onClick={handleCreate}>
+                {formBusy ? "Creating…" : "Create & Onboard →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setResetTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>Reset Password</h3>
+              <button onClick={() => setResetTarget(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>Setting new password for <strong>{resetTarget.name}</strong> ({resetTarget.email})</p>
+            <input className="form-input" type="password" placeholder="New password (min 8 chars)" value={newPwd} onChange={e => setNewPwd(e.target.value)} style={{ marginBottom: "0.75rem" }} />
+            <button className="btn btn-primary btn-full" disabled={resetBusy || newPwd.length < 8} onClick={handleResetPassword}>
+              {resetBusy ? "Resetting…" : "Reset Password →"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 360, textAlign: "center" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>⚠️</div>
+            <h3>Remove Manager?</h3>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", margin: "0.5rem 0 1rem" }}>This will permanently delete <strong>{deleteTarget.name}</strong> and revoke their access. This cannot be undone.</p>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn btn-ghost btn-full" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-primary btn-full" style={{ background: "#ef4444" }} onClick={handleDelete}>Yes, Remove</button>
             </div>
           </div>
         </div>
@@ -538,6 +648,157 @@ function UsersSection() {
     </div>
   );
 }
+
+// ── UsersSection — all platform users from Supabase ───────────────────────
+function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { uid?: string } | null }) {
+  interface UserRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+  const [users,   setUsers]   = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
+  const [search,  setSearch]  = useState("");
+
+  // Create co-admin form
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Delete
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session);
+      const j = await r.json();
+      if (!r.ok) { setError(j.error ?? "Failed to load"); return; }
+      setUsers(j.users as UserRow[]);
+    } catch { setError("Network error"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreateCoAdmin() {
+    setFormBusy(true); setFormError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "POST",
+        body: JSON.stringify({ ...form, role: "co_admin" }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setFormError(j.error ?? "Failed"); return; }
+      setShowCreate(false); setForm({ email: "", password: "", name: "" }); await load();
+    } catch { setFormError("Network error"); }
+    finally { setFormBusy(false); }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      const r = await adminFetch("/api/admin/users", session, { method: "DELETE", body: JSON.stringify({ uid: deleteTarget.uid }) });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed"); return; }
+      setDeleteTarget(null); await load();
+    } catch { alert("Network error"); }
+  }
+
+  const filtered = users.filter(u =>
+    u.name?.toLowerCase().includes(search.toLowerCase()) ||
+    u.email?.toLowerCase().includes(search.toLowerCase()) ||
+    u.role?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const roleTag: Record<string, string> = {
+    super_admin: "tag-orange", co_admin: "tag-orange",
+    canteen_admin: "tag-blue", vendor: "tag-blue",
+    worker: "tag-yellow", user: "tag-gray",
+  };
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>All Users</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input className="form-input" type="search" placeholder="Search users…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200 }} />
+          {isSuperAdmin && <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Add Co-Admin</button>}
+        </div>
+      </div>
+
+      {!isSuperAdmin && (
+        <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 10, padding: "0.6rem 1rem", fontSize: "0.82rem", color: "#78350f", marginBottom: "1rem" }}>
+          👁️ View-only mode — only super_admin can create or delete users.
+        </div>
+      )}
+
+      {error && <p className="error-msg">{error}</p>}
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>JOINED</th>{isSuperAdmin && <th>ACTION</th>}</tr></thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>Loading…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No users found</td></tr>
+            ) : filtered.map(u => (
+              <tr key={u.uid}>
+                <td style={{ fontWeight: 600 }}>{u.name || "—"}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{u.email || "—"}</td>
+                <td><span className={`tag ${roleTag[u.role] ?? "tag-gray"}`}>{u.role}</span></td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "—"}</td>
+                {isSuperAdmin && (
+                  <td>
+                    {u.role !== "super_admin" && (
+                      <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem", color: "#ef4444" }} onClick={() => setDeleteTarget(u)}>🗑 Delete</button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Create Co-Admin Modal */}
+      {showCreate && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>Add Co-Admin</h3>
+              <button onClick={() => setShowCreate(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div><label className="form-label">Full Name</label><input className="form-input" placeholder="e.g. Priya Sharma" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label className="form-label">Login Email</label><input className="form-input" type="email" placeholder="coadmin@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
+              <div><label className="form-label">Password (min 8 chars)</label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
+              {formError && <p className="error-msg">{formError}</p>}
+              <button className="btn btn-primary btn-full" disabled={formBusy} onClick={handleCreateCoAdmin}>
+                {formBusy ? "Creating…" : "Create Co-Admin →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      {deleteTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 360, textAlign: "center" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>⚠️</div>
+            <h3>Delete User?</h3>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", margin: "0.5rem 0 1rem" }}>Permanently delete <strong>{deleteTarget.name || deleteTarget.email}</strong>? This cannot be undone.</p>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn btn-ghost btn-full" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-primary btn-full" style={{ background: "#ef4444" }} onClick={handleDelete}>Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function CitiesSection() {
   const INIT_CITIES = [

@@ -24,11 +24,19 @@ export default function ChangePasswordPage() {
   // If the user doesn't need to change password, redirect away
   useEffect(() => {
     if (!user) { router.replace("/login"); return; }
+    // Staff passwords are managed by super_admin only — block self-service
+    const staffRoles = ["canteen_admin", "vendor", "worker", "co_admin"];
+    if (staffRoles.includes(user.role ?? "")) {
+      const role = user.role;
+      if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
+      else router.replace("/login");
+      return;
+    }
     if (!user.mustChangePassword) {
       // Already changed — go to appropriate dashboard
       const role = user.role;
       if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
-      else if (role === "super_admin")                   router.replace("/admin/dashboard");
+      else if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
       else if (role === "worker")                        router.replace("/worker/dashboard");
       else                                               router.replace("/dashboard");
     }

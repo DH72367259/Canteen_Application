@@ -114,8 +114,11 @@ function LoginContent() {
   useEffect(() => {
     if (!user) return;
 
-    // First-time user hasn't set a password yet → show account setup
-    if (!user.hasPassword && !showSetup) {
+    // Staff accounts are created by super_admin — they never go through OTP setup
+    const isStaff = ["canteen_admin", "vendor", "super_admin", "worker", "co_admin"].includes(user.role ?? "");
+
+    // First-time user hasn't set a password yet → show account setup (students only)
+    if (!user.hasPassword && !showSetup && !isStaff) {
       setShowSetup(true);
       setBusy(false);
       return;
@@ -134,7 +137,7 @@ function LoginContent() {
     if (next) { router.replace(next); return; }
     const role = user.role;
     if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
-    else if (role === "super_admin")                   router.replace("/admin/dashboard");
+    else if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
     else if (role === "worker")                        router.replace("/worker/dashboard");
     else                                               router.replace("/dashboard");
   }, [user, router, params, showSetup]);
