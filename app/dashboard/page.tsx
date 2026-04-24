@@ -128,15 +128,27 @@ export default function UserHomePage() {
     distKm: userCoords ? haversineKm(userCoords.lat, userCoords.lng, c.lat, c.lng) : null,
   }));
 
-  // "See all" with GPS → show all within 10km; without GPS → show all
-  // Filtered by area → show that area's canteens (always within campus = within 10km)
-  const visibleCanteens = showAll
-    ? (userCoords
-        ? canteensWithDist.filter(c => (c.distKm ?? 0) <= MAX_RADIUS_KM).sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
-        : canteensWithDist)
-    : (selectedLocation && selectedLocation !== "All"
-        ? canteensWithDist.filter(c => c.location === selectedLocation)
-        : canteensWithDist);
+  // Always enforce 10km radius when GPS is available.
+  // Within that pool: filter by selected area, or show all within radius.
+  // Without GPS: filter by selected area name only (no radius).
+  const inRadius = userCoords
+    ? canteensWithDist.filter(c => (c.distKm ?? 0) <= MAX_RADIUS_KM)
+    : canteensWithDist;
+
+  const visibleCanteens = (() => {
+    const pool = inRadius;
+    if (showAll || !selectedLocation || selectedLocation === "All") {
+      // Show everything in radius, sorted by distance
+      return userCoords
+        ? [...pool].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
+        : pool;
+    }
+    // Area filter — still honour radius
+    const areaFiltered = pool.filter(c => c.location === selectedLocation);
+    return userCoords
+      ? [...areaFiltered].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
+      : areaFiltered;
+  })();
 
   const isFiltered = !showAll && selectedLocation && selectedLocation !== "All";
 
@@ -266,10 +278,14 @@ export default function UserHomePage() {
       <div id="canteens">
         <div className="section-header">
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-            <h3>{showAll ? (userCoords ? `Within ${MAX_RADIUS_KM} km` : "All Canteens") : (isFiltered ? "Canteens nearby" : "All Canteens")}</h3>
-            {isFiltered && (
-              <span style={{ fontSize: "0.72rem", background: "var(--orange-light)", color: "var(--orange-dark)", borderRadius: 999, padding: "0.15rem 0.55rem", fontWeight: 600 }}>
-                📍 {selectedLocation}
+            <h3>
+              {userCoords
+                ? (isFiltered ? `Canteens · ${selectedLocation}` : `Within ${MAX_RADIUS_KM} km`)
+                : (isFiltered ? `Canteens · ${selectedLocation}` : "All Canteens")}
+            </h3>
+            {userCoords && (
+              <span style={{ fontSize: "0.7rem", background: "var(--blue-light)", color: "var(--blue)", borderRadius: 999, padding: "0.15rem 0.5rem", fontWeight: 600 }}>
+                📡 10 km radius
               </span>
             )}
           </div>
@@ -296,8 +312,13 @@ export default function UserHomePage() {
             <div style={{ textAlign: "center", padding: "2rem 1rem", color: "var(--ink-3)" }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
               <div style={{ fontWeight: 600 }}>
-                {userCoords ? `No canteens within ${MAX_RADIUS_KM} km` : "No canteens in this area"}
+                {userCoords
+                  ? `No canteens found within ${MAX_RADIUS_KM} km of your location`
+                  : "No canteens in this area"}
               </div>
+              <p style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
+                {userCoords ? "Try expanding your search area." : "Try a different location."}
+              </p>
               <button onClick={() => setShowLocationPicker(true)} style={{ marginTop: "0.75rem", background: "var(--orange)", color: "#fff", border: "none", borderRadius: 10, padding: "0.5rem 1.2rem", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer" }}>
                 Change location
               </button>
