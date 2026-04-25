@@ -288,8 +288,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear UI state immediately — callers can navigate without waiting for the SIGNED_OUT event
     setUser(null)
     setSession(null)
-    // Best-effort sign out — network errors must never block the caller from navigating away
-    try { await supabase.auth.signOut() } catch { /* ignore */ }
+    // Step 1: ALWAYS clear the local Supabase session from browser storage.
+    // This is synchronous-safe (just localStorage.removeItem) and must succeed even when
+    // the network is unreachable. Without this, a failed global signOut leaves the JWT
+    // token in localStorage and the session is silently restored on the next page load.
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* ignore */ }
+    // Step 2: Best-effort global revocation — invalidates the token server-side.
+    // Fire-and-forget: network errors must never block the caller from navigating away.
+    supabase.auth.signOut().catch(() => {})
   }
 
   /** Maps well-known demo emails to a role; all others → 'user'. */

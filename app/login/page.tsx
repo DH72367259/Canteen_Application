@@ -110,9 +110,37 @@ function LoginContent() {
     }
   }, []);
 
+  // ── Guards: prevent stale-session silent redirects ───────────────────────
+  // loginInitiatedRef  — set to true ONLY when the user explicitly triggers a
+  //   login action on this page (password sign-in, OTP verify, canteen login).
+  // hasSeenNullUserRef — set to true the first time loading=false with user=null.
+  //   Once set, any later user!=null arrival that wasn't from an explicit login
+  //   (e.g. background token refresh, cross-tab event, delayed getSession) is
+  //   treated as a stale restore and ignored so the login form stays visible.
+  const loginInitiatedRef  = useRef(false);
+  const hasSeenNullUserRef = useRef(false);
+
   // ── Auth redirect logic ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!user) return;
+    // Always wait for auth to fully resolve before acting.
+    if (loading) return;
+
+    if (!user) {
+      // Confirm we've seen the unauthenticated state at least once after load.
+      hasSeenNullUserRef.current = true;
+      return;
+    }
+
+    // user is non-null here.
+    // If we previously confirmed the user was NOT logged in (hasSeenNullUser)
+    // AND no explicit login was initiated on this page, this is a silent
+    // background restore (token refresh, delayed getSession, etc.).
+    // Do NOT redirect — the user must explicitly log in.
+    if (hasSeenNullUserRef.current && !loginInitiatedRef.current) {
+      return;
+    }
+
+    loginInitiatedRef.current = false; // reset for the next login attempt
 
     // Staff accounts are created by super_admin — they never go through OTP setup
     const isStaff = ["canteen_admin", "vendor", "super_admin", "worker", "co_admin"].includes(user.role ?? "");
@@ -141,7 +169,7 @@ function LoginContent() {
     else if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
     else if (role === "worker")                        router.replace("/worker/dashboard");
     else                                               router.replace("/dashboard");
-  }, [user, router, params, showSetup, registerMode]);
+  }, [user, loading, router, params, showSetup, registerMode]);
 
   function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); }
   function switchTab(t: Tab) {
@@ -171,9 +199,11 @@ function LoginContent() {
     if (!password) { setError("Enter your password."); return; }
     setBusy(true); setError(null);
     try {
+      loginInitiatedRef.current = true;  // explicit login — allow redirect
       await signInWithIdentifier(id, password);
       setTimeout(() => setBusy(false), 10000);
     } catch (e: unknown) {
+      loginInitiatedRef.current = false;  // reset: login failed, stay on form
       const msg = e instanceof Error ? e.message : "Login failed.";
       setError(
         msg.toLowerCase().includes("invalid login credentials")
@@ -213,10 +243,12 @@ function LoginContent() {
     if (!otpSentTo) return;
     setBusy(true); setError(null);
     try {
+      loginInitiatedRef.current = true;  // explicit login — allow redirect
       await verifyPhoneOtp(otpSentTo, otp);
       // After verify, useEffect detects user.hasPassword === false → shows setup form
       setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
+      loginInitiatedRef.current = false;  // reset: verify failed
       setError(e instanceof Error ? e.message : "Invalid OTP. Please check the code and try again.");
       setBusy(false);
     }
@@ -241,9 +273,11 @@ function LoginContent() {
     if (!otpSentTo) return;
     setBusy(true); setError(null);
     try {
+      loginInitiatedRef.current = true;  // explicit login — allow redirect
       await verifyEmailOtp(otpSentTo, otp);
       setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
+      loginInitiatedRef.current = false;  // reset: verify failed
       setError(e instanceof Error ? e.message : "Invalid or expired OTP.");
       setBusy(false);
     }
@@ -300,9 +334,11 @@ function LoginContent() {
     if (!email || !password) { setError("Enter email and password."); return; }
     setBusy(true); setError(null);
     try {
+      loginInitiatedRef.current = true;  // explicit login — allow redirect
       await signInWithPassword(email, password);
       setTimeout(() => setBusy(false), 10000);
     } catch (e: unknown) {
+      loginInitiatedRef.current = false;  // reset: login failed, stay on form
       const msg = e instanceof Error ? e.message : "Login failed.";
       setError(
         msg.toLowerCase().includes("email not confirmed")
