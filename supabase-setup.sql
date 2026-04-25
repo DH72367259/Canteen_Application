@@ -14,8 +14,9 @@ create table if not exists profiles (
   role            text not null default 'user'
                     check (role in ('user','canteen_admin','vendor','worker','super_admin')),
   canteen_id      uuid,                   -- set for canteen_admin / vendor / worker
-  wallet_balance  numeric(10,2) not null default 0,
-  created_at      timestamptz not null default now()
+  wallet_balance         numeric(10,2) not null default 0,
+  password_notified_at   timestamptz,          -- last time we sent a 30-day reset reminder
+  created_at             timestamptz not null default now()
 );
 alter table profiles enable row level security;
 
@@ -361,6 +362,11 @@ create table if not exists support_tickets (
   updated_at     timestamptz default now()
 );
 alter table support_tickets enable row level security;
+
+-- Drop policies first so this script is safe to re-run
+drop policy if exists "support_insert_own" on support_tickets;
+drop policy if exists "support_select_own" on support_tickets;
+drop policy if exists "support_update_admin" on support_tickets;
 
 -- Students/vendors can create tickets and view their own
 create policy "support_insert_own" on support_tickets
