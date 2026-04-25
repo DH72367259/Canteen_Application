@@ -131,6 +131,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [concurrentSession, setConcurrentSession] = useState<{ existingDevice: string; sessionId: string } | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
+  // Tracks the last successfully resolved role so TOKEN_REFRESHED can't downgrade a
+  // privileged user when fetchProfile fails or times out during a background token renewal.
+  const roleRef = useRef<UserRole>(null)
 
   // Declared before useEffect to satisfy React Compiler linting (hoisted at runtime)
   async function registerSession(token: string) {
@@ -159,8 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Safety timeout: if Supabase is unreachable, stop the spinner after 3s.
-    const fallback = setTimeout(() => setLoading(false), 3000)
+    // Safety timeout: if Supabase is unreachable, stop the spinner after 6s.
+    // 6 s gives Railway cold-starts and slow networks enough time to respond before
+    // the fallback fires and falsely treats an authenticated user as unauthenticated.
+    const fallback = setTimeout(() => setLoading(false), 6000)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
@@ -195,7 +200,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return
           }
           const mustChangePassword = meta.must_change_password === true
-          setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
+          const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword })
+          // Keep roleRef in sync so onAuthStateChange can use it as a fallback
+          roleRef.current = builtUser.role
+          setUser(builtUser)
           // Register session (non-blocking — don't block UI on this)
           registerSession(session.access_token).catch(() => {})
         }
@@ -213,6 +221,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) recordActivity()
       setSession(session)
       if (session?.user) {
+        // Snapshot existing role BEFORE the async profile fetch.
+        // If fetchProfile times out or errors and returns the 'user' fallback, we use this
+        // to restore the real role — prevents TOKEN_REFRESHED from silently demoting an admin.
+        const existingRole = roleRef.current
+
         const profile = await fetchProfile(session.user.id)
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
@@ -222,16 +235,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
           await supabase.auth.signOut()
           setUser(null)
+          roleRef.current = null
           setSession(null)
           try { localStorage.setItem('canteen_pw_expired', '1') } catch { /* SSR */ }
           setLoading(false)
           return
         }
         const mustChangePassword = meta.must_change_password === true
-        setUser(buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword }))
+        // Guard: if fetchProfile returned the error-fallback role ('user') but we previously
+        // confirmed a privileged role for this same session, keep the privileged role.
+        // This prevents a transient DB timeout from kicking an admin to the student dashboard.
+        const safeRole: UserRole = (
+          profile.role === 'user' &&
+          existingRole !== null &&
+          existingRole !== 'user'
+        ) ? existingRole : (profile.role ?? 'user')
+        const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, role: safeRole, mustChangePassword, hasPassword })
+        roleRef.current = builtUser.role
+        setUser(builtUser)
         registerSession(session.access_token).catch(() => {})
       } else {
         setUser(null)
+        roleRef.current = null
         activeSessionIdRef.current = null
       }
       setLoading(false)
@@ -287,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     activeSessionIdRef.current = null
     // Clear UI state immediately — callers can navigate without waiting for the SIGNED_OUT event
     setUser(null)
+    roleRef.current = null
     setSession(null)
     // Step 1: ALWAYS clear the local Supabase session from browser storage.
     // This is synchronous-safe (just localStorage.removeItem) and must succeed even when

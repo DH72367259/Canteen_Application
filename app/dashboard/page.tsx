@@ -52,11 +52,15 @@ export default function UserHomePage() {
   const [showAll, setShowAll] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Auth guard — redirect to login if not authenticated
+  // Auth guard — redirect unauthenticated users to login;
+  // redirect privileged users (admin/vendor/worker) to their correct dashboards so they
+  // are never stranded on the student page after a TOKEN_REFRESHED role-restore.
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login?role=user");
-    }
+    if (loading) return;
+    if (!user) { router.replace("/login?role=user"); return; }
+    if (user.role === "super_admin" || user.role === "co_admin") { router.replace("/admin/dashboard"); return; }
+    if (user.role === "vendor" || user.role === "canteen_admin") { router.replace("/vendor/dashboard"); return; }
+    if (user.role === "worker") { router.replace("/worker/dashboard"); return; }
   }, [user, loading, router]);
 
   useEffect(() => {
