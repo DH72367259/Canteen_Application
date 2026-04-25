@@ -16,11 +16,10 @@ export async function GET(request: Request) {
   let query = supabase
     .from("support_tickets")
     .select(`
-      id, ticket_ref, raised_by_role, canteen_id,
+      id, ticket_ref, raised_by, raised_by_role, canteen_id,
       category, subject, description, priority, status,
       admin_notes, resolved_at, created_at, updated_at,
       order_id,
-      raised_profile:profiles(name, email),
       canteen:canteens(name)
     `)
     .order("created_at", { ascending: false });
@@ -34,7 +33,27 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ tickets: data ?? [] });
+
+  // Batch-fetch profile names — avoids PostgREST FK join that fails when FK
+  // is not registered in the Supabase schema cache.
+  const uids = [...new Set((data ?? []).map((t: { raised_by: string }) => t.raised_by).filter(Boolean))];
+  const profileMap: Record<string, { name: string | null; email: string | null }> = {};
+  if (uids.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, name, email")
+      .in("id", uids);
+    for (const p of profiles ?? []) {
+      profileMap[p.id] = { name: p.name, email: p.email };
+    }
+  }
+
+  const tickets = (data ?? []).map((t: { raised_by: string } & Record<string, unknown>) => ({
+    ...t,
+    raised_profile: profileMap[t.raised_by] ?? null,
+  }));
+
+  return Response.json({ tickets });
 }
 
 // ── POST /api/support — raise a new ticket ────────────────────────────────────

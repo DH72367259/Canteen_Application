@@ -20,7 +20,7 @@ const ADMIN_NAV = [
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, session, logout } = useAuth();
   const [section, setSection] = useState<AdminSection>("overview");
   const isSuperAdmin = user?.role === "super_admin";
 
@@ -55,8 +55,8 @@ export default function SuperAdminDashboard() {
       <main className="main-with-sidebar">
         {section === "overview"  && <OverviewSection />}
         {section === "canteens"  && <CanteensSection />}
-        {section === "managers"  && <ManagersSection isSuperAdmin={isSuperAdmin} session={user} />}
-        {section === "users"     && <UsersSection isSuperAdmin={isSuperAdmin} session={user} />}
+        {section === "managers"  && <ManagersSection isSuperAdmin={isSuperAdmin} session={session} />}
+        {section === "users"     && <UsersSection isSuperAdmin={isSuperAdmin} session={session} />}
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments"  && <PaymentsSection />}
         {section === "cities"    && <CitiesSection />}
@@ -450,11 +450,8 @@ function CanteensSection() {
 }
 
 // ── Shared API helper ──────────────────────────────────────────────────────
-async function adminFetch(path: string, session: { uid?: string } | null, opts?: RequestInit) {
-  const { getSupabaseClient } = await import("@/lib/supabase-client");
-  const sb = getSupabaseClient();
-  const { data: { session: s } } = await sb.auth.getSession();
-  const token = s?.access_token ?? "";
+async function adminFetch(path: string, session: { access_token?: string } | null, opts?: RequestInit) {
+  const token = session?.access_token ?? "";
   return fetch(path, {
     ...opts,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(opts?.headers ?? {}) },
@@ -464,7 +461,7 @@ async function adminFetch(path: string, session: { uid?: string } | null, opts?:
 // ── ManagersSection — onboard / offboard canteen managers ─────────────────
 interface ManagerRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
 
-function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { uid?: string } | null }) {
+function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
   const [managers, setManagers] = useState<ManagerRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
@@ -650,7 +647,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
 }
 
 // ── UsersSection — all platform users from Supabase ───────────────────────
-function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { uid?: string } | null }) {
+function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
   interface UserRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
   const [users,   setUsers]   = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
