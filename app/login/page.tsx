@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { getSupabaseClient } from "@/lib/supabase-client";
 
 /* ─── OTP digit boxes ───────────────────────────────────────────────────── */
 function OtpInput({ value, onChange, length = 6 }: { value: string; onChange: (v: string) => void; length?: number }) {
@@ -67,7 +68,7 @@ function LoginContent() {
     user, loading, session,
     sendEmailOtp, verifyEmailOtp,
     signInWithIdentifier, signInWithPassword,
-    resetPassword,
+    logout,
   } = useAuth();
 
   type Tab = "student" | "password" | "forgot";
@@ -97,6 +98,12 @@ function LoginContent() {
   const [setupConfirmPwd, setSetupConfirmPwd] = useState("");
   const [setupBusy,       setSetupBusy]       = useState(false);
   const [setupShowPwd,    setSetupShowPwd]    = useState(false);
+
+  // ── Forgot tab — password reset via OTP ──────────────────────────────────
+  const [showPasswordReset,  setShowPasswordReset]  = useState(false);
+  const [newPassword,        setNewPassword]        = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPwd,         setShowNewPwd]         = useState(false);
 
   // ── Password-expired banner (set by hard 30-day signOut in auth-context) ──
   const [pwExpired, setPwExpired] = useState(false);
@@ -175,6 +182,7 @@ function LoginContent() {
     setOtp(""); setOtpSentTo(null);
     setError(null); setInfo(null);
     setRegisterMode(false); setShowSetup(false); setShowPwd(false);
+    setShowPasswordReset(false); setNewPassword(""); setConfirmNewPassword(""); setShowNewPwd(false);
     setTab(t);
   }
 
@@ -268,7 +276,6 @@ function LoginContent() {
         throw new Error(d.error || "Failed to set up account.");
       }
       // Refresh session so user_metadata.has_password: true is reflected
-      const { getSupabaseClient } = await import("@/lib/supabase-client");
       await getSupabaseClient().auth.refreshSession();
       const role = user?.role;
       if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
@@ -305,16 +312,56 @@ function LoginContent() {
     }
   }
 
-  // ── Forgot password ───────────────────────────────────────────────────────
-  async function handleForgotPassword() {
-    if (!email) { setError("Enter your email address."); return; }
+  // ── Forgot password — email OTP flow ────────────────────────────────────
+  async function handleForgotSendCode() {
+    const emailTrimmed = email.trim();
+    if (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      setError("Enter a valid email address."); return;
+    }
+    setBusy(true); setError(null); setInfo(null);
+    try {
+      await sendEmailOtp(emailTrimmed);
+      setOtpSentTo(emailTrimmed);
+      setInfo(`Verification code sent to ${emailTrimmed}. Check your inbox.`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send code. Please try again.");
+    } finally { setBusy(false); }
+  }
+
+  async function handleForgotVerifyOtp() {
+    if (otp.length < 6) { setError("Enter the 6-digit code from your email."); return; }
+    if (!otpSentTo) return;
     setBusy(true); setError(null);
     try {
-      await resetPassword(email);
-      setInfo(`Password reset link sent to ${email}`);
+      // Do NOT set loginInitiatedRef — OTP verify here must NOT trigger dashboard redirect
+      await verifyEmailOtp(otpSentTo, otp);
+      setShowPasswordReset(true);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send reset link.");
+      setError(e instanceof Error ? e.message : "Invalid or expired code. Please try again.");
     } finally { setBusy(false); }
+  }
+
+  async function handleForgotResetPassword() {
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword !== confirmNewPassword) { setError("Passwords do not match."); return; }
+    setBusy(true); setError(null);
+    try {
+      const { error } = await getSupabaseClient().auth.updateUser({
+        password: newPassword,
+        data: {
+          has_password: true,
+          password_changed_at: new Date().toISOString(),
+          must_change_password: false,
+        },
+      });
+      if (error) throw error;
+      await logout();
+      switchTab("student");
+      setInfo("✅ Password updated! Sign in with your new password.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update password. Please try again.");
+      setBusy(false);
+    }
   }
 
   // While auth loads (e.g. arriving via magic link), show a spinner
@@ -602,20 +649,68 @@ function LoginContent() {
           </div>
         )}
 
-        {/* ── Forgot Password ──────────────────────────────────────────────── */}
-        {tab === "forgot" && (
+        {/* ── Forgot Password — Step 1: enter email ────────────────────── */}
+        {tab === "forgot" && !otpSentTo && !showPasswordReset && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", margin: 0, textAlign: "center" }}>
+              Enter your registered email — we&apos;ll send a verification code to confirm it&apos;s you.
+            </p>
             <div className="form-group">
               <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotPassword()} />
+              <input className="form-input" type="email" placeholder="you@example.com" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotSendCode()} autoComplete="email" />
             </div>
-            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
             {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotPassword} style={{ padding: "0.8rem" }}>
-              {busy ? "Sending…" : "Send Reset Link →"}
+            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotSendCode} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending code…" : "Send Verification Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => switchTab("student")} style={{ fontSize: "0.82rem" }}>
               ← Back to Sign In
+            </button>
+          </div>
+        )}
+
+        {/* ── Forgot Password — Step 2: enter OTP ─────────────────────────── */}
+        {tab === "forgot" && otpSentTo && !showPasswordReset && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
+            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>
+              Enter the 6-digit code sent to <strong>{otpSentTo}</strong>
+            </p>
+            <OtpInput value={otp} onChange={setOtp} length={6} />
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleForgotVerifyOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Verifying…" : "Verify Code →"}
+            </button>
+            <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
+              ← Change email
+            </button>
+          </div>
+        )}
+
+        {/* ── Forgot Password — Step 3: set new password ──────────────────── */}
+        {tab === "forgot" && showPasswordReset && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ textAlign: "center" }}>
+              <span style={{ fontSize: "1.5rem" }}>🔑</span>
+              <p style={{ fontWeight: 700, color: "var(--ink-1)", margin: "0.3rem 0 0.1rem" }}>Set New Password</p>
+              <p style={{ fontSize: "0.8rem", color: "var(--ink-3)", margin: 0 }}>Your email, username, and phone stay the same.</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">New Password <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span></label>
+              <div style={{ position: "relative" }}>
+                <input className="form-input" type={showNewPwd ? "text" : "password"} placeholder="Create a strong password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" style={{ paddingRight: "2.5rem" }} />
+                <button type="button" onClick={() => setShowNewPwd(v => !v)} style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}>
+                  {showNewPwd ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Confirm New Password</label>
+              <input className="form-input" type={showNewPwd ? "text" : "password"} placeholder="Re-enter your new password" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && handleForgotResetPassword()} />
+            </div>
+            {error && <p className="error-msg">{error}</p>}
+            <button className="btn btn-primary btn-full" disabled={busy || !newPassword || !confirmNewPassword} onClick={handleForgotResetPassword} style={{ padding: "0.8rem" }}>
+              {busy ? "Updating…" : "Update Password →"}
             </button>
           </div>
         )}

@@ -52,7 +52,14 @@ function ResetPasswordContent() {
     setBusy(true);
     setError("");
     const supabase = getSupabaseClient();
-    const { error: updateErr } = await supabase.auth.updateUser({ password });
+    const { error: updateErr } = await supabase.auth.updateUser({
+      password,
+      data: {
+        has_password: true,
+        password_changed_at: new Date().toISOString(),
+        must_change_password: false,
+      },
+    });
     if (updateErr) {
       setError(updateErr.message);
       setBusy(false);
