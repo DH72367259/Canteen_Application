@@ -37,6 +37,7 @@ convenience fee and get priority pickup — every order, every day.
 22. [Database Schema](#database-schema)
 23. [Troubleshooting](#troubleshooting)
 24. [Recent Changelog](#recent-changelog)
+25. [Developer TODO](#developer-todo)
 
 ---
 
@@ -1237,3 +1238,142 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 **Last updated**: 25 April 2026  
 **Build status**: Passing — 0 TypeScript errors  
 **Deployed**: Railway — auto-deploy from `main` (latest: `560b5ad`)
+
+---
+
+## Developer TODO
+
+Items that are still needed before this app is fully production-ready.
+These are ordered by priority — items at the top block real users.
+
+### 🔴 High Priority (Blockers for real users)
+
+#### 1. DLT Registration — SMS OTP is broken without this
+Phone OTP login **will not deliver SMS** to any student until you register on a TRAI DLT platform.
+- Register your entity + sender ID + OTP message template on Airtel / Jio / Vodafone-Idea DLT
+- Then in **Twilio Console → Verify → Services → your service → Sender settings**, add the DLT entity ID + sender ID
+- Without this, students can only use email OTP as a fallback
+- See `README-COMPLIANCE.md` → Section 5 for detailed steps
+
+#### 2. Connect real canteen data (currently hardcoded)
+The student dashboard canteen list in `app/dashboard/page.tsx` is a **hardcoded `CANTEENS` array**.
+- Add real canteens via **Admin Dashboard → Manage Canteens** (persists to Supabase `canteens` table)
+- Refactor the student dashboard to fetch canteens from Supabase instead of the static array
+- Add real `lat`/`lng` for each canteen (paste a Google Maps link in the admin form — it auto-parses coordinates)
+
+#### 3. Connect real menu items (currently static)
+The menu page renders static placeholder items.
+- Add menu items via **Admin Dashboard → Manage Canteens → each canteen → Menu**
+- Update the menu page to fetch live data from the `menu_items` Supabase table
+
+#### 4. Complete Razorpay KYC
+- Go to [dashboard.razorpay.com](https://dashboard.razorpay.com) → Account & Settings → KYC
+- Upload: business PAN, GSTIN, bank account + cancelled cheque, director Aadhaar + PAN
+- Without full KYC, **no real payments will settle** and payout features remain locked
+- Switch `RAZORPAY_KEY_ID` from `rzp_test_` to `rzp_live_` in Railway once KYC is approved
+
+---
+
+### 🟡 Medium Priority (Core functionality)
+
+#### 5. Replace Analytics section mock data with real DB queries
+The Admin Dashboard → Analytics charts show hardcoded numbers.
+Replace with real Supabase queries:
+```sql
+-- Monthly revenue
+SELECT DATE_TRUNC('month', created_at) AS month, SUM(total) AS revenue
+FROM orders GROUP BY 1 ORDER BY 1 DESC LIMIT 6;
+
+-- Monthly order count
+SELECT DATE_TRUNC('month', created_at) AS month, COUNT(*) AS orders
+FROM orders GROUP BY 1 ORDER BY 1 DESC LIMIT 6;
+
+-- Top selling items (JSONB expansion)
+SELECT item->>'name' AS name, SUM((item->>'qty')::int) AS qty
+FROM orders, jsonb_array_elements(items) AS item
+GROUP BY 1 ORDER BY 2 DESC LIMIT 5;
+```
+
+#### 6. Replace Overview stats with real queries
+Admin Dashboard → Overview cards ("2,841 users", "1,248 orders today") are hardcoded.
+```sql
+SELECT COUNT(*) FROM profiles WHERE role = 'user';  -- total students
+SELECT COUNT(*) FROM orders WHERE created_at::date = CURRENT_DATE;  -- orders today
+SELECT SUM(total) FROM orders WHERE created_at::date = CURRENT_DATE;  -- revenue today
+```
+
+#### 7. Seed `platform_charges` row in Supabase
+Run this once in the **Supabase SQL Editor** if not already done:
+```sql
+INSERT INTO platform_charges (charge_pct, flat_charge, gst_pct)
+VALUES (2.00, 0.00, 18.00);
+```
+Without this row, Admin Payments → Fee Settings tab shows blank and settlement calculations fail.
+
+#### 8. Create the first Super Admin profile in Supabase
+After creating the admin user in **Supabase Auth → Users → Invite User**:
+```sql
+-- Replace <USER_UUID> with the UUID from the Supabase Auth dashboard
+INSERT INTO profiles (id, role, name)
+VALUES ('<USER_UUID>', 'super_admin', 'Admin Name');
+```
+
+#### 9. Wire vendor dashboard to real orders
+The vendor dashboard currently shows mock order cards. The API routes already exist:
+- `GET /api/orders` — list orders for the vendor's canteen
+- `PATCH /api/orders/[id]/status` — update status (preparing → ready → completed)
+Replace the hardcoded order list with real-time Supabase queries + the existing 5-second polling.
+
+#### 10. Test wallet top-up end-to-end
+The UI and API routes exist. After Razorpay KYC is live:
+- Test `POST /api/wallet/topup` → `POST /api/wallet/topup/verify` flow
+- Confirm `wallet_transactions` rows are created in Supabase after a real payment
+- Test withdrawal: `POST /api/wallet/withdraw` (minimum ₹100, same payment gateway as top-up)
+
+---
+
+### 🟢 Lower Priority (Polish & Compliance)
+
+#### 11. Add real content to Privacy Policy and Terms pages
+`/privacy` and `/terms` routes already exist but need real legal text.
+Required for:
+- Razorpay KYC (they check for a live privacy policy URL)
+- DPDPA 2023 compliance
+- App Store submissions
+
+#### 12. Add "Delete My Account" flow
+Required by DPDPA 2023. Add a button in **Student Dashboard → Profile** that:
+- Calls `DELETE /api/auth/account` (to be created)
+- Deletes the `profiles` row + calls `supabase.auth.admin.deleteUser()`
+- Clears localStorage and redirects to `/login`
+
+#### 13. Upgrade Twilio from trial to paid
+Twilio trial accounts only deliver OTPs to **verified numbers** (numbers you manually add in the console).
+To send to all 15,000 students: upgrade at **Twilio Console → Account → Upgrade Account** (~$15–20 minimum top-up).
+
+#### 14. Add push notifications (optional)
+Students currently rely on polling for order status. Consider adding Web Push Notifications:
+- Use the Web Push API + a service worker (already scaffolded in `public/sw.js` if present)
+- Trigger on order status changes: `preparing → ready → completed`
+- Supabase Realtime can be used instead of polling for low-latency updates
+
+---
+
+### Quick Status Checklist
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | DLT Registration (TRAI) | ❌ Pending |
+| 2 | Real canteen data from Supabase | ❌ Hardcoded |
+| 3 | Real menu data from Supabase | ❌ Hardcoded |
+| 4 | Razorpay KYC + go live | ❌ Pending |
+| 5 | Analytics real DB queries | ❌ Hardcoded |
+| 6 | Overview stats real DB queries | ❌ Hardcoded |
+| 7 | `platform_charges` seed row | ❓ Check Supabase |
+| 8 | First super_admin profile in DB | ❓ Check Supabase |
+| 9 | Vendor dashboard real orders | ❌ Mock data |
+| 10 | Wallet top-up end-to-end test | ❓ Needs Razorpay live |
+| 11 | Privacy Policy / Terms content | ❌ Placeholder |
+| 12 | Delete My Account flow | ❌ Not built |
+| 13 | Twilio trial → paid upgrade | ❓ Check account tier |
+| 14 | Push notifications | ⬜ Optional |
