@@ -17,24 +17,26 @@ convenience fee and get priority pickup — every order, every day.
 2. [Login Credentials](#login-credentials)
 3. [Architecture](#architecture)
 4. [Authentication Architecture](#authentication-architecture)
-5. [Security](#security)
-5. [NoQx Pro Subscription](#noqx-pro-subscription)
-6. [Order Tracking Flow](#order-tracking-flow)
-7. [Rewards (NoQx Cash)](#rewards-noqx-cash)
-8. [Settlement & Finance](#settlement--finance)
-9. [Supabase Setup](#supabase-setup)
-10. [Razorpay Setup](#razorpay-setup)
-11. [Twilio Setup (SMS & WhatsApp OTP)](#twilio-setup-sms--whatsapp-otp)
-12. [Environment Variables](#environment-variables)
-13. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
-14. [iOS and Android Deployment](#ios-and-android-deployment)
-15. [Location-Based Canteen Discovery](#location-based-canteen-discovery)
-16. [Canteen Toggle](#canteen-toggle)
-17. [Full Workflow](#full-workflow)
-18. [API Reference](#api-reference)
-19. [Database Schema](#database-schema)
-20. [Troubleshooting](#troubleshooting)
-21. [Recent Changelog](#recent-changelog)
+5. [Auth Session Safeguards](#auth-session-safeguards)
+6. [Security](#security)
+7. [NoQx Pro Subscription](#noqx-pro-subscription)
+8. [Order Tracking Flow](#order-tracking-flow)
+9. [Rewards (NoQx Cash)](#rewards-noqx-cash)
+10. [Settlement & Finance — Admin Payments Module](#settlement--finance--admin-payments-module)
+11. [Vendor Earnings View](#vendor-earnings-view)
+12. [Supabase Setup](#supabase-setup)
+13. [Razorpay Setup](#razorpay-setup)
+14. [Twilio Setup (SMS & WhatsApp OTP)](#twilio-setup-sms--whatsapp-otp)
+15. [Environment Variables](#environment-variables)
+16. [Deploy to Railway (Cloud)](#deploy-to-railway-cloud)
+17. [iOS and Android Deployment](#ios-and-android-deployment)
+18. [Location-Based Canteen Discovery](#location-based-canteen-discovery)
+19. [Canteen Toggle](#canteen-toggle)
+20. [Full Workflow](#full-workflow)
+21. [API Reference](#api-reference)
+22. [Database Schema](#database-schema)
+23. [Troubleshooting](#troubleshooting)
+24. [Recent Changelog](#recent-changelog)
 
 ---
 
@@ -160,6 +162,79 @@ The `/auth/confirm` page accepts either path. The OTP code is always the safest 
 ### Timeouts (prevents "stuck" loading states)
 
 All Supabase auth calls are wrapped with a 15-second timeout. If Supabase doesn't respond within 15 seconds, the error is surfaced to the user with a retry prompt instead of hanging forever on "Verifying…".
+
+---
+
+## Auth Session Safeguards
+
+Several layered guards protect against phantom redirects and wrong-dashboard renders.
+
+### Problem 1 — TOKEN_REFRESHED role demotion
+
+Supabase auto-refreshes the JWT in the background every ~55 minutes. When this happens,
+`onAuthStateChange(TOKEN_REFRESHED)` fires and requires a fresh `fetchProfile()` DB call to
+resolve the user's role. If that DB call times out or fails (e.g. cold start, slow network),
+the error fallback returned `role: 'user'` — which caused admin dashboards to see a wrong
+role, redirect the admin to `/login`, and then `/login` would route them to `/dashboard` (student page).
+
+**Fix**: `roleRef` in `lib/auth-context.tsx` tracks the last confirmed role in a synchronous ref.
+In `onAuthStateChange`, the existing role is captured before the async profile fetch. If
+`fetchProfile` returns the error-fallback `role: 'user'` but `roleRef` shows a privileged role
+for the same user, the existing privileged role is preserved.
+
+```
+TOKEN_REFRESHED fires
+  └ roleRef.current = 'super_admin'  (captured before async)
+  └ fetchProfile() → times out → returns { role: 'user' }   (error fallback)
+  └ safeRole = 'super_admin'                                  (preserved!)
+  └ setUser({ role: 'super_admin' })                          (correct)
+  └ Admin stays on their dashboard ✔
+```
+
+### Problem 2 — Student page has no escape for privileged roles
+
+If any logic (race condition, redirect chain, manual URL entry) landed an admin or vendor
+on `/dashboard` (student page), there was no way out — the student page only guarded
+against unauthenticated users, not wrong roles.
+
+**Fix**: `/app/dashboard/page.tsx` now checks the user's role after auth settles and routes
+privileged users to their correct dashboards:
+
+| Role | Redirects to |
+|------|--------------|
+| `super_admin`, `co_admin` | `/admin/dashboard` |
+| `vendor`, `canteen_admin` | `/vendor/dashboard` |
+| `worker` | `/worker/dashboard` |
+| `user` (student) | Stays on `/dashboard` |
+
+### Problem 3 — Tab-switch re-triggering redirect on login page
+
+Switching between Student OTP / Email / Canteen Login tabs called `setRegisterMode(false)`,
+which was in the redirect `useEffect` dependency array, causing the effect to re-run. If a
+previous session token was in localStorage, it would silently restore the session and redirect.
+
+**Fix** (from commit `0869bae`):
+- `loginInitiatedRef` — only set to `true` when user explicitly clicks a login button
+- `hasSeenNullUserRef` — set once we confirm `user = null` after loading; any later
+  `user ≠ null` that arrives WITHOUT a login action is blocked from redirecting
+- Redirect effect only fires if `loginInitiatedRef` is true OR the user was never null
+
+### Problem 4 — Logout leaving JWT in localStorage on network failure
+
+`supabase.auth.signOut()` is a network call. If it fails (offline, Railway restart), the
+JWT stays in localStorage and the session is silently restored on next page load.
+
+**Fix**: `logout()` in auth-context now calls `signOut({ scope: 'local' })` **first** (pure
+localStorage clear, no network required), then fire-and-forgets global revocation.
+
+### Problem 5 — 3-second fallback timer too tight
+
+The safety fallback timer (`setLoading(false)` if Supabase takes too long) was 3 seconds.
+On Railway cold starts or slow networks, Supabase can take 3–5 seconds to respond, causing
+the fallback to fire with `loading=false, user=null`, triggering the unauthenticated guard
+and redirecting a valid user to /login.
+
+**Fix**: Fallback timer increased from 3 s to 6 s.
 
 ---
 
@@ -315,11 +390,13 @@ sees "You have been signed in from another device."
 
 ---
 
-## Settlement & Finance
+## Settlement & Finance — Admin Payments Module
 
-Super Admin settlement dashboard: `/system/settlements`
+The **Admin Dashboard → Payments** tab has a **4-tab comprehensive payments UI**.
 
-### Per-canteen breakdown
+### Tab 1: Settlements
+
+Real-time per-canteen settlement breakdown fetched from `/api/admin/settlements`:
 
 | Column | Description |
 |--------|-------------|
@@ -328,24 +405,37 @@ Super Admin settlement dashboard: `/system/settlements`
 | Platform Fee | `charge_pct` × revenue + 18% GST |
 | Net Payable | Gross minus platform fee |
 | Status | Pending / Paid |
+| Last Paid | Date of most recent settlement |
 
-### Recording a payment
-
+**Recording a payment (Pay modal)**:
 1. Click **Pay** on a canteen row
-2. Enter transaction ref, amount, date, mode (NEFT / RTGS / UPI / Cheque)
-3. Saved to `settlement_payments` — history visible in a collapsible modal
+2. Choose Full Amount or enter a custom amount
+3. Select mode: UPI / NEFT / RTGS / Cheque
+4. Enter transaction reference and optional notes
+5. Submitted to `/api/admin/settlements/payout` — saved to `settlement_payments` table
+6. Settlement row updates to Paid with timestamp
 
-### Platform charges
+### Tab 2: Bank Details
 
-`GET/PATCH /api/admin/platform-charges` — adjust `charge_pct`, `flat_charge`, `gst_pct` live.
-Default seed: 2% + ₹0 flat + 18% GST = 2.36% effective.
+- Select a canteen from dropdown
+- View or update: Account Name, Account Number, IFSC, Bank Name, UPI ID, GPay Number
+- Persistent to `canteen_bank_details` via `/api/admin/canteen-bank`
 
-### Canteen bank details
+### Tab 3: Weekly Report
 
-`GET/POST /api/admin/canteen-bank` — store account number, IFSC, UPI ID per canteen.
-Visible in the **Bank Details** modal on the settlements page.
+- Configure number of weeks (default 8)
+- Fetches `/api/admin/settlements/weekly-report` — returns per-canteen weekly breakdowns
+- Shows a summary table: week, canteen, orders, gross, fee, net payable
+- Total row at the bottom
 
-### GST Invoices
+### Tab 4: Fee Settings
+
+- Edit platform commission: `charge_pct` (%), `flat_charge` (₹), `gst_pct` (%)
+- Live preview: "Effective rate: 2.36%" calculated from current inputs
+- Save hits `PATCH /api/admin/platform-charges`
+- Changes take effect on the next settlement calculation
+
+### GST Invoices (per order)
 
 Students download a GST invoice from My Orders:
 - CGST (9%) + SGST (9%) breakdown
@@ -353,6 +443,23 @@ Students download a GST invoice from My Orders:
 
 **PCI DSS note**: Card data is never stored or processed by our servers.
 Razorpay (PCI DSS Level 1 certified) handles all card data in their secure iframe.
+
+---
+
+## Vendor Earnings View
+
+Vendors see their own earnings summary in the **Vendor Dashboard → Earnings** tab,
+fetched from `/api/canteen/earnings` (authenticated, canteen-scoped).
+
+| Metric | Description |
+|--------|-------------|
+| Gross Revenue | Total collected this period |
+| Platform Fee | Commission deducted |
+| Net Earnings | Amount due for settlement |
+| Pending Settlement | Unpaid net amount |
+| Last Settlement | Date + amount of last payout |
+
+Vendors cannot see other canteens' data — the API scopes results to the JWT's `canteen_id`.
 
 ---
 
@@ -908,12 +1015,35 @@ Razorpay webhook (payment.failed)
 ### Super Admin Manages System
 
 ```
-1. Login -> Admin Dashboard
-2. Canteens tab: add/edit/activate/deactivate canteens, assign vendors
-3. Users tab: view all registered students, assign staff roles
-4. Analytics tab: orders per day, revenue, popular items by canteen
-5. Payments tab: transaction list, refund requests, dispute management
-6. Support tab: student complaints and resolution
+1. Login -> Admin Dashboard (Canteen Login tab, email + password)
+2. Overview tab: live KPIs (active canteens, users, orders today, revenue)
+   - Recent activity feed (new orders, OTP verifications, menu changes, settlements)
+3. Manage Canteens tab:
+   - Add new canteen (name, address, Google Maps link -> auto-parses lat/lng)
+   - Edit existing canteen details
+   - Activate / Deactivate canteen
+   - Onboard new canteen manager (email + temp password -> must_change_password flow)
+4. Canteen Managers tab:
+   - List all managers with role + canteen assignment
+   - Promote/demote roles (super_admin only)
+5. All Users tab:
+   - Browse all registered students
+   - Filter by role / canteen
+   - Reset roles
+6. Cities & Colleges tab:
+   - Manage campus areas tied to canteen locations
+7. Analytics tab:
+   - Revenue line chart (last 6 months)
+   - Orders bar chart (last 6 months)
+   - Canteen revenue share donut chart
+   - Top-selling items table with share bars
+8. Payments tab (4-tab module):
+   - Settlements: per-canteen breakdown, Pay modal (UPI/NEFT/RTGS/Cheque)
+   - Bank Details: store account + IFSC + UPI per canteen
+   - Weekly Report: configurable week window, per-canteen CSV-ready breakdown
+   - Fee Settings: edit platform commission % + GST % live
+9. Support tab: student complaints and resolution
+10. My Account tab: change admin password, update name
 ```
 
 ---
@@ -961,9 +1091,17 @@ Razorpay webhook (payment.failed)
 |--------|------|-------------|
 | GET | `/api/admin/settlements` | Per-canteen settlement breakdown |
 | POST | `/api/admin/settlements/pay` | Record settlement payment |
+| POST | `/api/admin/settlements/payout` | Record payout with mode + transaction ref |
+| GET | `/api/admin/settlements/weekly-report` | Multi-week per-canteen breakdown |
 | GET/POST | `/api/admin/canteen-bank` | Get / update canteen bank details |
 | GET/PATCH | `/api/admin/platform-charges` | Get / update commission config |
 | GET | `/api/admin/users` | List all users (super_admin only) |
+
+### Vendor
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/canteen/earnings` | Vendor's own earnings summary (canteen-scoped, JWT-gated) |
 
 ### General
 
@@ -1069,7 +1207,10 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Commit | Description |
 |--------|-------------|
-| latest | fix: tab state isolation (no field carry-over between login tabs), 30-day hard signOut + pw-expired banner, location picker moved to dedicated button, support API join fix |
+| `560b5ad` | fix: prevent TOKEN_REFRESHED from demoting admin role; add role-based redirect escape from student page to correct dashboard; fallback timer 3s → 6s |
+| `0869bae` | fix: prevent stale-session redirect on login page tab traversal (loginInitiatedRef + hasSeenNullUserRef guards; dual-scope logout) |
+| `a488c2f` | feat: Admin Payments 4-tab UI (Settlements + Bank Details + Weekly Report + Fee Settings); vendor earnings view; 3 new settlement API routes |
+| `ea065fa` | fix: tab state isolation (no field carry-over between login tabs), 30-day hard signOut + pw-expired banner, location picker moved to dedicated button, support API join fix |
 | `f987f2b` | fix: one-time OTP registration → set name+password, then login with email/phone+password forever; 30-day password expiry; signInWithIdentifier |
 | `fa33722` | fix: login page shows spinner while auth loads — no login form flash on magic link; /dashboard/profile page |
 | `aaf1ff4` | fix: buildAuthUser passes mustChangePassword, change-password API clears flag, linkEmail/verifyEmailLink timeouts |
@@ -1095,4 +1236,4 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 **Last updated**: 25 April 2026  
 **Build status**: Passing — 0 TypeScript errors  
-**Deployed**: Railway — auto-deploy from `main` (latest: `f987f2b`)
+**Deployed**: Railway — auto-deploy from `main` (latest: `560b5ad`)
