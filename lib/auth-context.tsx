@@ -361,47 +361,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error
   }
 
-  async function sendPhoneOtp(phone: string): Promise<{ channels: string[] }> {
-    if (!isSupabaseConfigured()) return { channels: ['demo'] }  // demo mode
-
-    const channels: string[] = []
-
-    // 1. Try WhatsApp via our server route (only active once WhatsApp Business is connected)
-    //    If WhatsApp is enabled, Twilio Verify creates the verification via WhatsApp first.
-    //    When Supabase subsequently calls Twilio Verify for SMS, Twilio keeps the SAME OTP code
-    //    and re-delivers it via SMS (resend same active verification = same code, different channel).
-    try {
-      const res = await fetch('/api/auth/phone/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.whatsapp) channels.push('whatsapp')
-      }
-    } catch { /* WhatsApp API unavailable — continue to SMS */ }
-
-    // 2. Supabase sends SMS via Twilio Verify (creates or resends same verification code)
-    const { error } = await withTimeout(supabase.auth.signInWithOtp({ phone }))
-    if (error) throw error
-    channels.push('sms')
-
-    return { channels }
-  }
-
-  async function verifyPhoneOtp(phone: string, token: string) {
-    if (!isSupabaseConfigured()) {
-      // Phone OTP is the student flow
-      setUser(buildAuthUser('demo-user', undefined, { role: 'user', displayName: 'Student (Demo)', phone, walletBalance: 100 }))
-      return
-    }
-    const { error } = await withTimeout(
-      supabase.auth.verifyOtp({ phone, token, type: 'sms' })
-    )
-    if (error) throw error
-  }
-
   async function linkEmail(email: string) {
     const { error } = await withTimeout(
       supabase.auth.updateUser({ email })
