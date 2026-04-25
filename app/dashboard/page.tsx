@@ -123,7 +123,7 @@ export default function UserHomePage() {
     );
   };
 
-  const handleLogout = async () => { await logout(); router.push("/login"); };
+  const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
 
   // Text search: only filter when there's a match; otherwise show all (fallback)
   const searchTrimmed = locationSearch.trim();

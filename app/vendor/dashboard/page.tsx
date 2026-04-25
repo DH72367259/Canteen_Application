@@ -36,7 +36,7 @@ const NAV_ITEMS = [
 
 export default function VendorDashboard() {
   const router = useRouter();
-  const { user, logout, session } = useAuth();
+  const { user, logout, session, loading } = useAuth();
   const [activeNav, setActiveNav] = useState("live");
   const [activeSlot, setActiveSlot] = useState("all");
   const [bins, setBins] = useState<Bin[]>([]);
@@ -53,10 +53,12 @@ export default function VendorDashboard() {
 
   // Redirect if not vendor/canteen_admin
   useEffect(() => {
-    if (user && user.role !== "vendor" && user.role !== "canteen_admin") {
-      router.push("/login");
+    if (loading) return; // wait for Supabase auth to settle
+    if (!user) { router.replace("/login"); return; }
+    if (user.role !== "vendor" && user.role !== "canteen_admin") {
+      router.replace("/login");
     }
-  }, [user, router]);
+  }, [user, loading, router]);
 
   // Load slots-configured flag from localStorage
   useEffect(() => {
@@ -205,7 +207,10 @@ export default function VendorDashboard() {
     setTimeout(() => setSelectedBin(null), 1200);
   };
 
-  const handleLogout = async () => { await logout(); router.push("/login"); };
+  const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
+
+  // Show spinner while auth loads or while redirecting
+  if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
 
   const slotBins = activeSlot === "all"
     ? bins

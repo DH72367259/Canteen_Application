@@ -276,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
-    // Mark session as inactive before signing out
+    // Mark session as inactive before signing out (fire-and-forget)
     if (session?.access_token && activeSessionIdRef.current) {
       fetch('/api/auth/session', {
         method: 'PATCH',
@@ -285,7 +285,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {})
     }
     activeSessionIdRef.current = null
-    await supabase.auth.signOut()
+    // Clear UI state immediately — callers can navigate without waiting for the SIGNED_OUT event
+    setUser(null)
+    setSession(null)
+    // Best-effort sign out — network errors must never block the caller from navigating away
+    try { await supabase.auth.signOut() } catch { /* ignore */ }
   }
 
   /** Maps well-known demo emails to a role; all others → 'user'. */

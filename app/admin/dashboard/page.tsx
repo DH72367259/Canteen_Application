@@ -20,15 +20,20 @@ const ADMIN_NAV = [
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
-  const { user, session, logout } = useAuth();
+  const { user, session, loading, logout } = useAuth();
   const [section, setSection] = useState<AdminSection>("overview");
   const isSuperAdmin = user?.role === "super_admin";
 
   useEffect(() => {
-    if (user && user.role !== "super_admin" && user.role !== "co_admin") router.push("/login");
-  }, [user, router]);
+    if (loading) return; // wait for Supabase auth to settle
+    if (!user) { router.replace("/login"); return; }
+    if (user.role !== "super_admin" && user.role !== "co_admin") router.replace("/login");
+  }, [user, loading, router]);
 
-  const handleLogout = async () => { await logout(); router.push("/login"); };
+  const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
+
+  // Show spinner while auth loads or while redirecting
+  if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
 
   return (
     <div className="web-shell">
