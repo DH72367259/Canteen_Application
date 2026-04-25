@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { id: "slots", icon: "🕐", label: "Time Slots" },
   { id: "bins", icon: "📦", label: "Bin Management" },
   { id: "sales", icon: "💰", label: "Sales" },
+  { id: "earnings", icon: "💼", label: "Earnings & Payouts" },
   { id: "logs", icon: "📋", label: "Logs" },
   { id: "settings", icon: "⚙️", label: "Settings" },
   { id: "support", icon: "🎧", label: "Raise a Concern" },
@@ -376,6 +377,7 @@ export default function VendorDashboard() {
         {activeNav === "menu" && <VendorMenuView />}
         {activeNav === "slots" && <VendorSlotsView />}
         {activeNav === "sales" && <VendorSalesView />}
+        {activeNav === "earnings" && <VendorEarningsView session={session} />}
         {activeNav === "bins" && <VendorBinsView bins={bins} setBins={setBins} />}
         {activeNav === "logs" && <VendorLogsView />}
         {activeNav === "settings" && <VendorSettingsView canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
@@ -1224,4 +1226,152 @@ function VendorSupportView() {
   );
 }
 
+// ─── Vendor Earnings View ─────────────────────────────────────────────────────
+function VendorEarningsView({ session }: { session: { access_token: string } | null }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
 
+  const [periodStart, setPeriodStart] = useState(monthAgo);
+  const [periodEnd,   setPeriodEnd]   = useState(today);
+  const [data,        setData]        = useState<EarningsData | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [err,         setErr]         = useState<string | null>(null);
+
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const load = async () => {
+    if (!session?.access_token) return;
+    setLoading(true); setErr(null);
+    try {
+      const res = await fetch(`/api/canteen/earnings?period_start=${periodStart}&period_end=${periodEnd}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "Failed to load"); return; }
+      setData(d);
+    } catch { setErr("Network error"); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>💼 Earnings &amp; Payouts</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)}
+            style={{ padding: "0.35rem 0.55rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.82rem" }} />
+          <span style={{ fontSize: "0.8rem", color: "var(--ink-3)" }}>to</span>
+          <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)}
+            style={{ padding: "0.35rem 0.55rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.82rem" }} />
+          <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={load}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {loading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading earnings…</div>}
+      {!loading && err && <div className="error-msg">{err}</div>}
+
+      {!loading && data && (
+        <>
+          {/* Platform fee info banner */}
+          {data.platform_charges && (
+            <div style={{ background: "#f0f7ff", border: "1px solid #cce0ff", borderRadius: 10, padding: "0.7rem 1rem", marginBottom: "1rem", fontSize: "0.8rem", color: "var(--blue)" }}>
+              ℹ️ Current platform fee: {data.platform_charges.charge_pct}% + ₹{data.platform_charges.flat_charge} flat per order + {data.platform_charges.gst_pct}% GST on fee
+            </div>
+          )}
+
+          {/* Summary cards */}
+          <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
+            {[
+              { label: "Gross Collected",        value: fmt(data.summary.gross_collected),           color: "var(--ink)"    },
+              { label: "Platform Fee Deducted",  value: `–${fmt(data.summary.total_platform_charges)}`, color: "var(--red)" },
+              { label: "Net Earnings",           value: fmt(data.summary.net_earnings),               color: "var(--primary)", fw: 800 },
+              { label: "Paid by Admin",          value: fmt(data.summary.total_paid_by_admin),        color: "var(--green)"  },
+              { label: "Pending Payout",         value: fmt(data.summary.pending_payout),             color: data.summary.pending_payout > 0 ? "var(--orange)" : "var(--ink-3)" },
+            ].map(c => (
+              <div key={c.label} className="stat-card">
+                <div className="stat-num" style={{ color: c.color, fontSize: "1.1rem", fontWeight: (c as { fw?: number }).fw ?? 600 }}>{c.value}</div>
+                <div className="stat-label">{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Orders breakdown */}
+          {data.orders && data.orders.length > 0 && (
+            <div style={{ marginBottom: "1.5rem" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.6rem" }}>Order Breakdown</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ORDER REF</th><th>DATE</th><th>AMOUNT</th><th>PLATFORM FEE</th><th>GST ON FEE</th><th>NET EARNED</th><th>STATUS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.orders.map((o: EarningsOrder) => (
+                      <tr key={o.id}>
+                        <td style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{o.id.slice(0, 8)}…</td>
+                        <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{new Date(o.created_at).toLocaleDateString("en-IN")}</td>
+                        <td style={{ fontWeight: 600 }}>{fmt(o.gross)}</td>
+                        <td style={{ color: "var(--red)", fontSize: "0.82rem" }}>{fmt(o.platform_fee)}</td>
+                        <td style={{ color: "var(--ink-2)", fontSize: "0.82rem" }}>{fmt(o.gst_on_fee)}</td>
+                        <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(o.net_earnings)}</td>
+                        <td><span className={`tag ${o.status === "completed" ? "tag-green" : o.status === "cancelled" ? "tag-red" : "tag-orange"}`} style={{ fontSize: "0.7rem" }}>{o.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Admin payment history */}
+          {data.payment_history && data.payment_history.length > 0 && (
+            <div>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.6rem" }}>Payments Received from Admin</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>DATE</th><th>AMOUNT</th><th>MODE</th><th>REFERENCE</th><th>NOTES</th></tr></thead>
+                  <tbody>
+                    {data.payment_history.map((p: EarningsPayment) => (
+                      <tr key={p.id}>
+                        <td style={{ fontSize: "0.78rem" }}>{new Date(p.created_at).toLocaleDateString("en-IN")}</td>
+                        <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(p.amount_paid)}</td>
+                        <td><span className="tag tag-blue" style={{ textTransform: "uppercase", fontSize: "0.7rem" }}>{p.payment_mode}</span></td>
+                        <td style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{p.transaction_ref || "—"}</td>
+                        <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{p.notes || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {(!data.orders || data.orders.length === 0) && (!data.payment_history || data.payment_history.length === 0) && (
+            <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 1rem", fontSize: "0.9rem" }}>
+              No earnings data for the selected period.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+interface EarningsData {
+  canteen: { canteen_id: string; canteen_name: string };
+  platform_charges: { charge_pct: number; flat_charge: number; gst_pct: number } | null;
+  summary: { gross_collected: number; total_platform_charges: number; net_earnings: number; total_paid_by_admin: number; pending_payout: number };
+  orders: EarningsOrder[];
+  payment_history: EarningsPayment[];
+  period_start: string; period_end: string;
+}
+interface EarningsOrder {
+  id: string; created_at: string; gross: number; platform_fee: number;
+  gst_on_fee: number; total_platform_charge: number; net_earnings: number; status: string;
+}
+interface EarningsPayment {
+  id: string; amount_paid: number; payment_mode: string;
+  transaction_ref: string | null; notes: string | null; created_at: string;
+}

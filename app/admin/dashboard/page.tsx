@@ -1402,16 +1402,50 @@ function AnalyticsSection() {
 
 function PaymentsSection() {
   const { session } = useAuth();
+  const [tab, setTab] = useState<"settlements" | "bank_details" | "weekly_report" | "fee_settings">("settlements");
+
+  // ── Settlements tab ──
   const [data,    setData]    = useState<SettlementRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [err,     setErr]     = useState<string | null>(null);
-  const [settle,  setSettle]  = useState<SettlementRow | null>(null); // open modal
-  const [form,    setForm]    = useState({ amount: "", mode: "upi", ref: "", notes: "" });
-  const [saving,  setSaving]  = useState(false);
-  const [saveErr, setSaveErr] = useState<string | null>(null);
-  const [saveOk,  setSaveOk]  = useState(false);
+  const [settle,  setSettle]  = useState<SettlementRow | null>(null); // pay modal
 
-  const load = async () => {
+  // ── Pay modal ──
+  const [payFull,  setPayFull]  = useState(true);
+  const [payAmt,   setPayAmt]   = useState("");
+  const [payMode,  setPayMode]  = useState("upi");
+  const [payRef,   setPayRef]   = useState("");
+  const [payNotes, setPayNotes] = useState("");
+  const [paying,   setPaying]   = useState(false);
+  const [payErr,   setPayErr]   = useState<string | null>(null);
+  const [payOk,    setPayOk]    = useState(false);
+
+  // ── Bank details tab ──
+  const [bankCanteenId, setBankCanteenId] = useState("");
+  const [bankDetails,   setBankDetails]   = useState<BankDetails | null>(null);
+  const [bankForm,      setBankForm]      = useState({ account_name: "", account_no: "", ifsc_code: "", bank_name: "", upi_id: "", gpay_number: "" });
+  const [bankLoading,   setBankLoading]   = useState(false);
+  const [bankErr,       setBankErr]       = useState<string | null>(null);
+  const [bankOk,        setBankOk]        = useState(false);
+
+  // ── Weekly report tab ──
+  const [weeks,         setWeeks]         = useState(8);
+  const [report,        setReport]        = useState<{ weeks: WeekRow[]; totals: Record<string, number> } | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportErr,     setReportErr]     = useState<string | null>(null);
+
+  // ── Fee config tab ──
+  const [feeConfig,  setFeeConfig]  = useState<FeeConfig>({ charge_pct: 2, flat_charge: 0, gst_pct: 18 });
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [feeSaving,  setFeeSaving]  = useState(false);
+  const [feeErr,     setFeeErr]     = useState<string | null>(null);
+  const [feeOk,      setFeeOk]      = useState(false);
+
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtPct = (n: number) => `${n.toFixed(2)}%`;
+
+  // ── Load settlements ──
+  const loadSettlements = async () => {
     if (!session?.access_token) return;
     setLoading(true); setErr(null);
     try {
@@ -1423,31 +1457,33 @@ function PaymentsSection() {
       setData(d.canteens ?? []);
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
+  useEffect(() => { loadSettlements(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const openSettle = (row: SettlementRow) => {
+  // ── Open pay modal ──
+  const openPay = (row: SettlementRow) => {
     setSettle(row);
-    setForm({ amount: String(row.amount_remaining > 0 ? row.amount_remaining : row.net_payable), mode: "upi", ref: "", notes: "" });
-    setSaveErr(null); setSaveOk(false);
+    setPayFull(true);
+    setPayAmt(String(row.amount_remaining > 0 ? row.amount_remaining.toFixed(2) : row.net_payable.toFixed(2)));
+    setPayMode("upi");
+    setPayRef(""); setPayNotes(""); setPayErr(null); setPayOk(false);
   };
 
-  const handleSettle = async () => {
+  // ── Submit manual payment ──
+  const handlePay = async () => {
     if (!settle || !session?.access_token) return;
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
-      setSaveErr("Enter a valid amount."); return;
-    }
-    setSaving(true); setSaveErr(null); setSaveOk(false);
+    const amt = payFull ? settle.amount_remaining : Number(payAmt);
+    if (!amt || isNaN(amt) || amt <= 0) { setPayErr("Enter a valid amount."); return; }
+    setPaying(true); setPayErr(null); setPayOk(false);
     try {
       const res = await fetch("/api/admin/settlements/pay", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
           canteen_id:      settle.canteen_id,
-          amount_paid:     Number(form.amount),
-          payment_mode:    form.mode,
-          transaction_ref: form.ref || undefined,
-          notes:           form.notes || undefined,
+          amount_paid:     amt,
+          payment_mode:    payMode,
+          transaction_ref: payRef   || undefined,
+          notes:           payNotes || undefined,
           period_start:    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
           period_end:      new Date().toISOString().slice(0, 10),
           gross_amount:    settle.gross_amount,
@@ -1457,161 +1493,528 @@ function PaymentsSection() {
         }),
       });
       const d = await res.json();
-      if (!res.ok) { setSaveErr(d.error ?? "Failed"); setSaving(false); return; }
-      setSaveOk(true);
-      setTimeout(() => { setSettle(null); setSaveOk(false); load(); }, 1200);
-    } catch { setSaveErr("Network error"); } finally { setSaving(false); }
+      if (!res.ok) { setPayErr(d.error ?? "Failed"); setPaying(false); return; }
+      setPayOk(true);
+      setTimeout(() => { setSettle(null); setPayOk(false); loadSettlements(); }, 1500);
+    } catch { setPayErr("Network error"); } finally { setPaying(false); }
   };
 
-  const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // ── Load bank details for a canteen ──
+  const loadBankDetails = async (cid: string) => {
+    if (!cid || !session?.access_token) return;
+    setBankLoading(true); setBankErr(null);
+    try {
+      const res = await fetch(`/api/admin/canteen-bank?canteen_id=${cid}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) { setBankErr(d.error ?? "Failed"); return; }
+      const bd: BankDetails | null = d.bank_details?.[0] ?? null;
+      setBankDetails(bd);
+      setBankForm({
+        account_name: bd?.account_name ?? "",
+        account_no:   bd?.account_no   ?? "",
+        ifsc_code:    bd?.ifsc_code    ?? "",
+        bank_name:    bd?.bank_name    ?? "",
+        upi_id:       bd?.upi_id       ?? "",
+        gpay_number:  bd?.gpay_number  ?? "",
+      });
+    } catch { setBankErr("Network error"); } finally { setBankLoading(false); }
+  };
 
-  const statusTag: Record<string, string> = { paid: "tag-green", partial: "tag-orange", pending: "tag-yellow" };
-  const statusLabel: Record<string, string> = { paid: "Settled", partial: "Partial", pending: "Pending" };
+  const handleBankSave = async () => {
+    if (!bankCanteenId || !session?.access_token) return;
+    setBankLoading(true); setBankErr(null); setBankOk(false);
+    try {
+      const res = await fetch("/api/admin/canteen-bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ canteen_id: bankCanteenId, ...bankForm, ifsc_code: bankForm.ifsc_code.toUpperCase() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setBankErr(d.error ?? "Failed"); setBankLoading(false); return; }
+      setBankOk(true);
+      setBankDetails(d.bank_details);
+      // refresh settlements so bank_details inline shows updated
+      loadSettlements();
+      setTimeout(() => setBankOk(false), 3000);
+    } catch { setBankErr("Network error"); } finally { setBankLoading(false); }
+  };
 
-  // Summary stats
+  // ── Load weekly report ──
+  const loadReport = async () => {
+    if (!session?.access_token) return;
+    setReportLoading(true); setReportErr(null);
+    try {
+      const res = await fetch(`/api/admin/settlements/weekly-report?weeks=${weeks}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) { setReportErr(d.error ?? "Failed"); return; }
+      setReport(d);
+    } catch { setReportErr("Network error"); } finally { setReportLoading(false); }
+  };
+  useEffect(() => { if (tab === "weekly_report") loadReport(); }, [tab, weeks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load fee config ──
+  useEffect(() => {
+    if (tab !== "fee_settings" || !session?.access_token) return;
+    setFeeLoading(true);
+    fetch("/api/admin/platform-charges", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (d.platform_charges) setFeeConfig({ charge_pct: d.platform_charges.charge_pct ?? 2, flat_charge: d.platform_charges.flat_charge ?? 0, gst_pct: d.platform_charges.gst_pct ?? 18 });
+      })
+      .finally(() => setFeeLoading(false));
+  }, [tab, session?.access_token]);
+
+  const handleFeeSave = async () => {
+    if (!session?.access_token) return;
+    setFeeSaving(true); setFeeErr(null); setFeeOk(false);
+    try {
+      const res = await fetch("/api/admin/platform-charges", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(feeConfig),
+      });
+      const d = await res.json();
+      if (!res.ok) { setFeeErr(d.error ?? "Failed"); return; }
+      setFeeOk(true);
+      setTimeout(() => setFeeOk(false), 3000);
+    } catch { setFeeErr("Network error"); } finally { setFeeSaving(false); }
+  };
+
+  // ── Summary stats ──
   const total_gross   = (data ?? []).reduce((s, r) => s + r.gross_amount, 0);
   const total_net     = (data ?? []).reduce((s, r) => s + r.net_payable, 0);
   const total_paid    = (data ?? []).reduce((s, r) => s + r.amount_paid, 0);
   const total_pending = (data ?? []).reduce((s, r) => s + r.amount_remaining, 0);
 
+  const statusTag: Record<string, string>   = { paid: "tag-green", partial: "tag-orange", pending: "tag-yellow" };
+  const statusLabel: Record<string, string> = { paid: "Settled",   partial: "Partial",    pending: "Pending" };
+
+  const SUB_TABS = [
+    { id: "settlements",   label: "💳 Settlements" },
+    { id: "bank_details",  label: "🏦 Bank Details" },
+    { id: "weekly_report", label: "📊 Weekly Report" },
+    { id: "fee_settings",  label: "⚙️ Fee Settings" },
+  ] as const;
+
   return (
     <div className="page-content">
       <div className="page-header">
         <h2>Payments &amp; Settlements</h2>
-        <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={load}>↻ Refresh</button>
+        <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={loadSettlements}>↻ Refresh</button>
       </div>
 
-      {/* Summary cards */}
-      {data && (
-        <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
-          {[
-            { label: "Gross Collected",    value: fmt(total_gross),   color: "var(--ink)"   },
-            { label: "Platform Earnings",  value: fmt(total_gross - total_net), color: "var(--blue)"  },
-            { label: "Net Payable",        value: fmt(total_net),     color: "var(--orange)" },
-            { label: "Amount Paid Out",    value: fmt(total_paid),    color: "var(--green)" },
-            { label: "Pending Payout",     value: fmt(total_pending), color: "var(--red)"   },
-          ].map(c => (
-            <div key={c.label} className="stat-card">
-              <div className="stat-num" style={{ color: c.color, fontSize: "1.15rem" }}>{c.value}</div>
-              <div className="stat-label">{c.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Sub-tab nav */}
+      <div style={{ display: "flex", gap: "0.25rem", marginBottom: "1.25rem", borderBottom: "2px solid var(--border)", paddingBottom: "0.5rem", flexWrap: "wrap" }}>
+        {SUB_TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: "0.4rem 0.9rem", border: "none", background: "none", cursor: "pointer", fontSize: "0.82rem", fontWeight: tab === t.id ? 700 : 400,
+              color: tab === t.id ? "var(--primary)" : "var(--ink-3)",
+              borderBottom: tab === t.id ? "2px solid var(--primary)" : "2px solid transparent",
+              marginBottom: "-2px", borderRadius: "4px 4px 0 0" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {loading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading settlements…</div>}
-      {!loading && err && <div className="error-msg">{err}</div>}
-      {!loading && data && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>CANTEEN</th><th>ORDERS</th><th>GROSS</th>
-                <th>PLATFORM FEE</th><th>NET PAYABLE</th>
-                <th>PAID</th><th>PENDING</th><th>STATUS</th><th>ACTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(r => (
-                <tr key={r.canteen_id}>
-                  <td style={{ fontWeight: 600 }}>{r.canteen_name}<div style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{r.city}</div></td>
-                  <td style={{ fontSize: "0.82rem" }}>{r.completed_orders} / {r.total_orders}</td>
-                  <td style={{ fontWeight: 600 }}>{fmt(r.gross_amount)}</td>
-                  <td style={{ color: "var(--red)" }}>{fmt(r.platform_charge_amount)}</td>
-                  <td style={{ fontWeight: 700 }}>{fmt(r.net_payable)}</td>
-                  <td style={{ color: "var(--green)" }}>{fmt(r.amount_paid)}</td>
-                  <td style={{ color: r.amount_remaining > 0 ? "var(--red)" : "var(--ink-3)" }}>
-                    {fmt(r.amount_remaining)}
-                  </td>
-                  <td><span className={`tag ${statusTag[r.payment_status] ?? "tag-yellow"}`}>{statusLabel[r.payment_status] ?? r.payment_status}</span></td>
-                  <td>
-                    {r.amount_remaining > 0 && (
-                      <button className="btn btn-primary" style={{ fontSize: "0.72rem", padding: "0.25rem 0.6rem" }} onClick={() => openSettle(r)}>
-                        Record Payment
-                      </button>
-                    )}
-                    {r.amount_remaining <= 0 && r.net_payable > 0 && (
-                      <span style={{ fontSize: "0.72rem", color: "var(--green)" }}>✓ Fully settled</span>
-                    )}
-                  </td>
-                </tr>
+      {/* ═══════════════ SETTLEMENTS TAB ═══════════════ */}
+      {tab === "settlements" && (
+        <>
+          {/* Summary cards */}
+          {data && (
+            <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
+              {[
+                { label: "Gross Collected",   value: fmt(total_gross),              color: "var(--ink)"    },
+                { label: "Platform Earnings", value: fmt(total_gross - total_net),  color: "var(--blue)"   },
+                { label: "Net Payable",       value: fmt(total_net),                color: "var(--orange)" },
+                { label: "Paid Out",          value: fmt(total_paid),               color: "var(--green)"  },
+                { label: "Pending Payout",    value: fmt(total_pending),            color: "var(--red)"    },
+              ].map(c => (
+                <div key={c.label} className="stat-card">
+                  <div className="stat-num" style={{ color: c.color, fontSize: "1.15rem" }}>{c.value}</div>
+                  <div className="stat-label">{c.label}</div>
+                </div>
               ))}
-              {data.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No settlement data for this period.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </div>
+          )}
 
-      {/* Payment history per canteen (expandable) */}
-      {!loading && data && data.some(r => r.payments && r.payments.length > 0) && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.75rem" }}>Payment History</h3>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>DATE</th><th>CANTEEN</th><th>AMOUNT PAID</th><th>MODE</th><th>REF</th><th>NOTES</th></tr></thead>
-              <tbody>
-                {data.flatMap(r =>
-                  (r.payments ?? []).map((p: PaymentRecord) => (
-                    <tr key={p.id}>
-                      <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{new Date(p.created_at).toLocaleDateString("en-IN")}</td>
-                      <td style={{ fontSize: "0.82rem" }}>{r.canteen_name}</td>
-                      <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(p.amount_paid)}</td>
-                      <td><span className="tag tag-blue" style={{ textTransform: "uppercase" }}>{p.payment_mode}</span></td>
-                      <td style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{p.transaction_ref || "—"}</td>
-                      <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{p.notes || "—"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+          {loading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading settlements…</div>}
+          {!loading && err && <div className="error-msg">{err}</div>}
+          {!loading && data && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>CANTEEN</th><th>ORDERS</th><th>GROSS</th>
+                    <th>PLATFORM FEE</th><th>NET PAYABLE</th>
+                    <th>PAID</th><th>PENDING</th><th>BANK / UPI</th><th>STATUS</th><th>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map(r => {
+                    const bd = r.bank_details;
+                    return (
+                      <tr key={r.canteen_id}>
+                        <td style={{ fontWeight: 600 }}>{r.canteen_name}
+                          <div style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{r.city}</div>
+                        </td>
+                        <td style={{ fontSize: "0.82rem" }}>{r.completed_orders} / {r.total_orders}</td>
+                        <td style={{ fontWeight: 600 }}>{fmt(r.gross_amount)}</td>
+                        <td style={{ color: "var(--red)" }}>{fmt(r.platform_charge_amount)}</td>
+                        <td style={{ fontWeight: 700 }}>{fmt(r.net_payable)}</td>
+                        <td style={{ color: "var(--green)" }}>{fmt(r.amount_paid)}</td>
+                        <td style={{ color: r.amount_remaining > 0 ? "var(--red)" : "var(--ink-3)" }}>{fmt(r.amount_remaining)}</td>
+                        <td style={{ fontSize: "0.72rem" }}>
+                          {bd ? (
+                            <span title={`${bd.account_name} | ${bd.account_no} | ${bd.ifsc_code}`}>
+                              {bd.upi_id ? <span style={{ color: "var(--blue)" }}>📲 {bd.upi_id.slice(0, 14)}{bd.upi_id.length > 14 ? "…" : ""}</span> : null}
+                              {bd.upi_id && bd.account_no ? <br /> : null}
+                              {bd.account_no ? <span style={{ color: "var(--ink-2)" }}>🏦 {bd.account_no.slice(-4).padStart(bd.account_no.length, "•")}</span> : null}
+                            </span>
+                          ) : <span style={{ color: "var(--ink-3)" }}>—</span>}
+                        </td>
+                        <td><span className={`tag ${statusTag[r.payment_status] ?? "tag-yellow"}`}>{statusLabel[r.payment_status] ?? r.payment_status}</span></td>
+                        <td>
+                          {r.amount_remaining > 0 ? (
+                            <button className="btn btn-primary" style={{ fontSize: "0.72rem", padding: "0.25rem 0.65rem" }} onClick={() => openPay(r)}>
+                              💸 Pay
+                            </button>
+                          ) : r.net_payable > 0 ? (
+                            <span style={{ fontSize: "0.72rem", color: "var(--green)" }}>✓ Settled</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {data.length === 0 && (
+                    <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem" }}>No settlement data.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-      {/* ── Record Payment Modal ── */}
-      {settle && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={e => { if (e.target === e.currentTarget) setSettle(null); }}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: 420, maxWidth: "92vw", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.25rem" }}>Record Settlement Payment</h3>
-            <p style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "1.25rem" }}>{settle.canteen_name} — pending: {fmt(settle.amount_remaining)}</p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Amount Paid (₹) *</label>
-                <input type="number" min="1" step="0.01" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.9rem", boxSizing: "border-box" }} />
-              </div>
-              <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Payment Mode *</label>
-                <select value={form.mode} onChange={e => setForm(p => ({ ...p, mode: e.target.value }))}
-                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem" }}>
-                  <option value="upi">UPI</option>
-                  <option value="bank_transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
-                  <option value="cash">Cash</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Transaction Reference / UTR</label>
-                <input type="text" placeholder="e.g. UTR123456 or TXN ID" value={form.ref} onChange={e => setForm(p => ({ ...p, ref: e.target.value }))}
-                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
-              </div>
-              <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Notes (optional)</label>
-                <input type="text" placeholder="e.g. July batch payment" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                  style={{ width: "100%", padding: "0.55rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
+          {/* Payment history */}
+          {!loading && data && data.some(r => r.payments && r.payments.length > 0) && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.75rem" }}>Payment History</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>DATE</th><th>CANTEEN</th><th>AMOUNT</th><th>MODE</th><th>REF / UTR</th><th>NOTES</th></tr></thead>
+                  <tbody>
+                    {data.flatMap(r =>
+                      (r.payments ?? []).map((p: PaymentRecord) => (
+                        <tr key={p.id}>
+                          <td style={{ fontSize: "0.78rem" }}>{new Date(p.created_at).toLocaleDateString("en-IN")}</td>
+                          <td style={{ fontSize: "0.82rem" }}>{r.canteen_name}</td>
+                          <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(p.amount_paid)}</td>
+                          <td><span className="tag tag-blue" style={{ textTransform: "uppercase", fontSize: "0.7rem" }}>{p.payment_mode}</span></td>
+                          <td style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "var(--ink-3)" }}>{p.transaction_ref || "—"}</td>
+                          <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{p.notes || "—"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
+          )}
+        </>
+      )}
 
-            {saveErr && <div className="error-msg" style={{ marginTop: "0.75rem" }}>{saveErr}</div>}
-            {saveOk  && <div style={{ marginTop: "0.75rem", color: "var(--green)", fontSize: "0.85rem", fontWeight: 600 }}>✓ Payment recorded!</div>}
+      {/* ═══════════════ BANK DETAILS TAB ═══════════════ */}
+      {tab === "bank_details" && (
+        <div style={{ maxWidth: 560 }}>
+          <div style={{ marginBottom: "1rem" }}>
+            <label style={{ fontSize: "0.8rem", fontWeight: 700, display: "block", marginBottom: "0.4rem" }}>Select Canteen</label>
+            <select
+              value={bankCanteenId}
+              onChange={e => { setBankCanteenId(e.target.value); setBankDetails(null); setBankForm({ account_name: "", account_no: "", ifsc_code: "", bank_name: "", upi_id: "", gpay_number: "" }); setBankErr(null); setBankOk(false); if (e.target.value) loadBankDetails(e.target.value); }}
+              style={{ padding: "0.55rem 0.8rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", width: "100%" }}>
+              <option value="">— Choose a canteen —</option>
+              {(data ?? []).map(r => <option key={r.canteen_id} value={r.canteen_id}>{r.canteen_name} ({r.city})</option>)}
+            </select>
+          </div>
 
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
-              <button className="btn btn-primary" style={{ flex: 1 }} disabled={saving} onClick={handleSettle}>
-                {saving ? "Saving…" : "Record Payment"}
+          {bankLoading && <div style={{ color: "var(--ink-3)", padding: "1rem" }}>Loading…</div>}
+
+          {bankCanteenId && !bankLoading && (
+            <>
+              <div style={{ background: "var(--bg-2, #f7f7fa)", borderRadius: 12, padding: "1.1rem", marginBottom: "1rem" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: "0.75rem", color: "var(--ink-2)" }}>🏦 Bank Account</div>
+                {[
+                  { key: "account_name", label: "Account Holder Name *", placeholder: "Full name as per bank" },
+                  { key: "account_no",   label: "Account Number *",       placeholder: "e.g. 1234567890" },
+                  { key: "ifsc_code",    label: "IFSC Code *",             placeholder: "e.g. HDFC0001234" },
+                  { key: "bank_name",    label: "Bank Name",               placeholder: "e.g. HDFC Bank" },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: "0.6rem" }}>
+                    <label style={{ fontSize: "0.72rem", fontWeight: 600, display: "block", marginBottom: "0.2rem" }}>{f.label}</label>
+                    <input type="text" placeholder={f.placeholder} value={(bankForm as Record<string, string>)[f.key]}
+                      onChange={e => setBankForm(p => ({ ...p, [f.key]: e.target.value }))}
+                      style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.87rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: "var(--bg-2, #f7f7fa)", borderRadius: 12, padding: "1.1rem", marginBottom: "1rem" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: "0.75rem", color: "var(--ink-2)" }}>📲 UPI Details</div>
+                {[
+                  { key: "upi_id",      label: "UPI ID",      placeholder: "e.g. name@upi or phone@paytm" },
+                  { key: "gpay_number", label: "GPay Number", placeholder: "10-digit mobile number linked to GPay" },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: "0.6rem" }}>
+                    <label style={{ fontSize: "0.72rem", fontWeight: 600, display: "block", marginBottom: "0.2rem" }}>{f.label}</label>
+                    <input type="text" placeholder={f.placeholder} value={(bankForm as Record<string, string>)[f.key]}
+                      onChange={e => setBankForm(p => ({ ...p, [f.key]: e.target.value }))}
+                      style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.87rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+
+              {bankErr && <div className="error-msg" style={{ marginBottom: "0.5rem" }}>{bankErr}</div>}
+              {bankOk  && <div style={{ color: "var(--green)", fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.5rem" }}>✓ Bank details saved!</div>}
+
+              <button className="btn btn-primary" disabled={bankLoading} onClick={handleBankSave} style={{ width: "100%" }}>
+                {bankLoading ? "Saving…" : "💾 Save Bank / UPI Details"}
+              </button>
+
+              {bankDetails && (
+                <div style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--ink-3)", textAlign: "center" }}>
+                  Last saved — IFSC: {bankDetails.ifsc_code} | A/C: ****{bankDetails.account_no.slice(-4)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════ WEEKLY REPORT TAB ═══════════════ */}
+      {tab === "weekly_report" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+            <label style={{ fontSize: "0.82rem", fontWeight: 600 }}>Show last</label>
+            <select value={weeks} onChange={e => setWeeks(Number(e.target.value))}
+              style={{ padding: "0.4rem 0.6rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.85rem" }}>
+              {[4, 8, 12, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
+            </select>
+            <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={loadReport}>↻ Refresh</button>
+          </div>
+
+          {reportLoading && <div style={{ color: "var(--ink-3)", padding: "2rem", textAlign: "center" }}>Loading report…</div>}
+          {!reportLoading && reportErr && <div className="error-msg">{reportErr}</div>}
+
+          {!reportLoading && report && (
+            <>
+              {/* Totals */}
+              <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
+                {[
+                  { label: "Gross Collected",    value: fmt(report.totals.gross         ?? 0), color: "var(--ink)"    },
+                  { label: "Platform Fees",      value: fmt(report.totals.platform_fee  ?? 0), color: "var(--blue)"   },
+                  { label: "GST on Fees",        value: fmt(report.totals.gst_on_fee    ?? 0), color: "var(--ink-2)"  },
+                  { label: "Total Platform Rev", value: fmt(report.totals.total_platform_earnings ?? 0), color: "var(--primary)" },
+                  { label: "Net Payable",        value: fmt(report.totals.net_payable   ?? 0), color: "var(--orange)" },
+                  { label: "Amount Paid",        value: fmt(report.totals.amount_paid   ?? 0), color: "var(--green)"  },
+                  { label: "Pending",            value: fmt(report.totals.amount_pending ?? 0), color: "var(--red)"  },
+                ].map(c => (
+                  <div key={c.label} className="stat-card">
+                    <div className="stat-num" style={{ color: c.color, fontSize: "1.05rem" }}>{c.value}</div>
+                    <div className="stat-label">{c.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>WEEK</th><th>ORDERS</th><th>GROSS</th><th>PLATFORM FEE</th>
+                      <th>GST</th><th>TOTAL PLATFORM REV</th><th>NET PAYABLE</th><th>PAID</th><th>PENDING</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.weeks.map((w: WeekRow) => (
+                      <tr key={w.week_start}>
+                        <td style={{ fontSize: "0.78rem", whiteSpace: "nowrap" }}>
+                          {new Date(w.week_start).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                          {" – "}
+                          {new Date(w.week_end).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                        </td>
+                        <td style={{ fontSize: "0.82rem" }}>{w.completed_orders} / {w.total_orders}</td>
+                        <td>{fmt(w.gross)}</td>
+                        <td style={{ color: "var(--red)" }}>{fmt(w.platform_fee)}</td>
+                        <td style={{ color: "var(--ink-2)", fontSize: "0.82rem" }}>{fmt(w.gst_on_fee)}</td>
+                        <td style={{ fontWeight: 700, color: "var(--primary)" }}>{fmt(w.total_platform_earnings)}</td>
+                        <td>{fmt(w.net_payable)}</td>
+                        <td style={{ color: "var(--green)" }}>{fmt(w.amount_paid)}</td>
+                        <td style={{ color: w.amount_pending > 0 ? "var(--red)" : "var(--ink-3)" }}>{fmt(w.amount_pending)}</td>
+                      </tr>
+                    ))}
+                    {report.weeks.length === 0 && (
+                      <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-3)", padding: "1.5rem" }}>No data yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ═══════════════ FEE SETTINGS TAB ═══════════════ */}
+      {tab === "fee_settings" && (
+        <div style={{ maxWidth: 400 }}>
+          {feeLoading && <div style={{ color: "var(--ink-3)", padding: "1rem" }}>Loading…</div>}
+          {!feeLoading && (
+            <>
+              <div style={{ background: "var(--bg-2, #f7f7fa)", borderRadius: 12, padding: "1.25rem", marginBottom: "1rem" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: "1rem" }}>Platform Charge Configuration</div>
+                <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "1rem" }}>
+                  For each order: Final platform fee = (order_value × charge_pct / 100) + flat_charge. GST is applied on top of that fee.
+                  Net payable to canteen = gross − total_platform_fee.
+                </p>
+                {[
+                  { key: "charge_pct",  label: "Charge %",          unit: "%",         placeholder: "e.g. 2" },
+                  { key: "flat_charge", label: "Flat Charge per Order", unit: "₹",      placeholder: "e.g. 0 or 2" },
+                  { key: "gst_pct",     label: "GST on Platform Fee",  unit: "%",       placeholder: "e.g. 18" },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>{f.label} ({f.unit})</label>
+                    <input type="number" min="0" step="0.01" placeholder={f.placeholder}
+                      value={(feeConfig as unknown as Record<string, number>)[f.key]}
+                      onChange={e => setFeeConfig(p => ({ ...p, [f.key]: Number(e.target.value) }))}
+                      style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.9rem", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+
+                <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", background: "#fff", borderRadius: 8, padding: "0.6rem 0.8rem", marginTop: "0.5rem" }}>
+                  Preview on ₹100 order: platform fee = {fmtPct(feeConfig.charge_pct)} × ₹100 + ₹{feeConfig.flat_charge.toFixed(2)} = ₹{(100 * feeConfig.charge_pct / 100 + feeConfig.flat_charge).toFixed(2)}, GST = ₹{((100 * feeConfig.charge_pct / 100 + feeConfig.flat_charge) * feeConfig.gst_pct / 100).toFixed(2)}
+                </div>
+              </div>
+
+              {feeErr && <div className="error-msg" style={{ marginBottom: "0.5rem" }}>{feeErr}</div>}
+              {feeOk  && <div style={{ color: "var(--green)", fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.5rem" }}>✓ Saved!</div>}
+
+              <button className="btn btn-primary" style={{ width: "100%" }} disabled={feeSaving} onClick={handleFeeSave}>
+                {feeSaving ? "Saving…" : "💾 Save Fee Configuration"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════ PAY MODAL ═══════════════ */}
+      {settle && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+          onClick={e => { if (e.target === e.currentTarget) setSettle(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: 460, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}>
+            <h3 style={{ fontWeight: 800, fontSize: "1.05rem", marginBottom: "0.15rem" }}>💸 Pay {settle.canteen_name}</h3>
+            <p style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "1.1rem" }}>{settle.city}</p>
+
+            {/* Fee breakdown */}
+            <div style={{ background: "#f8f9fb", borderRadius: 10, padding: "0.9rem 1rem", marginBottom: "1.1rem", fontSize: "0.82rem" }}>
+              {[
+                { label: "Gross Collected",  value: fmt(settle.gross_amount),         color: "var(--ink)"   },
+                { label: "Platform Fee",     value: `–${fmt(settle.platform_charge_amount)}`, color: "var(--red)" },
+                { label: "GST on Fee",       value: `–${fmt(settle.gst_on_charge)}`,   color: "var(--red)"   },
+                { label: "Net Payable",      value: fmt(settle.net_payable),           color: "var(--primary)", fw: 700 },
+                { label: "Already Paid",     value: `–${fmt(settle.amount_paid)}`,     color: "var(--green)" },
+                { label: "Remaining",        value: fmt(settle.amount_remaining),      color: "var(--orange)", fw: 800 },
+              ].map(item => (
+                <div key={item.label} style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                  <span style={{ color: "var(--ink-3)" }}>{item.label}</span>
+                  <span style={{ color: item.color, fontWeight: (item as { fw?: number }).fw ?? 500 }}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Bank / UPI details */}
+            {settle.bank_details && (
+              <div style={{ background: "#f0f7ff", border: "1px solid #cce0ff", borderRadius: 10, padding: "0.9rem 1rem", marginBottom: "1rem", fontSize: "0.82rem" }}>
+                <div style={{ fontWeight: 700, marginBottom: "0.5rem", color: "var(--blue)" }}>Bank / UPI Details</div>
+                {settle.bank_details.upi_id && (
+                  <div style={{ marginBottom: "0.5rem" }}>
+                    <span style={{ color: "var(--ink-2)" }}>UPI:</span>{" "}
+                    <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{settle.bank_details.upi_id}</span>
+                    {" "}
+                    <a href={`upi://pay?pa=${encodeURIComponent(settle.bank_details.upi_id)}&pn=${encodeURIComponent(settle.canteen_name)}&am=${payFull ? settle.amount_remaining : (Number(payAmt) || settle.amount_remaining)}&cu=INR`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ marginLeft: "0.5rem", background: "var(--primary)", color: "#fff", padding: "0.2rem 0.6rem", borderRadius: 6, fontSize: "0.72rem", textDecoration: "none", fontWeight: 700 }}>
+                      Open UPI App
+                    </a>
+                  </div>
+                )}
+                {settle.bank_details.gpay_number && (
+                  <div style={{ marginBottom: "0.4rem" }}>
+                    <span style={{ color: "var(--ink-2)" }}>GPay:</span>{" "}
+                    <span style={{ fontFamily: "monospace" }}>{settle.bank_details.gpay_number}</span>
+                  </div>
+                )}
+                {settle.bank_details.account_no && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginTop: "0.3rem", paddingTop: "0.4rem", borderTop: "1px solid #cce0ff" }}>
+                    <div><span style={{ color: "var(--ink-2)" }}>Account:</span> <span style={{ fontFamily: "monospace" }}>{settle.bank_details.account_no}</span></div>
+                    <div><span style={{ color: "var(--ink-2)" }}>IFSC:</span> <span style={{ fontFamily: "monospace" }}>{settle.bank_details.ifsc_code}</span></div>
+                    {settle.bank_details.bank_name && <div><span style={{ color: "var(--ink-2)" }}>Bank:</span> {settle.bank_details.bank_name}</div>}
+                    <div><span style={{ color: "var(--ink-2)" }}>Name:</span> {settle.bank_details.account_name}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            {!settle.bank_details && (
+              <div style={{ background: "#fff8e1", border: "1px solid #ffe082", borderRadius: 10, padding: "0.75rem", marginBottom: "1rem", fontSize: "0.8rem", color: "#7a5f00" }}>
+                ⚠️ No bank/UPI details on file. Go to the <strong>Bank Details</strong> tab to add them.
+              </div>
+            )}
+
+            {/* Amount */}
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
+                <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmt(String(settle.amount_remaining.toFixed(2))); }}
+                  style={{ width: 15, height: 15 }} />
+                Pay full remaining amount ({fmt(settle.amount_remaining)})
+              </label>
+              {!payFull && (
+                <input type="number" min="1" step="0.01" placeholder="Custom amount (₹)" value={payAmt}
+                  onChange={e => setPayAmt(e.target.value)}
+                  style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.9rem", boxSizing: "border-box" }} />
+              )}
+            </div>
+
+            {/* Payment mode */}
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Payment Mode *</label>
+              <select value={payMode} onChange={e => setPayMode(e.target.value)}
+                style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem" }}>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer (NEFT / RTGS / IMPS)</option>
+                <option value="cash">Cash</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {/* UTR ref */}
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Transaction Ref / UTR (recommended)</label>
+              <input type="text" placeholder="e.g. UTR1234567890 or Txn ID" value={payRef} onChange={e => setPayRef(e.target.value)}
+                style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
+            </div>
+
+            {/* Notes */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Notes (optional)</label>
+              <input type="text" placeholder="e.g. July week 2 settlement" value={payNotes} onChange={e => setPayNotes(e.target.value)}
+                style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.88rem", boxSizing: "border-box" }} />
+            </div>
+
+            {payErr && <div className="error-msg" style={{ marginBottom: "0.75rem" }}>{payErr}</div>}
+            {payOk  && <div style={{ color: "var(--green)", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.75rem" }}>✓ Payment recorded successfully!</div>}
+
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={paying || payOk} onClick={handlePay}>
+                {paying ? "Recording…" : "✅ Record Payment"}
               </button>
               <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSettle(null)}>Cancel</button>
             </div>
@@ -1622,18 +2025,29 @@ function PaymentsSection() {
   );
 }
 
+interface BankDetails {
+  account_name: string; account_no: string; ifsc_code: string; bank_name: string | null;
+  upi_id: string | null; gpay_number: string | null;
+}
 interface SettlementRow {
   canteen_id: string; canteen_name: string; city: string;
   total_orders: number; completed_orders: number;
   gross_amount: number; platform_charge_amount: number; gst_on_charge: number;
   net_payable: number; amount_paid: number; amount_remaining: number;
-  payment_status: string;
-  payments: PaymentRecord[];
+  payment_status: string; payments: PaymentRecord[];
+  bank_details: BankDetails | null;
 }
 interface PaymentRecord {
   id: string; amount_paid: number; payment_mode: string;
   transaction_ref: string | null; notes: string | null; created_at: string;
 }
+interface WeekRow {
+  week_start: string; week_end: string; total_orders: number; completed_orders: number;
+  gross: number; platform_fee: number; gst_on_fee: number;
+  total_platform_earnings: number; net_payable: number; amount_paid: number; amount_pending: number;
+}
+interface FeeConfig { id?: string; charge_pct: number; flat_charge: number; gst_pct: number; }
+
 
 // ─── Account / Change Password ────────────────────────────────────────────────
 function AccountSection() {
