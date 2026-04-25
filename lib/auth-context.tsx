@@ -49,6 +49,7 @@ export interface AuthUser {
   displayName: string | null
   role: UserRole
   phone?: string | null
+  username?: string | null
   walletBalance: number
   mustChangePassword?: boolean
   hasPassword?: boolean
@@ -65,8 +66,6 @@ interface AuthContextValue {
   logout: () => Promise<void>
   sendEmailOtp: (email: string) => Promise<void>
   verifyEmailOtp: (email: string, token: string) => Promise<void>
-  sendPhoneOtp: (phone: string) => Promise<{ channels: string[] }>
-  verifyPhoneOtp: (phone: string, token: string) => Promise<void>
   linkEmail: (email: string) => Promise<void>
   verifyEmailLink: (email: string, token: string) => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<void>
@@ -92,13 +91,14 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Profile fetch timed out')), 8000)
     )
-    const query = supabase.from('profiles').select('name, role, wallet_balance, phone').eq('id', userId).single()
+    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
     return {
       displayName: data?.name ?? null,
       role: (data?.role as UserRole) ?? 'user',
       walletBalance: data?.wallet_balance ?? 0,
       phone: data?.phone ?? null,
+      username: data?.username ?? null,
     }
   } catch {
     return { role: 'user', walletBalance: 0 }
@@ -116,6 +116,7 @@ function buildAuthUser(
     displayName: profile.displayName ?? null,
     role: profile.role ?? 'user',
     phone: profile.phone ?? null,
+    username: profile.username ?? null,
     walletBalance: profile.walletBalance ?? 0,
     mustChangePassword: profile.mustChangePassword ?? false,
     hasPassword: profile.hasPassword ?? false,
@@ -428,8 +429,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error
   }
 
-  /** Sign in with email, phone number, or any string identifier.
-   *  Detects whether the identifier is a phone (digits/+) or email. */
+  /** Sign in with phone number, email, or @username + password.
+   *  - Phone  → Supabase phone+password directly
+   *  - Email  → Supabase email+password directly
+   *  - Username → POST /api/auth/resolve-username → get email → Supabase email+password */
   async function signInWithIdentifier(identifier: string, password: string) {
     if (!isSupabaseConfigured()) {
       const id = identifier.trim()
@@ -438,8 +441,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', id.includes('@') ? id : undefined, { role, displayName: name, walletBalance: 100, hasPassword: true }))
       return
     }
-    const id = identifier.trim()
-    const isPhone = /^\+?[\d\s\-()+]{7,}$/.test(id) && !id.includes('@')
+    // Strip leading @ if user typed @username
+    const id = identifier.trim().replace(/^@/, '')
+    const isPhone = /^\+?[\d\s\-()]{7,}$/.test(id) && !id.includes('@')
+    const isEmail = id.includes('@')
+
     if (isPhone) {
       const digits = id.replace(/\D/g, '')
       const e164 = digits.length === 10 ? `+91${digits}` :
@@ -448,9 +454,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         supabase.auth.signInWithPassword({ phone: e164, password })
       )
       if (error) throw error
-    } else {
+    } else if (isEmail) {
       const { error } = await withTimeout(
         supabase.auth.signInWithPassword({ email: id, password })
+      )
+      if (error) throw error
+    } else {
+      // Username login — resolve to email via server-side lookup
+      const res = await withTimeout(
+        fetch('/api/auth/resolve-username', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: id.toLowerCase() }),
+        }),
+        10000,
+        'Username lookup timed out. Check your connection and try again.'
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'No account found with that username.')
+      }
+      const { email } = await res.json()
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password })
       )
       if (error) throw error
     }
@@ -496,8 +522,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         sendEmailOtp,
         verifyEmailOtp,
-        sendPhoneOtp,
-        verifyPhoneOtp,
         linkEmail,
         verifyEmailLink,
         signInWithPassword,

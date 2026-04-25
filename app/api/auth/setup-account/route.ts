@@ -5,11 +5,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/auth/setup-account
- * Body: { displayName: string; password: string; email?: string }
+ * Body: { displayName: string; username: string; phone: string; password: string }
  *
- * Called after a student's first OTP verification to set their display name,
- * password, and optionally email (required for phone-only users).
- * Sets user_metadata.has_password = true and password_changed_at = now.
+ * Called after a student's first email OTP verification to complete their profile.
+ * Saves name, unique username, and phone number; sets password; marks hasPassword = true.
+ * After this, the student logs in with username+password or phone+password — no OTP needed.
  */
 export async function POST(request: Request) {
   const ctx = await getRequestContext(request);
@@ -17,53 +17,79 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { displayName?: string; password?: string; email?: string };
+  let body: { displayName?: string; username?: string; phone?: string; password?: string };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { displayName, password, email } = body;
+  const { displayName, username, phone, password } = body;
 
+  // Validate required fields
   if (!password?.trim()) {
     return Response.json({ error: "Password is required" }, { status: 400 });
   }
   if (password.length < 8) {
     return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
+  if (!username?.trim()) {
+    return Response.json({ error: "Username is required" }, { status: 400 });
+  }
+  const usernameClean = username.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(usernameClean)) {
+    return Response.json({ error: "Username must be 3–20 characters: letters, numbers, or underscore only" }, { status: 400 });
+  }
+  if (!phone?.trim()) {
+    return Response.json({ error: "Mobile number is required" }, { status: 400 });
+  }
+  const phoneDigits = phone.replace(/\D/g, "");
+  const e164Phone = phoneDigits.length === 10 ? `+91${phoneDigits}` :
+                    phoneDigits.length === 12 && phoneDigits.startsWith("91") ? `+${phoneDigits}` :
+                    phone.startsWith("+") ? phone : `+${phoneDigits}`;
 
   const supabase = createAdminClient();
 
-  // Build the admin update payload
-  type UpdatePayload = Parameters<typeof supabase.auth.admin.updateUserById>[1];
-  const updatePayload: UpdatePayload = {
+  // Check username uniqueness
+  const { data: existing } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("username", usernameClean)
+    .maybeSingle();
+  if (existing) {
+    return Response.json({ error: "Username is already taken. Please choose a different one." }, { status: 409 });
+  }
+
+  // Update Supabase auth user: set password, phone, and metadata
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.uid, {
     password,
+    phone: e164Phone,
+    phone_confirm: true,  // confirm phone immediately — no OTP needed since email is already verified
     user_metadata: {
       has_password: true,
       password_changed_at: new Date().toISOString(),
       must_change_password: false,
     },
-  };
-
-  // Phone-only users must provide an email for future password logins
-  if (email?.trim()) {
-    updatePayload.email = email.trim();
-    // Bypass email confirmation so they can log in immediately
-    updatePayload.email_confirm = true;
-  }
-
-  const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.uid, updatePayload);
+  });
   if (updateErr) {
     return Response.json({ error: updateErr.message }, { status: 500 });
   }
 
-  // Update display name in profiles
-  if (displayName?.trim()) {
-    await supabase
-      .from("profiles")
-      .update({ name: displayName.trim() })
-      .eq("id", ctx.uid);
+  // Update profiles row with name, username, and phone
+  const updates: Record<string, string> = {
+    username: usernameClean,
+    phone: e164Phone,
+  };
+  if (displayName?.trim()) updates.name = displayName.trim();
+
+  const { error: profileErr } = await supabase
+    .from("profiles")
+    .update(updates)
+    .eq("id", ctx.uid);
+
+  if (profileErr) {
+    // Non-fatal: auth is set up correctly; profile update failure is recoverable
+    console.error("Profile update failed after account setup:", profileErr.message);
   }
 
   return Response.json({ success: true });

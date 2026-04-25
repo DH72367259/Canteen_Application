@@ -66,37 +66,35 @@ function LoginContent() {
   const {
     user, loading, session,
     sendEmailOtp, verifyEmailOtp,
-    sendPhoneOtp, verifyPhoneOtp,
     signInWithIdentifier, signInWithPassword,
     resetPassword,
   } = useAuth();
 
-  type Tab = "phone" | "email" | "password" | "forgot";
+  type Tab = "student" | "password" | "forgot";
   const roleParam = params.get("role") || "user";
-  const [tab, setTab] = useState<Tab>(roleParam === "user" ? "phone" : "password");
+  const [tab, setTab] = useState<Tab>(roleParam === "user" ? "student" : "password");
 
   // ── Common state ──────────────────────────────────────────────────────────
-  const [phone,      setPhone]     = useState("");
   const [email,      setEmail]     = useState("");
   const [password,   setPassword]  = useState("");
-  const [identifier, setIdentifier] = useState(""); // email OR phone for student sign-in
+  const [identifier, setIdentifier] = useState(""); // @username or 10-digit phone for sign-in
   const [otp,        setOtp]       = useState("");
   const [otpSentTo,  setOtpSentTo] = useState<string | null>(null);
-  const [otpTarget,  setOtpTarget] = useState<"phone" | "email">("phone");
   const [busy,       setBusy]      = useState(false);
   const [error,      setError]     = useState<string | null>(null);
   const [info,       setInfo]      = useState<string | null>(null);
   const [showPwd,    setShowPwd]   = useState(false);
 
-  // ── Student tab mode: default = "signin" (password), toggle = "register" (OTP) ──
+  // ── Student tab mode: default = sign-in, toggle = register (email OTP) ────
   const [registerMode, setRegisterMode] = useState(false);
 
-  // ── Account setup form — shown after first-ever OTP verification ──────────
+  // ── Account setup form — shown after first-ever email OTP verification ─────
   const [showSetup,       setShowSetup]       = useState(false);
   const [setupName,       setSetupName]       = useState("");
+  const [setupUsername,   setSetupUsername]   = useState("");
+  const [setupPhone,      setSetupPhone]      = useState("");
   const [setupPwd,        setSetupPwd]        = useState("");
   const [setupConfirmPwd, setSetupConfirmPwd] = useState("");
-  const [setupEmail,      setSetupEmail]      = useState(""); // for phone-only users
   const [setupBusy,       setSetupBusy]       = useState(false);
   const [setupShowPwd,    setSetupShowPwd]    = useState(false);
 
@@ -173,132 +171,86 @@ function LoginContent() {
 
   function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); }
   function switchTab(t: Tab) {
-    // Clear ALL form state so nothing carries over between tabs
-    setEmail("");
-    setPhone("");
-    setPassword("");
-    setIdentifier("");
-    setOtp("");
-    setOtpSentTo(null);
-    setError(null);
-    setInfo(null);
-    setRegisterMode(false);
-    setShowSetup(false);
-    setShowPwd(false);
+    setEmail(""); setPassword(""); setIdentifier("");
+    setOtp(""); setOtpSentTo(null);
+    setError(null); setInfo(null);
+    setRegisterMode(false); setShowSetup(false); setShowPwd(false);
     setTab(t);
   }
 
-  // ── Student password sign-in (returning users, both phone & email tabs) ───
+  // ── Student sign-in — username or phone + password ─────────────────────
   async function handleSignIn() {
-    const id = (tab === "phone" ? identifier : email).trim();
-    if (tab === "phone") {
-      if (id.length < 10) { setError("Enter a valid 10-digit mobile number."); return; }
-    } else {
-      if (!id) { setError("Enter your email address."); return; }
-    }
+    const id = identifier.trim().replace(/^@/, "");
+    if (!id) { setError("Enter your username or 10-digit mobile number."); return; }
     if (!password) { setError("Enter your password."); return; }
     setBusy(true); setError(null);
     try {
-      loginInitiatedRef.current = true;  // explicit login — allow redirect
+      loginInitiatedRef.current = true;
       await signInWithIdentifier(id, password);
       setTimeout(() => setBusy(false), 10000);
     } catch (e: unknown) {
-      loginInitiatedRef.current = false;  // reset: login failed, stay on form
+      loginInitiatedRef.current = false;
       const msg = e instanceof Error ? e.message : "Login failed.";
       setError(
-        msg.toLowerCase().includes("invalid login credentials")
-          ? "Incorrect email/phone or password. If you're new here, tap 'Register' below."
+        msg.toLowerCase().includes("invalid login credentials") || msg.toLowerCase().includes("invalid credentials")
+          ? "Incorrect username / phone or password. If you're new, tap 'Register' below."
           : msg.toLowerCase().includes("timed out")
           ? "Connection timed out. Check your internet and try again."
+          : msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("no account")
+          ? "No account found with that username. Try your phone number instead, or register."
           : msg
       );
       setBusy(false);
     }
   }
 
-  // ── Phone OTP — registration flow ─────────────────────────────────────────
-  async function handleSendPhoneOtp() {
-    if (phone.length < 10) { setError("Enter a valid 10-digit mobile number."); return; }
-    setBusy(true); clearState();
-    try {
-      const fullPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-      const result = await sendPhoneOtp(fullPhone);
-      setOtpTarget("phone");
-      setOtpSentTo(fullPhone);
-      const via = result.channels.includes("whatsapp") && result.channels.includes("sms")
-        ? "WhatsApp & SMS" : result.channels.includes("whatsapp") ? "WhatsApp" : "SMS";
-      setInfo(`OTP sent to ${fullPhone} via ${via}`);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to send OTP.";
-      setError(
-        msg.toLowerCase().includes("unverified") || msg.toLowerCase().includes("trial") || msg.toLowerCase().includes("not a valid destination")
-          ? "SMS could not be delivered. Please use the Email tab instead."
-          : msg
-      );
-    } finally { setBusy(false); }
-  }
-
-  async function handleVerifyPhoneOtp() {
-    if (otp.length < 6) { setError("Enter the 6-digit OTP."); return; }
-    if (!otpSentTo) return;
-    setBusy(true); setError(null);
-    try {
-      loginInitiatedRef.current = true;  // explicit login — allow redirect
-      await verifyPhoneOtp(otpSentTo, otp);
-      // After verify, useEffect detects user.hasPassword === false → shows setup form
-      setTimeout(() => setBusy(false), 8000);
-    } catch (e: unknown) {
-      loginInitiatedRef.current = false;  // reset: verify failed
-      setError(e instanceof Error ? e.message : "Invalid OTP. Please check the code and try again.");
-      setBusy(false);
-    }
-  }
-
-  // ── Email OTP — registration flow ─────────────────────────────────────────
+  // ── Email OTP — first-time registration ──────────────────────────────────
   async function handleSendEmailOtp() {
-    if (!email) { setError("Enter your email address."); return; }
+    const emailTrimmed = email.trim();
+    if (!emailTrimmed) { setError("Enter your email address."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) { setError("Enter a valid email address."); return; }
     setBusy(true); clearState();
     try {
-      await sendEmailOtp(email);
-      setOtpTarget("email");
-      setOtpSentTo(email);
-      setInfo(`OTP sent to ${email}`);
+      await sendEmailOtp(emailTrimmed);
+      setOtpSentTo(emailTrimmed);
+      setInfo(`Verification code sent to ${emailTrimmed}. Check your inbox (and spam folder).`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send OTP.");
+      setError(e instanceof Error ? e.message : "Failed to send code. Please try again.");
     } finally { setBusy(false); }
   }
 
   async function handleVerifyEmailOtp() {
-    if (otp.length < 6) { setError("Enter the 6-digit OTP from your email."); return; }
+    if (otp.length < 6) { setError("Enter the 6-digit code from your email."); return; }
     if (!otpSentTo) return;
     setBusy(true); setError(null);
     try {
-      loginInitiatedRef.current = true;  // explicit login — allow redirect
+      loginInitiatedRef.current = true;
       await verifyEmailOtp(otpSentTo, otp);
+      // After verify: useEffect detects user.hasPassword === false + registerMode → shows setup
       setTimeout(() => setBusy(false), 8000);
     } catch (e: unknown) {
-      loginInitiatedRef.current = false;  // reset: verify failed
-      setError(e instanceof Error ? e.message : "Invalid or expired OTP.");
+      loginInitiatedRef.current = false;
+      setError(e instanceof Error ? e.message : "Invalid or expired code. Please try again.");
       setBusy(false);
     }
   }
 
-  // ── Account setup — called once after first OTP verification ──────────────
+  // ── Account setup — called once after email OTP verification ─────────────
   async function handleSetupAccount() {
     setError(null);
-    if (!setupName.trim())            { setError("Please enter your name."); return; }
-    if (!setupPwd)                    { setError("Please create a password."); return; }
-    if (setupPwd.length < 8)         { setError("Password must be at least 8 characters."); return; }
+    if (!setupName.trim())            { setError("Enter your name."); return; }
+    if (!setupUsername.trim())        { setError("Choose a username."); return; }
+    const usernameClean = setupUsername.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(usernameClean)) {
+      setError("Username must be 3–20 characters: letters, numbers, or underscore (_) only.");
+      return;
+    }
+    const phoneDigits = setupPhone.replace(/\D/g, "");
+    if (phoneDigits.length !== 10) { setError("Enter a valid 10-digit Indian mobile number."); return; }
+    if (!setupPwd)                  { setError("Create a password (min 8 characters)."); return; }
+    if (setupPwd.length < 8)        { setError("Password must be at least 8 characters."); return; }
     if (setupPwd !== setupConfirmPwd) { setError("Passwords do not match."); return; }
-    const userHasEmail = !!user?.email;
-    if (!userHasEmail && !setupEmail.trim()) {
-      setError("Please enter your email address (used for future logins).");
-      return;
-    }
-    if (!userHasEmail && setupEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(setupEmail)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
+
     setSetupBusy(true);
     try {
       const res = await fetch("/api/auth/setup-account", {
@@ -306,8 +258,9 @@ function LoginContent() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
           displayName: setupName.trim(),
+          username: usernameClean,
+          phone: `+91${phoneDigits}`,
           password: setupPwd,
-          email: !userHasEmail ? setupEmail.trim() : undefined,
         }),
       });
       if (!res.ok) {
@@ -317,12 +270,11 @@ function LoginContent() {
       // Refresh session so user_metadata.has_password: true is reflected
       const { getSupabaseClient } = await import("@/lib/supabase-client");
       await getSupabaseClient().auth.refreshSession();
-      // Navigate directly to dashboard
       const role = user?.role;
       if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
-      else if (role === "super_admin")                   router.replace("/admin/dashboard");
-      else if (role === "worker")                        router.replace("/worker/dashboard");
-      else                                               router.replace("/dashboard");
+      else if (role === "super_admin") router.replace("/admin/dashboard");
+      else if (role === "worker") router.replace("/worker/dashboard");
+      else router.replace("/dashboard");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create account. Please try again.");
       setSetupBusy(false);
@@ -394,43 +346,110 @@ function LoginContent() {
         {/* Tab switcher — hidden during account setup */}
         {!showSetup && (
           <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
-            {(["phone", "email", "password"] as Tab[]).map(t => (
-              <button key={t} onClick={() => switchTab(t)} style={{ flex: 1, padding: "0.55rem 0.25rem", fontWeight: 600, border: "none", cursor: "pointer", background: tab === t ? "var(--orange)" : "transparent", color: tab === t ? "#fff" : "var(--ink-3)", transition: "all 0.15s" }}>
-                {t === "phone" ? "📱 Student (Phone)" : t === "email" ? "📧 Student (Email)" : "🏢 Canteen Login"}
+            {(["student", "password"] as Tab[]).map(t => (
+              <button
+                key={t}
+                onClick={() => switchTab(t)}
+                style={{
+                  flex: 1, padding: "0.55rem 0.25rem", fontWeight: 600,
+                  border: "none", cursor: "pointer",
+                  background: tab === t ? "var(--orange)" : "transparent",
+                  color: tab === t ? "#fff" : "var(--ink-3)",
+                  transition: "all 0.15s",
+                }}
+              >
+                {t === "student" ? "🎓 Student" : "🏢 Canteen Login"}
               </button>
             ))}
           </div>
         )}
 
-        {/* ── Account Setup (first-time, after OTP verification) ─────────────── */}
+        {/* ── Account Setup (first-time, after email OTP verified) ───────────── */}
         {showSetup && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ textAlign: "center", padding: "0.25rem 0 0.5rem" }}>
               <span style={{ fontSize: "2rem" }}>🎉</span>
-              <p style={{ fontWeight: 700, color: "var(--ink-1)", margin: "0.3rem 0 0.15rem", fontSize: "1.05rem" }}>Identity Verified!</p>
+              <p style={{ fontWeight: 700, color: "var(--ink-1)", margin: "0.3rem 0 0.15rem", fontSize: "1.05rem" }}>
+                Email Verified!
+              </p>
               <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", margin: 0 }}>
-                Set up your name &amp; password — you'll use these to log in from now on
+                Complete your profile — you&apos;ll use your username or phone number to log in from now on
               </p>
             </div>
 
             <div className="form-group">
               <label className="form-label">Your Name</label>
-              <input className="form-input" type="text" placeholder="What should we call you?" value={setupName} onChange={e => setSetupName(e.target.value)} autoFocus autoComplete="name" />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="What should we call you?"
+                value={setupName}
+                onChange={e => setSetupName(e.target.value)}
+                autoFocus
+                autoComplete="name"
+              />
             </div>
 
-            {/* Email field — only shown for phone-verified users with no email yet */}
-            {!user?.email && (
-              <div className="form-group">
-                <label className="form-label">Email Address <span style={{ color: "var(--ink-3)", fontWeight: 400, fontSize: "0.76rem" }}>(for future logins)</span></label>
-                <input className="form-input" type="email" placeholder="you@example.com" value={setupEmail} onChange={e => setSetupEmail(e.target.value)} autoComplete="email" />
+            <div className="form-group">
+              <label className="form-label">
+                Username{" "}
+                <span style={{ fontSize: "0.74rem", color: "var(--ink-3)", fontWeight: 400 }}>(3–20 chars · letters, numbers, _)</span>
+              </label>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", fontSize: "0.9rem", pointerEvents: "none" }}>@</span>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="john_doe"
+                  value={setupUsername}
+                  onChange={e => setSetupUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  style={{ paddingLeft: "1.75rem" }}
+                />
               </div>
-            )}
+            </div>
 
             <div className="form-group">
-              <label className="form-label">Create Password <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span></label>
+              <label className="form-label">
+                Mobile Number{" "}
+                <span style={{ fontSize: "0.74rem", color: "var(--ink-3)", fontWeight: 400 }}>(you can also use this to log in)</span>
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
+                <input
+                  className="form-input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit mobile number"
+                  value={setupPhone}
+                  onChange={e => setSetupPhone(e.target.value.replace(/\D/g, ""))}
+                  autoComplete="tel-national"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Create Password{" "}
+                <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span>
+              </label>
               <div style={{ position: "relative" }}>
-                <input className="form-input" type={setupShowPwd ? "text" : "password"} placeholder="Create a strong password" value={setupPwd} onChange={e => setSetupPwd(e.target.value)} autoComplete="new-password" style={{ paddingRight: "2.5rem" }} />
-                <button type="button" onClick={() => setSetupShowPwd(v => !v)} style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}>
+                <input
+                  className="form-input"
+                  type={setupShowPwd ? "text" : "password"}
+                  placeholder="Create a strong password"
+                  value={setupPwd}
+                  onChange={e => setSetupPwd(e.target.value)}
+                  autoComplete="new-password"
+                  style={{ paddingRight: "2.5rem" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setSetupShowPwd(v => !v)}
+                  style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}
+                >
                   {setupShowPwd ? "🙈" : "👁️"}
                 </button>
               </div>
@@ -438,7 +457,15 @@ function LoginContent() {
 
             <div className="form-group">
               <label className="form-label">Confirm Password</label>
-              <input className="form-input" type={setupShowPwd ? "text" : "password"} placeholder="Re-enter your password" value={setupConfirmPwd} onChange={e => setSetupConfirmPwd(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && handleSetupAccount()} />
+              <input
+                className="form-input"
+                type={setupShowPwd ? "text" : "password"}
+                placeholder="Re-enter your password"
+                value={setupConfirmPwd}
+                onChange={e => setSetupConfirmPwd(e.target.value)}
+                autoComplete="new-password"
+                onKeyDown={e => e.key === "Enter" && handleSetupAccount()}
+              />
             </div>
 
             {error && <p className="error-msg">{error}</p>}
@@ -446,26 +473,45 @@ function LoginContent() {
               {setupBusy ? "Creating account…" : "Create Account & Continue →"}
             </button>
             <p style={{ textAlign: "center", fontSize: "0.72rem", color: "var(--ink-3)", margin: 0 }}>
-              Next time log in with your email/phone + this password
+              After this, log in with your <strong>@username</strong> or <strong>phone number</strong> + password
             </p>
           </div>
         )}
 
-        {/* ── Student (Phone) — Sign In (default) ─────────────────────────── */}
-        {tab === "phone" && !showSetup && !registerMode && (
+        {/* ── Student — Sign In (username or phone + password) ─────────────── */}
+        {tab === "student" && !showSetup && !registerMode && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div className="form-group">
-              <label className="form-label">Mobile Number</label>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={identifier} onChange={e => setIdentifier(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="tel-national" />
-              </div>
+              <label className="form-label">Username or Mobile Number</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="@username  or  10-digit number"
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value.replace(/\s/g, ""))}
+                onKeyDown={e => e.key === "Enter" && handleSignIn()}
+                autoComplete="username"
+                autoCapitalize="none"
+              />
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
               <div style={{ position: "relative" }}>
-                <input className="form-input" type={showPwd ? "text" : "password"} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="current-password" style={{ paddingRight: "2.5rem" }} />
-                <button type="button" onClick={() => setShowPwd(v => !v)} style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}>
+                <input
+                  className="form-input"
+                  type={showPwd ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSignIn()}
+                  autoComplete="current-password"
+                  style={{ paddingRight: "2.5rem" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(v => !v)}
+                  style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}
+                >
                   {showPwd ? "🙈" : "👁️"}
                 </button>
               </div>
@@ -474,96 +520,38 @@ function LoginContent() {
             <button className="btn btn-primary btn-full" disabled={busy} onClick={handleSignIn} style={{ padding: "0.8rem" }}>
               {busy ? "Signing in…" : "Sign In →"}
             </button>
-            <Divider label="new to the app?" />
-            <button className="btn btn-ghost btn-full" onClick={() => { clearState(); setRegisterMode(true); }} style={{ fontSize: "0.82rem" }}>
-              First time? Register with OTP →
-            </button>
-          </div>
-        )}
-
-        {/* ── Student (Phone) — Register: send OTP ────────────────────────── */}
-        {tab === "phone" && !showSetup && registerMode && !otpSentTo && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div style={{ background: "var(--orange-light, #fff3eb)", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "var(--orange)", fontWeight: 500 }}>
-              📋 One-time setup — you'll set a password after verifying your number
-            </div>
-            <div className="form-group">
-              <label className="form-label">Mobile Number</label>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                <input className="form-input" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile number" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={e => e.key === "Enter" && handleSendPhoneOtp()} />
-              </div>
-            </div>
-            {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy || phone.length < 10} onClick={handleSendPhoneOtp} style={{ padding: "0.8rem" }}>
-              {busy ? "Sending OTP…" : "Send OTP →"}
-            </button>
-            <button className="btn btn-ghost btn-full" onClick={() => { setRegisterMode(false); clearState(); }} style={{ fontSize: "0.82rem" }}>
-              ← Already have an account? Sign In
-            </button>
-          </div>
-        )}
-
-        {/* ── Student (Phone) — Register: verify OTP ──────────────────────── */}
-        {tab === "phone" && !showSetup && registerMode && otpSentTo && otpTarget === "phone" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
-            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>Enter the 6-digit OTP sent to {otpSentTo}</p>
-            <OtpInput value={otp} onChange={setOtp} length={6} />
-            {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyPhoneOtp} style={{ padding: "0.8rem" }}>
-              {busy ? "Verifying…" : "Verify OTP →"}
-            </button>
-            <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
-              ← Change number
-            </button>
-          </div>
-        )}
-
-        {/* ── Student (Email) — Sign In (default) ─────────────────────────── */}
-        {tab === "email" && !showSetup && !registerMode && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="username" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Password</label>
-              <div style={{ position: "relative" }}>
-                <input className="form-input" type={showPwd ? "text" : "password"} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSignIn()} autoComplete="current-password" style={{ paddingRight: "2.5rem" }} />
-                <button type="button" onClick={() => setShowPwd(v => !v)} style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "var(--ink-3)" }}>
-                  {showPwd ? "🙈" : "👁️"}
-                </button>
-              </div>
-            </div>
-            {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy} onClick={handleSignIn} style={{ padding: "0.8rem" }}>
-              {busy ? "Signing in…" : "Sign In →"}
-            </button>
-            <Divider label="new to the app?" />
-            <button className="btn btn-ghost btn-full" onClick={() => { clearState(); setRegisterMode(true); }} style={{ fontSize: "0.82rem" }}>
-              First time? Register with OTP →
-            </button>
-            <Divider label="forgot password?" />
             <button className="btn btn-ghost btn-full" onClick={() => switchTab("forgot")} style={{ fontSize: "0.82rem" }}>
-              Reset Password
+              Forgot Password?
+            </button>
+            <Divider label="new to the app?" />
+            <button className="btn btn-ghost btn-full" onClick={() => { clearState(); setRegisterMode(true); }} style={{ fontSize: "0.82rem" }}>
+              Register with Email →
             </button>
           </div>
         )}
 
-        {/* ── Student (Email) — Register: send OTP ────────────────────────── */}
-        {tab === "email" && !showSetup && registerMode && !otpSentTo && (
+        {/* ── Student — Register: enter email ──────────────────────────────── */}
+        {tab === "student" && !showSetup && registerMode && !otpSentTo && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ background: "var(--orange-light, #fff3eb)", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "var(--orange)", fontWeight: 500 }}>
-              📋 One-time setup — you'll set a password after verifying your email
+              📧 One-time setup — verify your email, then choose a username &amp; password
             </div>
             <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSendEmailOtp()} />
+              <label className="form-label">Gmail or Email Address</label>
+              <input
+                className="form-input"
+                type="email"
+                placeholder="you@gmail.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSendEmailOtp()}
+                autoComplete="email"
+                autoFocus
+              />
             </div>
             {error && <p className="error-msg">{error}</p>}
             <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleSendEmailOtp} style={{ padding: "0.8rem" }}>
-              {busy ? "Sending OTP…" : "Send OTP →"}
+              {busy ? "Sending code…" : "Send Verification Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setRegisterMode(false); clearState(); }} style={{ fontSize: "0.82rem" }}>
               ← Already have an account? Sign In
@@ -571,15 +559,21 @@ function LoginContent() {
           </div>
         )}
 
-        {/* ── Student (Email) — Register: verify OTP ──────────────────────── */}
-        {tab === "email" && !showSetup && registerMode && otpSentTo && otpTarget === "email" && (
+        {/* ── Student — Register: verify email OTP ─────────────────────────── */}
+        {tab === "student" && !showSetup && registerMode && otpSentTo && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
-            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>Enter the 6-digit OTP sent to {otpSentTo}</p>
+            {info && (
+              <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>
+                {info}
+              </p>
+            )}
+            <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>
+              Enter the 6-digit code sent to <strong>{otpSentTo}</strong>
+            </p>
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
             <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleVerifyEmailOtp} style={{ padding: "0.8rem" }}>
-              {busy ? "Verifying…" : "Verify OTP →"}
+              {busy ? "Verifying…" : "Verify Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
               ← Change email
@@ -620,7 +614,7 @@ function LoginContent() {
             <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotPassword} style={{ padding: "0.8rem" }}>
               {busy ? "Sending…" : "Send Reset Link →"}
             </button>
-            <button className="btn btn-ghost btn-full" onClick={() => switchTab("password")} style={{ fontSize: "0.82rem" }}>
+            <button className="btn btn-ghost btn-full" onClick={() => switchTab("student")} style={{ fontSize: "0.82rem" }}>
               ← Back to Sign In
             </button>
           </div>

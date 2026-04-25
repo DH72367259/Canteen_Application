@@ -10,6 +10,7 @@ create table if not exists profiles (
   name            text,
   email           text,
   phone           text,
+  username        text unique,                -- chosen during account setup; used for login
   role            text not null default 'user'
                     check (role in ('user','canteen_admin','vendor','worker','super_admin')),
   canteen_id      uuid,                   -- set for canteen_admin / vendor / worker

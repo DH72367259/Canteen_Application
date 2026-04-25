@@ -57,12 +57,12 @@ Every `git push origin main` triggers a new production build on Railway within ~
 
 | Role | Method | Access |
 |------|--------|--------|
-| Student | Phone OTP via SMS / WhatsApp | Browse, order, pay, track, NoQx Pro |
-| Student (email) | Email OTP (passwordless) | Same as above |
+| Student (new) | Email OTP → set username + phone + password | Browse, order, pay, track, NoQx Pro |
+| Student (returning) | @username + password **or** phone + password | Same as above |
 | Canteen / Vendor | Email + password at **Canteen Login** tab | Live orders, menu, slots, toggle |
 | Super Admin | Email + password at **Canteen Login** tab | Full system — canteens, users, analytics, settlements |
 
-All users are created via the Supabase Auth dashboard.
+All staff accounts are created via the Admin dashboard or Supabase Auth.
 No default credentials are pre-filled in the login form.
 
 ---
@@ -80,10 +80,6 @@ Student / Vendor / Admin browsers
   Supabase PostgreSQL    Razorpay API
   (database + auth)      (payments + refunds + webhooks)
   Row Level Security     HMAC-SHA256 signature verification
-          |
-          v
-      Twilio Verify
-      (SMS + WhatsApp OTP)
 ```
 
 **Stack:**
@@ -91,10 +87,9 @@ Student / Vendor / Admin browsers
 - Frontend/Backend: Next.js 14 App Router, React 18, TypeScript
 - Styling: Custom CSS design tokens
 - Database: Supabase (PostgreSQL 15) with Row Level Security
-- Auth: Supabase Auth — phone OTP via Twilio Verify (SMS + WhatsApp), email OTP, email+password for staff
+- Auth: Supabase Auth — email OTP for new student registration, username/phone+password for returning students, email+password for staff
 - Payments: Razorpay (UPI, GPay, PhonePe, Cards, Net Banking, Wallets)
 - Subscriptions: Razorpay — ₹69/month NoQx Pro
-- SMS/WhatsApp: Twilio Verify (OTP delivery, multi-channel)
 - Hosting: Railway (auto-deploy from GitHub, standalone Docker build)
 - PWA: Web App Manifest (installable on iOS and Android home screen)
 
@@ -106,11 +101,14 @@ Student / Vendor / Admin browsers
 
 | Method | Who uses it | How it works |
 |--------|-------------|--------------|
-| **Phone OTP (SMS)** | Students | Enter mobile number → 6-digit OTP via SMS (Twilio Verify) → logged in |
-| **Email OTP** | Students, Staff | Enter email → 6-digit OTP in email → enter code to log in |
-| **Email + Password** | Canteen managers, Admins | Enter email + password at the Canteen Login tab |
+| **Email OTP (registration)** | New students | Enter Gmail/email → 6-digit OTP → set @username + phone + password (one-time setup) |
+| **@Username + Password** | Returning students | Enter `@username` (strips leading `@`) + password → logged in |
+| **Phone + Password** | Returning students | Enter 10-digit mobile number + password → looked up via Supabase phone auth |
+| **Email + Password** | Canteen managers, Admins | Enter email + password at the **Canteen Login** tab |
 | **Forced password change** | New canteen managers | Admin creates account → manager receives temp credentials → must set new password on first login |
-| **Password reset** | Any staff | Click "Forgot Password" → receive reset link → set new password |
+| **Password reset** | Any user | Click "Forgot Password" → receive reset link via email → set new password |
+
+> After the one-time email OTP registration, students **never need OTP again**. They log in directly with their chosen username or the phone number they registered.
 
 ### Auth client configuration (`lib/supabase-client.ts`)
 
@@ -594,8 +592,7 @@ values (2.00, 0.00, 18.00);
 
 ### Step 5 — Configure Auth
 
-1. **Authentication → Providers → Phone**: enable and link Twilio Verify credentials
-2. **Authentication → URL Configuration**:
+1. **Authentication → URL Configuration**:
    - Site URL: `https://canteenapplication-production.up.railway.app`
    - Redirect URLs: `https://canteenapplication-production.up.railway.app/**`
 3. **Authentication → Settings → Email**:
@@ -614,53 +611,13 @@ insert into profiles (id, role, name) values ('<USER_UUID>', 'super_admin', 'Sup
 
 ---
 
-## Twilio Setup (SMS & WhatsApp OTP)
+## ~~Twilio Setup (SMS & WhatsApp OTP)~~ — No longer required
 
-Students verify their phone number via a 6-digit OTP. The app uses **Twilio Verify** to deliver
-OTPs over SMS. WhatsApp delivery is also supported as a secondary channel (feature-flagged).
-
-### Step 1 - Create a Twilio account
-
-1. Go to https://twilio.com -> Sign Up (free trial available)
-2. Verify your own phone number during sign-up
-3. Skip the guided setup wizard
-
-### Step 2 - Create a Verify Service
-
-1. Twilio Console -> **Verify -> Services -> Create new Service**
-2. Name it (e.g., `Canteen-App OTP`)
-3. Copy the **Service SID** (starts with `VA...`) -> `TWILIO_VERIFY_SERVICE_SID`
-
-### Step 3 - Copy account credentials
-
-1. Twilio Console -> **Account -> API keys & tokens**
-2. Copy:
-   - **Account SID** (starts with `AC...`) -> `TWILIO_ACCOUNT_SID`
-   - **Auth Token** -> `TWILIO_AUTH_TOKEN`
-
-### Step 4 - Upgrade from Trial (important)
-
-> **Trial accounts can only send OTPs to phone numbers you have explicitly verified in the
-> Twilio console.** To send OTPs to all students, upgrade to a paid account.
-
-1. Twilio Console -> **Account -> Upgrade Account**
-2. Add a credit card and top up with the minimum amount (~$15-20)
-3. All phone numbers globally will receive OTPs immediately after upgrade
-
-While on trial: students who haven't verified their number in Twilio will see
-`"SMS could not be delivered. Please use Email OTP login instead."` — a graceful
-fallback that guides them to the email OTP option.
-
-### WhatsApp OTP (optional, feature-flagged)
-
-A secondary WhatsApp channel is implemented but disabled by default.
-
-To enable it:
-1. Apply for a **WhatsApp Business** account via Twilio Console -> Messaging -> Senders
-2. Once approved, in Railway Variables add: `TWILIO_WHATSAPP_ENABLED=true`
-3. No code changes needed — the `/api/auth/phone/whatsapp` route handles delivery automatically
-
-When enabled, the auth flow tries WhatsApp first, then falls back to SMS.
+> **As of the current version, phone OTP via Twilio is no longer used for student authentication.**
+> Students register once using **email OTP** (via Supabase), then log in with **username + password** or **phone + password**.
+> The Twilio API routes (`/api/auth/phone`, `/api/auth/phone/whatsapp`) still exist in the codebase for backward compatibility but are not called by the login UI.
+>
+> If you are deploying a fresh instance, you do **not** need a Twilio account. The `TWILIO_*` environment variables are optional and inert unless those API routes are called directly.
 
 ---
 
@@ -1248,12 +1205,15 @@ These are ordered by priority — items at the top block real users.
 
 ### 🔴 High Priority (Blockers for real users)
 
-#### 1. DLT Registration — SMS OTP is broken without this
-Phone OTP login **will not deliver SMS** to any student until you register on a TRAI DLT platform.
-- Register your entity + sender ID + OTP message template on Airtel / Jio / Vodafone-Idea DLT
-- Then in **Twilio Console → Verify → Services → your service → Sender settings**, add the DLT entity ID + sender ID
-- Without this, students can only use email OTP as a fallback
-- See `README-COMPLIANCE.md` → Section 5 for detailed steps
+#### 1. Run the `profiles` table migration (username column)
+The auth redesign added a `username` column to the `profiles` table. For **existing deployments**, run this migration once in your Supabase SQL editor:
+
+```sql
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username text unique;
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_idx ON profiles(username);
+```
+
+For fresh deployments the `supabase-setup.sql` already includes the column — no manual step is needed.
 
 #### 2. Connect real canteen data (currently hardcoded)
 The student dashboard canteen list in `app/dashboard/page.tsx` is a **hardcoded `CANTEENS` array**.
