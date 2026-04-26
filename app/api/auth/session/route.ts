@@ -34,7 +34,8 @@ async function getAuthedUser(req: NextRequest) {
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
-  return { user, token };
+  // Return the client so callers can reuse it instead of creating a second connection.
+  return { user, token, supabase };
 }
 
 // POST — register session, detect concurrent login
@@ -42,8 +43,7 @@ export async function POST(req: NextRequest) {
   const authed = await getAuthedUser(req);
   if (!authed) return Response.json({ error: "Unauthorised" }, { status: 401 });
 
-  const { user } = authed;
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  const { user, supabase } = authed;
   const deviceInfo = getDeviceInfo(req);
   const ipHash = getIpHash(req);
   const now = new Date().toISOString();
@@ -92,12 +92,10 @@ export async function PATCH(req: NextRequest) {
   const authed = await getAuthedUser(req);
   if (!authed) return Response.json({ error: "Unauthorised" }, { status: 401 });
 
-  const { user } = authed;
+  const { user, supabase } = authed;
   const body = await req.json().catch(() => ({}));
   const sessionId = body.sessionId as string | undefined;
   const markInactive = body.markInactive === true;
-
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
   const update = markInactive
     ? { is_active: false }
@@ -122,8 +120,7 @@ export async function DELETE(req: NextRequest) {
   const authed = await getAuthedUser(req);
   if (!authed) return Response.json({ error: "Unauthorised" }, { status: 401 });
 
-  const { user } = authed;
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  const { user, supabase } = authed;
 
   // Mark all existing sessions as inactive
   await supabase

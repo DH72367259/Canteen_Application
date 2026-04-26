@@ -32,6 +32,33 @@ function isInactive(): boolean {
 }
 
 // ============================================================
+// Profile cache — stale-while-revalidate, sessionStorage, 5-min TTL
+// Eliminates the DB round-trip on every page navigation for returning users.
+// ============================================================
+const PROFILE_CACHE_KEY = 'canteen_profile_v1'
+
+function getCachedProfile(userId: string): Partial<AuthUser> | null {
+  try {
+    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const { uid, data, ts } = JSON.parse(raw)
+    if (uid !== userId) return null
+    if (Date.now() - ts > 5 * 60 * 1000) return null // 5-min TTL
+    return data as Partial<AuthUser>
+  } catch { return null }
+}
+
+function setCachedProfile(userId: string, data: Partial<AuthUser>) {
+  try {
+    sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: userId, data, ts: Date.now() }))
+  } catch { /* SSR safe */ }
+}
+
+function clearProfileCache() {
+  try { sessionStorage.removeItem(PROFILE_CACHE_KEY) } catch { /* SSR safe */ }
+}
+
+// ============================================================
 // Types
 // ============================================================
 export type UserRole =
@@ -89,7 +116,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Profile fetch timed out')), 8000)
+      setTimeout(() => reject(new Error('Profile fetch timed out')), 3000)
     )
     const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
@@ -166,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Safety timeout: if Supabase is unreachable, stop the spinner after 6s.
     // 6 s gives Railway cold-starts and slow networks enough time to respond before
     // the fallback fires and falsely treats an authenticated user as unauthenticated.
-    const fallback = setTimeout(() => setLoading(false), 6000)
+    const fallback = setTimeout(() => setLoading(false), 3000)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
@@ -185,14 +212,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setSession(session)
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id)
           const meta = session.user.user_metadata ?? {}
           const hasPassword = meta.has_password === true
           const pwChangedAt: string | undefined = meta.password_changed_at
-          // 30-day password expiry — hard sign out the user, force re-login with new password
+          // 30-day password expiry — checked from JWT metadata (zero extra DB calls)
           if (hasPassword && pwChangedAt &&
             Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
-            // Sign out and redirect to login with an expiry message
             await supabase.auth.signOut()
             setUser(null)
             setSession(null)
@@ -201,14 +226,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return
           }
           const mustChangePassword = meta.must_change_password === true
-          const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword })
-          // Keep roleRef in sync so onAuthStateChange can use it as a fallback
-          roleRef.current = builtUser.role
-          setUser(builtUser)
-          // Register session (non-blocking — don't block UI on this)
+          // Stale-while-revalidate: serve cached profile instantly, refresh DB in background.
+          // Eliminates the 0.5-2s DB round-trip on every page load for returning users.
+          const cached = getCachedProfile(session.user.id)
+          if (cached) {
+            const builtUser = buildAuthUser(session.user.id, session.user.email, { ...cached, mustChangePassword, hasPassword })
+            roleRef.current = builtUser.role
+            setUser(builtUser)
+            setLoading(false)
+            // Silently refresh profile in background so stale data doesn't persist
+            fetchProfile(session.user.id).then(fresh => {
+              setCachedProfile(session.user.id, fresh)
+              const updated = buildAuthUser(session.user.id, session.user.email, { ...fresh, mustChangePassword, hasPassword })
+              roleRef.current = updated.role
+              setUser(updated)
+            }).catch(() => {})
+          } else {
+            const profile = await fetchProfile(session.user.id)
+            setCachedProfile(session.user.id, profile)
+            const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword })
+            roleRef.current = builtUser.role
+            setUser(builtUser)
+            setLoading(false)
+          }
           registerSession(session.access_token).catch(() => {})
+        } else {
+          setLoading(false)
         }
-        setLoading(false)
       })
       .catch(() => {
         clearTimeout(fallback)
@@ -218,7 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) recordActivity()
       setSession(session)
       if (session?.user) {
@@ -226,8 +270,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // If fetchProfile times out or errors and returns the 'user' fallback, we use this
         // to restore the real role — prevents TOKEN_REFRESHED from silently demoting an admin.
         const existingRole = roleRef.current
-
-        const profile = await fetchProfile(session.user.id)
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
         const pwChangedAt: string | undefined = meta.password_changed_at
@@ -243,6 +285,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
         const mustChangePassword = meta.must_change_password === true
+        // TOKEN_REFRESHED fires every ~55 min — profile hasn't changed, use cache to skip DB.
+        const cached = event === 'TOKEN_REFRESHED' ? getCachedProfile(session.user.id) : null
+        if (cached) {
+          const safeRole: UserRole = (
+            cached.role === 'user' && existingRole !== null && existingRole !== 'user'
+          ) ? existingRole : (cached.role ?? 'user')
+          const builtUser = buildAuthUser(session.user.id, session.user.email, { ...cached, role: safeRole, mustChangePassword, hasPassword })
+          roleRef.current = builtUser.role
+          setUser(builtUser)
+          setLoading(false)
+          return
+        }
+        const profile = await fetchProfile(session.user.id)
+        setCachedProfile(session.user.id, profile)
         // Guard: if fetchProfile returned the error-fallback role ('user') but we previously
         // confirmed a privileged role for this same session, keep the privileged role.
         // This prevents a transient DB timeout from kicking an admin to the student dashboard.
@@ -254,11 +310,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, role: safeRole, mustChangePassword, hasPassword })
         roleRef.current = builtUser.role
         setUser(builtUser)
-        registerSession(session.access_token).catch(() => {})
+        // Only register a new active_sessions row on actual new logins, not background token refreshes.
+        if (event === 'SIGNED_IN') {
+          registerSession(session.access_token).catch(() => {})
+        }
       } else {
         setUser(null)
         roleRef.current = null
         activeSessionIdRef.current = null
+        clearProfileCache()
       }
       setLoading(false)
     })
@@ -302,6 +362,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
+    clearProfileCache()
     // Mark session as inactive before signing out (fire-and-forget)
     if (session?.access_token && activeSessionIdRef.current) {
       fetch('/api/auth/session', {

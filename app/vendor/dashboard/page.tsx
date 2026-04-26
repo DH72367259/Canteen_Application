@@ -178,10 +178,10 @@ export default function VendorDashboard() {
     await fetchOrders();
   }, [session?.access_token, fetchOrders]);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 30 seconds (reduced from 5s to lower DB load at scale)
   useEffect(() => {
     fetchOrders();
-    refreshRef.current = setInterval(fetchOrders, 5_000);
+    refreshRef.current = setInterval(fetchOrders, 30_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
   }, [fetchOrders]);
 

@@ -28,6 +28,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  compress: true,
+  poweredByHeader: false,
+  experimental: {
+    // Tree-shake large packages — reduces JS bundle size and speeds up initial parse
+    optimizePackageImports: ["@supabase/supabase-js", "lucide-react"],
+  },
   async headers() {
     return [
       {
