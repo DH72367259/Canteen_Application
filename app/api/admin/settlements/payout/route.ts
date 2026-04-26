@@ -119,7 +119,7 @@ export async function POST(request: Request) {
         .select("*")
         .single();
 
-      if (error) return Response.json({ error: error.message }, { status: 500 });
+      if (error) return Response.json({ error: "Failed to record payout." }, { status: 500 });
 
       return Response.json({
         success: true,
@@ -128,9 +128,9 @@ export async function POST(request: Request) {
         payout_status: payout.status,
         payment: record,
       });
-    } catch (e: unknown) {
+    } catch {
       return Response.json({
-        error: e instanceof Error ? e.message : "Razorpay payout failed.",
+        error: "Razorpay payout failed. Please try again or record manually.",
         mode: "razorpay_error",
       }, { status: 502 });
     }
@@ -164,6 +164,6 @@ export async function POST(request: Request) {
     .select("*")
     .single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: "Failed to record settlement payment." }, { status: 500 });
   return Response.json({ success: true, mode: "manual", payment: data });
 }

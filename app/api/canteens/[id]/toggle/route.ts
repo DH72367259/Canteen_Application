@@ -85,7 +85,7 @@ export async function PATCH(
     .single();
 
   if (error) {
-    return Response.json({ error: "Database error: " + error.message }, { status: 500 });
+    return Response.json({ error: "Failed to update canteen status." }, { status: 500 });
   }
 
   return Response.json({ canteen: data });

@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   if (authError) {
     const msg = authError.message.includes("already registered")
       ? "A user with this email already exists."
-      : authError.message;
+      : "Failed to create user account.";
     return Response.json({ error: msg }, { status: 400 });
   }
 
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   if (canteenError) {
     // Rollback: delete the auth user we just created
     await supabase.auth.admin.deleteUser(userId);
-    return Response.json({ error: "Failed to create canteen: " + canteenError.message }, { status: 500 });
+    return Response.json({ error: "Failed to create canteen." }, { status: 500 });
   }
 
   // 3. Create / upsert profile for this user with canteen_admin role + canteen linkage
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     // Rollback both
     await supabase.auth.admin.deleteUser(userId);
     await supabase.from("canteens").delete().eq("id", canteen.id);
-    return Response.json({ error: "Failed to create profile: " + profileError.message }, { status: 500 });
+    return Response.json({ error: "Failed to create user profile." }, { status: 500 });
   }
 
   return Response.json({

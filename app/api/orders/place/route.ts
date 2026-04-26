@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
+const MAX_CART_ITEMS = 20; // prevent DoS via oversized payloads
+
 export async function POST(req: NextRequest) {
   // Authenticate caller
   const context = await getRequestContext(req);
@@ -14,13 +16,66 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return Response.json({ error: "Invalid body" }, { status: 400 });
 
-  const { canteenId, cartItems, total, slotLabel, paymentId } = body;
+  const { canteenId, cartItems, slotLabel, paymentId } = body;
+  // NOTE: `total` is intentionally NOT trusted from client — we recalculate server-side
 
-  if (!canteenId || !cartItems?.length || !total) {
-    return Response.json({ error: "Missing required fields" }, { status: 400 });
+  if (!canteenId || typeof canteenId !== "string" || canteenId.length > 100) {
+    return Response.json({ error: "Missing or invalid canteenId" }, { status: 400 });
+  }
+  if (!Array.isArray(cartItems) || cartItems.length === 0) {
+    return Response.json({ error: "Cart is empty" }, { status: 400 });
+  }
+  if (cartItems.length > MAX_CART_ITEMS) {
+    return Response.json({ error: `Cart cannot exceed ${MAX_CART_ITEMS} items` }, { status: 400 });
+  }
+
+  // Validate every cart item has a string id and positive integer qty
+  for (const item of cartItems) {
+    if (!item?.id || typeof item.id !== "string") {
+      return Response.json({ error: "Invalid cart item: missing id" }, { status: 400 });
+    }
+    const qty = Number(item.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 50) {
+      return Response.json({ error: "Invalid quantity in cart" }, { status: 400 });
+    }
   }
 
   const supabase = createAdminClient();
+
+  // ── SERVER-SIDE PRICE CALCULATION ────────────────────────────────────────
+  // Fetch authoritative prices from the database — never trust client-supplied prices.
+  const itemIds = [...new Set(cartItems.map((i: { id: string }) => i.id))];
+  const { data: menuRows, error: menuErr } = await supabase
+    .from("menu_items")
+    .select("id, price, is_available, canteen_id")
+    .in("id", itemIds)
+    .eq("canteen_id", canteenId);
+
+  if (menuErr) {
+    return Response.json({ error: "Failed to verify menu prices" }, { status: 500 });
+  }
+
+  const menuMap = new Map((menuRows ?? []).map((m: { id: string; price: number; is_available: boolean; canteen_id: string }) => [m.id, m]));
+
+  // Build verified order items and compute server-authoritative total
+  const verifiedItems: { menu_item_id: string; quantity: number; unit_price: number }[] = [];
+  let serverTotal = 0;
+
+  for (const item of cartItems) {
+    const menuItem = menuMap.get(item.id);
+    if (!menuItem) {
+      return Response.json({ error: `Item "${item.id}" not found in this canteen's menu` }, { status: 400 });
+    }
+    if (menuItem.is_available === false) {
+      return Response.json({ error: "One or more items are currently unavailable" }, { status: 400 });
+    }
+    const qty = Number(item.qty);
+    verifiedItems.push({ menu_item_id: item.id, quantity: qty, unit_price: menuItem.price });
+    serverTotal += menuItem.price * qty;
+  }
+
+  // Round to 2 decimal places to avoid floating-point accumulation
+  serverTotal = Math.round(serverTotal * 100) / 100;
 
   // Generate 4-digit OTP
   const otp = String(Math.floor(1000 + Math.random() * 9000));
@@ -39,7 +94,7 @@ export async function POST(req: NextRequest) {
   const binColor = bin?.color ?? ["red", "blue", "green", "yellow"][Math.floor(Math.random() * 4)];
 
   // Find matching time slot
-  const slotName = slotLabel ? slotLabel.split(" ")[0] : "";
+  const slotName = slotLabel ? String(slotLabel).split(" ")[0] : "";
   const { data: slotRows } = slotName
     ? await supabase
         .from("time_slots")
@@ -50,38 +105,37 @@ export async function POST(req: NextRequest) {
     : { data: null };
   const slotId = slotRows?.[0]?.id ?? null;
 
-  // Create the order
+  // Create the order using the server-calculated total
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .insert({
       user_id: context.uid,
       canteen_id: canteenId,
-      total_amount: total,
+      total_amount: serverTotal,
       status: "placed",
       otp,
-      payment_id: paymentId ?? null,
+      payment_id: (typeof paymentId === "string" && paymentId.length <= 100) ? paymentId : null,
       slot_id: slotId,
       bin_id: bin?.id ?? null,
       bin_label: binLabel,
       bin_color: binColor,
-      slot_label: slotLabel ?? null,
+      slot_label: slotLabel ? String(slotLabel).slice(0, 100) : null,
     })
     .select("id")
     .single();
 
   if (orderError || !order) {
-    console.error("Order creation error:", orderError);
     return Response.json({ error: "Failed to create order" }, { status: 500 });
   }
 
-  // Insert order items
-  if (cartItems.length > 0) {
+  // Insert order items with server-verified prices
+  if (verifiedItems.length > 0) {
     await supabase.from("order_items").insert(
-      cartItems.map((item: { id: string; name: string; price: number; qty: number }) => ({
+      verifiedItems.map(item => ({
         order_id: order.id,
-        menu_item_id: item.id,
-        quantity: item.qty,
-        unit_price: item.price,
+        menu_item_id: item.menu_item_id,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
       }))
     );
   }
@@ -94,5 +148,5 @@ export async function POST(req: NextRequest) {
       .eq("id", bin.id);
   }
 
-  return Response.json({ orderId: order.id, otp, binLabel, binColor });
+  return Response.json({ orderId: order.id, otp, binLabel, binColor, total: serverTotal });
 }

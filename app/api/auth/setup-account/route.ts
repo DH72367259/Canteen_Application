@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     },
   });
   if (updateErr) {
-    return Response.json({ error: updateErr.message }, { status: 500 });
+    return Response.json({ error: "Failed to complete account setup. Please try again." }, { status: 500 });
   }
 
   // Update profiles row with name, username, and phone
@@ -88,8 +88,8 @@ export async function POST(request: Request) {
     .eq("id", ctx.uid);
 
   if (profileErr) {
-    // Non-fatal: auth is set up correctly; profile update failure is recoverable
-    console.error("Profile update failed after account setup:", profileErr.message);
+    // Non-fatal: auth is set up correctly; profile update failure is recoverable.
+    // Do NOT log profileErr.message in production — it may contain schema details.
   }
 
   return Response.json({ success: true });

@@ -38,6 +38,6 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     .select("*")
     .single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: "Failed to update support ticket." }, { status: 500 });
   return Response.json({ success: true, ticket: data });
 }

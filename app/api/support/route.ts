@@ -119,6 +119,6 @@ export async function POST(request: Request) {
     .select("*")
     .single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: "Failed to create support ticket." }, { status: 500 });
   return Response.json({ success: true, ticket: data }, { status: 201 });
 }

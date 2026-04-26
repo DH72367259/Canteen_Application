@@ -7,14 +7,25 @@ import { NextRequest, NextResponse } from "next/server";
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
 const RATE_LIMITS: { pattern: RegExp; limit: number; windowMs: number }[] = [
-  // Payment endpoints — very tight: 10 requests per minute per IP
-  { pattern: /^\/api\/payments\//, limit: 10, windowMs: 60_000 },
+  // Auth brute-force protection — strictest limits
+  { pattern: /^\/api\/auth\/resolve-username/, limit: 20,  windowMs: 60_000 },
+  { pattern: /^\/api\/auth\/phone/,             limit: 10,  windowMs: 60_000 },
+  { pattern: /^\/api\/auth\/setup-account/,     limit: 10,  windowMs: 60_000 },
+  { pattern: /^\/api\/auth\/change-password/,   limit: 10,  windowMs: 60_000 },
+  { pattern: /^\/api\/auth\/session/,           limit: 60,  windowMs: 60_000 },
+  // Wallet withdraw — very sensitive money movement
+  { pattern: /^\/api\/wallet\/withdraw/,        limit: 10,  windowMs: 60_000 },
+  { pattern: /^\/api\/wallet\//,                limit: 30,  windowMs: 60_000 },
+  // Order placement
+  { pattern: /^\/api\/orders\/place/,           limit: 30,  windowMs: 60_000 },
+  // Payment endpoints — 10 requests per minute per IP
+  { pattern: /^\/api\/payments\//,              limit: 10,  windowMs: 60_000 },
   // Auth-adjacent admin endpoints — 30 per minute
-  { pattern: /^\/api\/admin\//, limit: 30, windowMs: 60_000 },
+  { pattern: /^\/api\/admin\//,                 limit: 30,  windowMs: 60_000 },
   // Canteen toggle — 20 per minute
-  { pattern: /^\/api\/canteens\//, limit: 20, windowMs: 60_000 },
+  { pattern: /^\/api\/canteens\//,              limit: 20,  windowMs: 60_000 },
   // All other API routes — 120 per minute
-  { pattern: /^\/api\//, limit: 120, windowMs: 60_000 },
+  { pattern: /^\/api\//,                        limit: 120, windowMs: 60_000 },
 ];
 
 function getClientIp(req: NextRequest): string {

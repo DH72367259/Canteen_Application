@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   if (authError) {
     const msg = authError.message.includes("already registered")
       ? "A user with this email already exists."
-      : authError.message;
+      : "Failed to create user account.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
   if (profileError) {
     await supabase.auth.admin.deleteUser(userId);
-    return NextResponse.json({ error: "Failed to create profile: " + profileError.message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create user profile." }, { status: 500 });
   }
 
   return NextResponse.json({ success: true, uid: userId, email: email.trim().toLowerCase(), name: name.trim(), role });
@@ -102,7 +102,7 @@ export async function PATCH(request: Request) {
   if (new_password) {
     if (new_password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
     const { error: pwErr } = await supabase.auth.admin.updateUserById(uid, { password: new_password });
-    if (pwErr) return NextResponse.json({ error: "Failed to reset password: " + pwErr.message }, { status: 500 });
+    if (pwErr) return NextResponse.json({ error: "Failed to reset password." }, { status: 500 });
     // Update metadata: keep has_password: true, refresh password_changed_at
     await supabase.auth.admin.updateUserById(uid, {
       user_metadata: { has_password: true, password_changed_at: new Date().toISOString(), must_change_password: false },
@@ -117,7 +117,7 @@ export async function PATCH(request: Request) {
 
   if (Object.keys(update).length > 0) {
     const { error: profileErr } = await supabase.from("profiles").update(update).eq("id", uid);
-    if (profileErr) return NextResponse.json({ error: "Profile update failed: " + profileErr.message }, { status: 500 });
+    if (profileErr) return NextResponse.json({ error: "Failed to update user profile." }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });
@@ -139,7 +139,7 @@ export async function DELETE(request: Request) {
 
   const supabase = createAdminClient();
   const { error } = await supabase.auth.admin.deleteUser(uid);
-  if (error) return NextResponse.json({ error: "Failed to delete user: " + error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Failed to delete user." }, { status: 500 });
 
   return NextResponse.json({ success: true });
 }

@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Failed to update password. Please try again." }, { status: 500 });
   }
 
   return Response.json({ success: true });
