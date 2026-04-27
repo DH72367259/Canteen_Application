@@ -13,6 +13,19 @@ interface ActiveOrder {
   slot: string;
 }
 
+interface ApiCanteen {
+  id: string;
+  name: string;
+  college: string | null;
+  city: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  status: string | null;
+  is_active: boolean;
+  distance_km: number | null;
+}
+
 // Campus area coordinates — update lat/lng to real values for your campus
 const CANTEENS = [
   { id: "c1", name: "Main Canteen",      desc: "Breakfast · Lunch · Dinner", emoji: "🍱", status: "open",   nextSlot: "12:30 PM",   items: 42, rating: 4.6, location: "Main Building", lat: 12.9716, lng: 77.5946 },
@@ -51,6 +64,10 @@ export default function UserHomePage() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showAll, setShowAll] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Live data from Phase 4 APIs ───────────────────────────────────
+  const [apiCanteens, setApiCanteens] = useState<ApiCanteen[] | null>(null);
+  const [colleges, setColleges] = useState<string[]>([]);
 
   // Auth guard — redirect unauthenticated users to login;
   // redirect privileged users (admin/vendor/worker) to their correct dashboards so they
@@ -91,6 +108,35 @@ export default function UserHomePage() {
     }
   }, [showLocationPicker]);
 
+  // ── Fetch colleges once ─────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/canteens/colleges")
+      .then(r => r.ok ? r.json() : { colleges: [] })
+      .then((j: { colleges?: string[] }) => { if (!cancelled) setColleges(j.colleges ?? []); })
+      .catch(() => { /* fallback to local LOCATIONS */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Fetch canteens whenever coords/college change ───────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (userCoords) {
+      params.set("lat", String(userCoords.lat));
+      params.set("lng", String(userCoords.lng));
+      params.set("radius_km", String(MAX_RADIUS_KM));
+    }
+    if (selectedLocation && !showAll && colleges.includes(selectedLocation)) {
+      params.set("college", selectedLocation);
+    }
+    fetch(`/api/canteens?${params.toString()}`)
+      .then(r => r.ok ? r.json() : { canteens: [] })
+      .then((j: { canteens?: ApiCanteen[] }) => { if (!cancelled) setApiCanteens(j.canteens ?? []); })
+      .catch(() => { if (!cancelled) setApiCanteens([]); });
+    return () => { cancelled = true; };
+  }, [userCoords, selectedLocation, showAll, colleges]);
+
   const handleSelectLocation = (loc: string) => {
     setSelectedLocation(loc);
     setShowAll(false);
@@ -130,17 +176,35 @@ export default function UserHomePage() {
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
 
   // Text search: only filter when there's a match; otherwise show all (fallback)
+  // Use live colleges from API when available, else fall back to seed LOCATIONS.
+  const baseLocations = colleges.length > 0 ? colleges : LOCATIONS;
   const searchTrimmed = locationSearch.trim();
   const matched = searchTrimmed
-    ? LOCATIONS.filter(l => l.toLowerCase().includes(searchTrimmed.toLowerCase()))
-    : LOCATIONS;
-  const filteredLocations = matched.length > 0 ? matched : LOCATIONS;
+    ? baseLocations.filter(l => l.toLowerCase().includes(searchTrimmed.toLowerCase()))
+    : baseLocations;
+  const filteredLocations = matched.length > 0 ? matched : baseLocations;
   const noMatchFallback = searchTrimmed !== "" && matched.length === 0;
 
-  // Build canteen list with distance attached
-  const canteensWithDist = CANTEENS.map(c => ({
+  // Build canteen list with distance attached.
+  // Prefer live API data (already filtered + sorted server-side); fall back to seed.
+  const baseCanteens = apiCanteens && apiCanteens.length > 0
+    ? apiCanteens.map(c => ({
+        id: c.id,
+        name: c.name,
+        desc: c.address ?? c.city ?? "",
+        emoji: "\uD83C\uDF7D\uFE0F",
+        status: (c.status as "open" | "busy" | "closed" | null) ?? "open",
+        nextSlot: "",
+        items: 0,
+        rating: 4.5,
+        location: c.college ?? c.city ?? "",
+        lat: c.lat ?? 0,
+        lng: c.lng ?? 0,
+      }))
+    : CANTEENS;
+  const canteensWithDist = baseCanteens.map(c => ({
     ...c,
-    distKm: userCoords ? haversineKm(userCoords.lat, userCoords.lng, c.lat, c.lng) : null,
+    distKm: userCoords && c.lat && c.lng ? haversineKm(userCoords.lat, userCoords.lng, c.lat, c.lng) : null,
   }));
 
   // Always enforce 10km radius when GPS is available.
