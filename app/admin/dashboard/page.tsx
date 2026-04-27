@@ -2458,6 +2458,7 @@ interface NotificationRecord {
   body: string;
   recipient_type: string;
   recipient_id: string | null;
+  target_role: string | null;
   created_at: string;
 }
 
@@ -2466,6 +2467,7 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
   const [message, setMessage]     = useState("");
   const [recipientType, setType]  = useState("all");
   const [recipientId, setRid]     = useState("");
+  const [targetRole, setTargetRole] = useState<string>("");
   const [sending, setSending]     = useState(false);
   const [msg, setMsg]             = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [history, setHistory]     = useState<NotificationRecord[]>([]);
@@ -2502,12 +2504,13 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
           message: message.trim(),
           recipient_type: recipientType,
           recipient_id: (recipientType === "canteen" || recipientType === "user") ? recipientId.trim() : undefined,
+          target_role: targetRole || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to send.");
       setMsg({ type: "success", text: "Notification sent successfully!" });
-      setTitle(""); setMessage(""); setRid("");
+      setTitle(""); setMessage(""); setRid(""); setTargetRole("");
       fetchHistory();
     } catch (err) {
       setMsg({ type: "error", text: err instanceof Error ? err.message : "Failed to send notification." });
@@ -2520,6 +2523,15 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
     { value: "all_canteens", label: "All Canteens only" },
     { value: "canteen",      label: "Specific Canteen (by ID)" },
     { value: "user",         label: "Specific User (by ID)" },
+  ];
+
+  const ROLE_OPTS = [
+    { value: "",              label: "— No role filter (use recipient only) —" },
+    { value: "all",           label: "Everyone (all roles)" },
+    { value: "all_staff",     label: "All staff (worker + canteen admin)" },
+    { value: "user",          label: "Students / users only" },
+    { value: "worker",        label: "Workers only" },
+    { value: "canteen_admin", label: "Canteen admins only" },
   ];
 
   const needsId = recipientType === "canteen" || recipientType === "user";
@@ -2583,6 +2595,19 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
               />
             </div>
           )}
+          <div>
+            <label className="form-label">Target Role (optional fan-out)</label>
+            <select
+              className="form-input"
+              value={targetRole}
+              onChange={e => setTargetRole(e.target.value)}
+            >
+              {ROLE_OPTS.map(o => <option key={o.value || "none"} value={o.value}>{o.label}</option>)}
+            </select>
+            <p style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
+              Use this to push to a role group regardless of canteen/user selection.
+            </p>
+          </div>
           {msg && (
             <p style={{ fontSize: "0.85rem", color: msg.type === "success" ? "var(--green)" : "var(--red)", margin: 0 }}>
               {msg.type === "success" ? "✓ " : "⚠ "}{msg.text}
@@ -2625,6 +2650,11 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
                     <span style={{ fontSize: "0.72rem", background: "#e0e7ff", color: "#4338ca", borderRadius: 6, padding: "0.15rem 0.5rem", fontWeight: 600 }}>
                       {RECIPIENT_OPTS.find(o => o.value === n.recipient_type)?.label ?? n.recipient_type}
                     </span>
+                    {n.target_role && (
+                      <span style={{ fontSize: "0.72rem", background: "#fef3c7", color: "#92400e", borderRadius: 6, padding: "0.15rem 0.5rem", fontWeight: 600, marginLeft: "0.35rem" }}>
+                        → {ROLE_OPTS.find(o => o.value === n.target_role)?.label ?? n.target_role}
+                      </span>
+                    )}
                   </div>
                   <span style={{ fontSize: "0.72rem", color: "var(--ink-3, #94a3b8)", whiteSpace: "nowrap" as const, marginTop: "0.1rem" }}>
                     {new Date(n.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
