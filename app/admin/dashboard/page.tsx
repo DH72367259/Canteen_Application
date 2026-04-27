@@ -1001,6 +1001,28 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
   // Delete
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
 
+  // Reset password
+  const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  async function handleResetPassword() {
+    if (!resetTarget || newPwd.length < 8) { setResetError("Password must be at least 8 characters."); return; }
+    setResetBusy(true); setResetError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "PATCH",
+        body: JSON.stringify({ uid: resetTarget.uid, new_password: newPwd }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setResetError(j.error ?? "Failed"); return; }
+      setResetTarget(null); setNewPwd("");
+      alert("Password reset successfully.");
+    } catch { setResetError("Network error"); }
+    finally { setResetBusy(false); }
+  }
+
   async function load() {
     setLoading(true); setError(null);
     try {
@@ -1085,7 +1107,10 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
                 {isSuperAdmin && (
                   <td>
                     {u.role !== "super_admin" && (
-                      <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem", color: "#ef4444" }} onClick={() => setDeleteTarget(u)}>🗑 Delete</button>
+                      <div style={{ display: "flex", gap: "0.35rem" }}>
+                        <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => { setResetTarget(u); setNewPwd(""); setResetError(null); }}>🔑 Reset PW</button>
+                        <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem", color: "#ef4444" }} onClick={() => setDeleteTarget(u)}>🗑 Delete</button>
+                      </div>
                     )}
                   </td>
                 )}
@@ -1127,6 +1152,26 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
               <button className="btn btn-ghost btn-full" onClick={() => setDeleteTarget(null)}>Cancel</button>
               <button className="btn btn-primary btn-full" style={{ background: "#ef4444" }} onClick={handleDelete}>Yes, Delete</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setResetTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3>Reset Password</h3>
+              <button onClick={() => setResetTarget(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+              Setting new password for <strong>{resetTarget.name || "—"}</strong> ({resetTarget.email}) — role: <span className={`tag ${roleTag[resetTarget.role] ?? "tag-gray"}`}>{resetTarget.role}</span>
+            </p>
+            <input className="form-input" type="password" placeholder="New password (min 8 chars)" value={newPwd} onChange={e => setNewPwd(e.target.value)} style={{ marginBottom: "0.75rem" }} />
+            {resetError && <p className="error-msg">{resetError}</p>}
+            <button className="btn btn-primary btn-full" disabled={resetBusy || newPwd.length < 8} onClick={handleResetPassword}>
+              {resetBusy ? "Resetting…" : "Reset Password →"}
+            </button>
           </div>
         </div>
       )}
