@@ -202,7 +202,7 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
       <OrderCard order={currentOrder} binColor={binColor} binCode={binCode} footer={
         <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {!isReady && (
-            <button onClick={() => updateStatus(currentOrder.id, "preparing")} disabled={updating} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 12, padding: "0.8rem", fontWeight: 700, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }}>
+            <button onClick={() => updateStatus(currentOrder.id, "skip")} disabled={updating} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 12, padding: "0.8rem", fontWeight: 700, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }}>
               To Prepare → Next order
             </button>
           )}

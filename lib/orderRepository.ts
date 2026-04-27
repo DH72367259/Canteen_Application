@@ -63,6 +63,9 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
   let query = supabase
     .from("orders")
     .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time)")
+    // Skipped orders go to the back of the queue (NULLS FIRST = un-skipped first when ASC),
+    // then newest first within each bucket.
+    .order("skipped_at", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })
     .limit(limitCount);
   if (canteenId) query = query.eq("canteen_id", canteenId);
