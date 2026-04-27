@@ -110,7 +110,6 @@ export async function GET(request: Request) {
     net_earnings:            r2(completed.reduce((s, o) => s + o.net_earnings, 0)),
     total_paid_by_admin:     r2((paymentsRaw ?? []).reduce((s, p) => s + Number(p.amount_paid), 0)),
   };
-  summary.total_paid_by_admin  // used below
   const pending_payout = r2(Math.max(0, summary.net_earnings - summary.total_paid_by_admin));
 
   return Response.json({

@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, session, loading, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
 
   // Auth guard

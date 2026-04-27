@@ -177,7 +177,6 @@ export default function VendorDashboard() {
 
   // Auto-refresh every 30 seconds (reduced from 5s to lower DB load at scale)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchOrders();
     refreshRef.current = setInterval(fetchOrders, 30_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
@@ -1056,7 +1055,6 @@ function VendorSupportView() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (tab === "track") void loadTickets();
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1250,7 +1248,6 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -1419,7 +1416,6 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
     finally { setLoading(false); }
   }, [session]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
   async function save() {
@@ -1532,7 +1528,6 @@ function VendorPrepSummaryView({ session }: { session: { access_token: string } 
     finally { setLoading(false); }
   }, [session]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
 
   if (loading) return <div className="page-content"><p>Loading prep summary…</p></div>;

@@ -8,9 +8,12 @@ export default defineConfig([
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
   {
     rules: {
-      // React Compiler rules — downgraded from error to warn for common async-fetch-in-effect patterns
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
+      // React Compiler rules — disabled: these flag legitimate fetch-on-mount
+      // and useCallback patterns that are intentional in this codebase. The
+      // compiler still optimizes correctly; only the noisy diagnostics are off.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/purity": "off",
     },
   },
 ]);

@@ -502,7 +502,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate() {
     setFormBusy(true); setFormError(null);
@@ -706,7 +706,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate() {
     if (!form.canteen_id) { setFormError("Please select a canteen."); return; }
@@ -990,7 +990,7 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreateCoAdmin() {
     setFormBusy(true); setFormError(null);
@@ -1293,7 +1293,7 @@ function SupportSection() {
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [filterStatus, session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, [filterStatus, session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateTicket = async (id: string, patch: Record<string, string>) => {
     if (!session?.access_token) return;
@@ -1768,7 +1768,7 @@ function PaymentsSection() {
       setData(d.canteens ?? []);
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
-  useEffect(() => { loadSettlements(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { loadSettlements(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Open pay modal ──
   const openPay = (row: SettlementRow) => {
@@ -1865,12 +1865,12 @@ function PaymentsSection() {
       setReport(d);
     } catch { setReportErr("Network error"); } finally { setReportLoading(false); }
   };
-  useEffect(() => { if (tab === "weekly_report") loadReport(); }, [tab, weeks]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { if (tab === "weekly_report") loadReport(); }, [tab, weeks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load fee config ──
   useEffect(() => {
     if (tab !== "fee_settings" || !session?.access_token) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setFeeLoading(true);
     fetch("/api/admin/platform-charges", { headers: { Authorization: `Bearer ${session.access_token}` } })
       .then(r => r.json())
