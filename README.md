@@ -36,8 +36,9 @@ convenience fee and get priority pickup — every order, every day.
 21. [API Reference](#api-reference)
 22. [Database Schema](#database-schema)
 23. [Troubleshooting](#troubleshooting)
-24. [Recent Changelog](#recent-changelog)
-25. [Developer TODO](#developer-todo)
+24. [Phase 1–5 Roadmap](#phase-15-roadmap-smart-slot--workers--canteen--discovery--notifications)
+25. [Recent Changelog](#recent-changelog)
+26. [Developer TODO](#developer-todo)
 
 ---
 
@@ -1061,6 +1062,45 @@ Razorpay webhook (payment.failed)
 |--------|------|-------------|
 | GET | `/api/canteen/earnings` | Vendor's own earnings summary (canteen-scoped, JWT-gated) |
 
+### Vendor (Canteen Admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/canteen/earnings` | Vendor's own earnings summary (canteen-scoped, JWT-gated) |
+| GET | `/api/canteen/slot-control` | Read slot/bin/grace/fee config + auto-derived caps + generated time-slot windows |
+| PATCH | `/api/canteen/slot-control` | Update `max_bins`, `slot_duration_mins`, meal-period windows, fees — caps recompute server-side |
+| GET | `/api/canteen/prep-summary` | Per-slot batched vs made-to-order item counts (active orders only) |
+| GET | `/api/canteen/live-orders` | Live orders for this canteen, grouped by slot (auto-refresh source) |
+| GET | `/api/canteen/menu` | List this canteen's menu items (with `availability_type`, `is_meal`, `enabled`) |
+| POST | `/api/canteen/menu` | Create menu item (canteen scoped from JWT) |
+| PATCH | `/api/canteen/menu/[id]` | Update menu item (price, availability, meal flag, enabled) |
+| DELETE | `/api/canteen/menu/[id]` | Delete menu item |
+
+### Worker
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/bins` | List bin states for the worker's canteen |
+| PATCH | `/api/bins/[id]` | Transition bin state (`empty` → `loaded` → `dispatched` → `returned`) |
+| POST | `/api/bins/grace-override` | Open a grace bin when current slot fills (logs override + audit) |
+| PATCH | `/api/orders/[id]/status` | Worker status updates incl. `skip` → back-of-queue |
+
+### User Discovery & Cart
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/canteens` | Live canteen list with optional `lat`, `lng`, `radius`, `college`, `search` filters |
+| GET | `/api/canteens/colleges` | Distinct college list for the location-picker dropdown |
+| POST | `/api/cart/check` | Pre-checkout validation: returns `slot_full`, `extra_bin_required`, `extra_bin_fee_paise`, current slot capacity |
+
+### Notifications
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/notifications` | List notifications visible to caller (filtered by role + recipient + `target_role`) |
+| POST | `/api/notifications` | Super-admin push — supports `target_role` fan-out (`all`, `all_staff`, `user`, `worker`, `canteen_admin`) |
+| PATCH | `/api/notifications` | Mark notification IDs as read for the caller |
+
 ### General
 
 | Method | Path | Description |
@@ -1161,10 +1201,91 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 ---
 
+## Phase 1–5 Roadmap (Smart Slot + Workers + Canteen + Discovery + Notifications)
+
+### Phase Summary
+
+| Phase | Focus | Status | Key Commit |
+|-------|-------|--------|-----------|
+| 1 | Foundational data layer — `slot_control`, bin state machine, `menu_items` extensions, notifications `target_role`, `lib/slotCapacity.ts` | ✅ Shipped | `26a664d` |
+| 2 | Worker app — skip-to-back-of-queue + grace-bin override + bin sync | ✅ Shipped | `ddbe1a9` |
+| 3 | Canteen dashboard — slot-control UI, prep-summary, live-orders, menu CRUD | ✅ Shipped | `3b4b3b3` |
+| 4 | User app — live `/api/canteens` discovery, college dropdown, cart slot-full + extra-bin warnings | ✅ Shipped | `49df44b`, `53fbead` |
+| 5 | Notifications — user-side bell + 30s polling + admin `target_role` push UI | ✅ Shipped | `4d881d9`, `3646616` |
+
+### Slot Capacity Rules (auto-derived from `max_bins`)
+
+| Cap | Formula | Example (max_bins = 20) |
+|-----|---------|-------------------------|
+| `max_orders_per_slot` | `floor(max_bins * 0.75)` | 15 |
+| `batched_prepared_cap` | `floor(max_orders_per_slot * 0.70)` | 10 |
+| `made_to_order_cap` | `max_orders_per_slot - batched_prepared_cap` | 5 |
+| `buffer_bins` | `floor(max_bins * 0.25)` | 5 |
+| `grace_bin` | Manual override only (worker-triggered) | n/a |
+
+### Bin State Machine
+
+| State | Trigger | Next State(s) |
+|-------|---------|---------------|
+| `empty` | Initial / after `returned` | `loaded` |
+| `loaded` | Worker fills bin for slot | `dispatched` |
+| `dispatched` | Bin handed to slot/runner | `returned` |
+| `returned` | Bin comes back empty | `empty` |
+| `grace` | Grace-override opened by worker when slot is full | `loaded` |
+
+### Notification `target_role` Fan-Out
+
+| `target_role` | Recipients |
+|---------------|------------|
+| _(omitted)_ | Falls back to `recipient_type` only |
+| `all` | Every signed-in user across all roles |
+| `all_staff` | Workers + canteen admins |
+| `user` | Students / end-users only |
+| `worker` | Workers only |
+| `canteen_admin` | Canteen admins only |
+
+### Cart Pre-Check Response (`POST /api/cart/check`)
+
+| Field | Type | Meaning |
+|-------|------|--------|
+| `slot_full` | `boolean` | True when current slot has hit `max_orders_per_slot` |
+| `extra_bin_required` | `boolean` | True when batched/made-to-order caps push order into a buffer bin |
+| `extra_bin_fee_paise` | `number` | Surcharge added to total when `extra_bin_required` is true |
+| `slot` | `string` | The slot label the order would fall into (e.g. `12:30–12:45`) |
+| `caps` | `object` | Snapshot of the canteen's current `max_orders_per_slot`, batched, made-to-order |
+
+### Test Coverage
+
+| Suite | Tests | Focus |
+|-------|-------|-------|
+| `__tests__/slotCapacity.test.ts` | core | Capacity math + window generation |
+| `__tests__/roleChecks.test.ts` | core | RLS / role guard helpers |
+| `__tests__/api.bins.worker.test.ts` | worker | Bin state transitions + grace override |
+| `__tests__/api.orders.status.worker.test.ts` | worker | Skip→back-of-queue + status updates |
+| `__tests__/api.canteen.phase3.test.ts` | canteen | Slot-control / prep-summary / menu CRUD |
+| `__tests__/api.user.phase4.test.ts` | user | `/api/canteens`, `/api/canteens/colleges`, `/api/cart/check` |
+| `__tests__/api.notifications.phase5.test.ts` | notif | `target_role` validation + persistence |
+| `__tests__/api.admin.canteens.test.ts` | admin | Canteen CRUD |
+| `__tests__/api.admin.users.test.ts` | admin | User listing |
+| `__tests__/api.auth-and-notifications.test.ts` | shared | Auth + notification read/list |
+| **Total** | **128 / 128 passing** | 10 suites |
+
+---
+
 ## Recent Changelog
 
 | Commit | Description |
 |--------|-------------|
+| `3646616` | feat(phase5): admin UI — `target_role` push notifications (form select + history badge) |
+| `4d881d9` | feat(phase5): notification bell on user dashboard + admin `target_role` push backend |
+| `49df44b` | feat(phase4): user home wired to live `/api/canteens` + colleges dropdown |
+| `53fbead` | feat(phase4): cart UI — slot-full warning + extra-bin popup |
+| `2fd0c62` | fix(lint): silence noisy react-compiler diagnostics + cleanup |
+| `95633ee` | feat(phase4): user-app discovery + cart APIs (`/api/canteens`, `/api/canteens/colleges`, `/api/cart/check`) |
+| `af740e6` | fix(vendor-dashboard): resolve react-hooks/set-state-in-effect lints |
+| `3b4b3b3` | feat(phase3): canteen dashboard — slot control + prep summary + menu CRUD |
+| `ddbe1a9` | feat(phase2): worker app skip-to-back-of-queue + grace-bin override + bin sync |
+| `26a664d` | feat(phase1): foundational data layer for slot capacity, bins, items, notifications |
 | `560b5ad` | fix: prevent TOKEN_REFRESHED from demoting admin role; add role-based redirect escape from student page to correct dashboard; fallback timer 3s → 6s |
 | `0869bae` | fix: prevent stale-session redirect on login page tab traversal (loginInitiatedRef + hasSeenNullUserRef guards; dual-scope logout) |
 | `a488c2f` | feat: Admin Payments 4-tab UI (Settlements + Bank Details + Weekly Report + Fee Settings); vendor earnings view; 3 new settlement API routes |
@@ -1192,9 +1313,9 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 ---
 
-**Last updated**: 25 April 2026  
-**Build status**: Passing — 0 TypeScript errors  
-**Deployed**: Railway — auto-deploy from `main` (latest: `560b5ad`)
+**Last updated**: 27 April 2026  
+**Build status**: Passing — 0 TypeScript errors, 0 ESLint warnings, 128/128 Jest tests ✅  
+**Deployed**: Railway — auto-deploy from `main` (latest: `3646616`)
 
 ---
 
