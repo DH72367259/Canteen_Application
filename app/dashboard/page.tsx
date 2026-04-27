@@ -52,7 +52,7 @@ function formatDist(km: number) {
 }
 
 export default function UserHomePage() {
-  const { user, loading, logout } = useAuth();
+  const { user, session, loading, logout } = useAuth();
   const router = useRouter();
   const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
   const [walletBalance, setWalletBalance] = useState(0);
@@ -68,6 +68,9 @@ export default function UserHomePage() {
   // ── Live data from Phase 4 APIs ───────────────────────────────────
   const [apiCanteens, setApiCanteens] = useState<ApiCanteen[] | null>(null);
   const [colleges, setColleges] = useState<string[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifs, setNotifs] = useState<Array<{ id: string; title: string; body: string; created_at: string; is_read: boolean }>>([]);
 
   // Auth guard — redirect unauthenticated users to login;
   // redirect privileged users (admin/vendor/worker) to their correct dashboards so they
@@ -117,6 +120,40 @@ export default function UserHomePage() {
       .catch(() => { /* fallback to local LOCATIONS */ });
     return () => { cancelled = true; };
   }, []);
+
+  // ── Notifications: fetch unread count every 30s ─────────────────────────
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    const fetchNotifs = async () => {
+      try {
+        const res = await fetch("/api/notifications", { headers: { Authorization: `Bearer ${session.access_token}` } });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled) return;
+        setNotifs(j.notifications ?? []);
+        setUnreadCount(j.unread_count ?? 0);
+      } catch { /* ignore */ }
+    };
+    fetchNotifs();
+    const iv = setInterval(fetchNotifs, 30_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [session?.access_token]);
+
+  const handleOpenNotifs = async () => {
+    setShowNotifs(true);
+    const unreadIds = notifs.filter(n => !n.is_read).map(n => n.id);
+    if (unreadIds.length === 0 || !session?.access_token) return;
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ ids: unreadIds }),
+      });
+      setUnreadCount(0);
+      setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch { /* ignore */ }
+  };
 
   // ── Fetch canteens whenever coords/college change ───────────────────────
   useEffect(() => {
@@ -174,7 +211,6 @@ export default function UserHomePage() {
   };
 
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
-
   // Text search: only filter when there's a match; otherwise show all (fallback)
   // Use live colleges from API when available, else fall back to seed LOCATIONS.
   const baseLocations = colleges.length > 0 ? colleges : LOCATIONS;
@@ -385,6 +421,18 @@ export default function UserHomePage() {
           </div>
         </button>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button
+            onClick={e => { e.stopPropagation(); handleOpenNotifs(); }}
+            title="Notifications"
+            style={{ position: "relative", background: "none", border: "none", fontSize: "1.15rem", cursor: "pointer", padding: "0.2rem" }}
+          >
+            🔔
+            {unreadCount > 0 && (
+              <span style={{ position: "absolute", top: 0, right: 0, background: "#dc2626", color: "#fff", borderRadius: 999, fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.32rem", minWidth: 14, textAlign: "center", lineHeight: 1.4 }}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
           <Link
             href="/dashboard/rewards"
             onClick={e => e.stopPropagation()}
@@ -426,6 +474,30 @@ export default function UserHomePage() {
           </button>
         </div>
       </div>
+
+      {/* ── Notifications panel ── */}
+      {showNotifs && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 90, display: "flex", justifyContent: "flex-end" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowNotifs(false); }}
+        >
+          <div style={{ background: "#fff", width: "100%", maxWidth: 380, height: "100%", padding: "1rem", overflowY: "auto", boxShadow: "-4px 0 20px rgba(0,0,0,0.1)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ fontWeight: 800, fontSize: "1.05rem" }}>🔔 Notifications</h3>
+              <button onClick={() => setShowNotifs(false)} style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
+            </div>
+            {notifs.length === 0 ? (
+              <p style={{ color: "var(--ink-3)", fontSize: "0.85rem", textAlign: "center", marginTop: "2rem" }}>No notifications yet.</p>
+            ) : notifs.map(n => (
+              <div key={n.id} style={{ padding: "0.75rem", marginBottom: "0.5rem", borderRadius: 10, background: n.is_read ? "#f9fafb" : "#fff7ed", border: `1px solid ${n.is_read ? "var(--border)" : "#fed7aa"}` }}>
+                <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: "0.2rem" }}>{n.title}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "0.3rem" }}>{n.body}</div>
+                <div style={{ fontSize: "0.7rem", color: "var(--ink-3)" }}>{new Date(n.created_at).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Active order floating button ── */}
       {activeOrder && (

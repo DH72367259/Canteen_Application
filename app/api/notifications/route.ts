@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { title, message, recipient_type, recipient_id } = body as Record<string, string>;
+  const { title, message, recipient_type, recipient_id, target_role } = body as Record<string, string>;
 
   if (!title?.trim()) return NextResponse.json({ error: "Title is required." }, { status: 400 });
   if (!message?.trim()) return NextResponse.json({ error: "Message is required." }, { status: 400 });
@@ -87,6 +87,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "recipient_id is required for targeted notifications." }, { status: 400 });
   }
 
+  // Phase 5: target_role enables fan-out by role (all/all_staff/user/worker/canteen_admin)
+  const validRoles = ["all", "all_staff", "user", "worker", "canteen_admin"];
+  if (target_role && !validRoles.includes(target_role)) {
+    return NextResponse.json({ error: `target_role must be one of: ${validRoles.join(", ")}.` }, { status: 400 });
+  }
+
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("notifications")
@@ -96,6 +102,7 @@ export async function POST(request: Request) {
       type: "admin",
       recipient_type,
       recipient_id: recipient_id ?? null,
+      target_role: target_role ?? null,
       created_by: auth.uid,
     })
     .select("id")
