@@ -11,14 +11,7 @@ const config: Config = {
     "^.+\\.(ts|tsx)$": [
       "ts-jest",
       {
-        tsconfig: {
-          // Relax settings for test files
-          strict: false,
-          esModuleInterop: true,
-          jsx: "react-jsx",
-          moduleResolution: "node",
-          ignoreDeprecations: "6.0",
-        },
+        tsconfig: "./__tests__/tsconfig.json",
       },
     ],
   },

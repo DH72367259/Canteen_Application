@@ -650,6 +650,14 @@ function LoginContent() {
             <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
               🔐 Passwords are managed by your super admin. Contact them if you need access.
             </p>
+            <div style={{ textAlign: "center", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid var(--line-2)" }}>
+              <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>
+                Canteen worker?{" "}
+                <a href="/worker/login" style={{ color: "var(--orange)", fontWeight: 600, textDecoration: "none" }}>
+                  Sign in here →
+                </a>
+              </p>
+            </div>
           </div>
         )}
 
