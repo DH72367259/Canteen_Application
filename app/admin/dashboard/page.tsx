@@ -128,14 +128,9 @@ function OverviewSection() {
 
 function CanteensSection() {
   const { session } = useAuth();
-  const INIT = [
-    { id: "c1", name: "IIT Bombay – Main Canteen", college: "IIT Bombay", city: "Mumbai", address: "Main Gate Road, IIT Bombay, Powai", lat: "19.1334", lng: "72.9133", gmapLink: "https://maps.google.com/?q=19.1334,72.9133", status: "active" as const, orders: 1240, revenue: "₹1.2L" },
-    { id: "c2", name: "BITS Pilani – Central Mess", college: "BITS Pilani", city: "Rajasthan", address: "BITS Pilani Campus, Pilani, Rajasthan", lat: "28.3670", lng: "75.5882", gmapLink: "https://maps.google.com/?q=28.3670,75.5882", status: "active" as const, orders: 890, revenue: "₹86K" },
-    { id: "c3", name: "NIT Trichy – Block A Caf", college: "NIT Trichy", city: "Chennai", address: "NIT Campus, Tiruchirappalli", lat: "10.7639", lng: "78.8126", gmapLink: "https://maps.google.com/?q=10.7639,78.8126", status: "inactive" as const, orders: 0, revenue: "₹0" },
-    { id: "c4", name: "VIT University – Canteen 2", college: "VIT Vellore", city: "Vellore", address: "VIT University, Vellore, Tamil Nadu", lat: "12.9693", lng: "79.1559", gmapLink: "https://maps.google.com/?q=12.9693,79.1559", status: "active" as const, orders: 560, revenue: "₹55K" },
-  ];
-  type Canteen = typeof INIT[number];
-  const [canteens, setCanteens] = useState<Canteen[]>(INIT);
+  type Canteen = { id: string; name: string; college: string; city: string; address: string; lat: string; lng: string; gmapLink: string; status: "active" | "inactive"; orders: number; revenue: string };
+  const [canteens, setCanteens] = useState<Canteen[]>([]);
+  const [loadingCanteens, setLoadingCanteens] = useState(true);
   const [editing, setEditing] = useState<Canteen | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive", email: "", password: "" });
@@ -154,6 +149,40 @@ function CanteensSection() {
   const [timingsCanteen, setTimingsCanteen] = useState<Canteen | null>(null);
   const [timings, setTimings] = useState<Timing[]>(DEFAULT_TIMINGS);
   const [timingsSaved, setTimingsSaved] = useState(false);
+
+  // Load canteens from DB — no seed data; admin adds them from scratch.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCanteens() {
+      setLoadingCanteens(true);
+      try {
+        const headers: Record<string, string> = {};
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+        const res = await fetch("/api/canteens", { headers });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled) return;
+        const rows: Canteen[] = (j.canteens ?? []).map((c: { id: string; name: string; college?: string | null; city?: string | null; address?: string | null; lat?: number | null; lng?: number | null; is_active?: boolean }) => ({
+          id: c.id,
+          name: c.name,
+          college: c.college ?? "",
+          city: c.city ?? "",
+          address: c.address ?? "",
+          lat: c.lat != null ? String(c.lat) : "",
+          lng: c.lng != null ? String(c.lng) : "",
+          gmapLink: c.lat != null && c.lng != null ? `https://maps.google.com/?q=${c.lat},${c.lng}` : "",
+          status: c.is_active ? "active" : "inactive",
+          orders: 0,
+          revenue: "₹0",
+        }));
+        setCanteens(rows);
+      } finally {
+        if (!cancelled) setLoadingCanteens(false);
+      }
+    }
+    loadCanteens();
+    return () => { cancelled = true; };
+  }, [session]);
 
   // Auto-extract lat/lng when a Google Maps URL is pasted
   const handleGmapLinkChange = (url: string) => {
@@ -260,6 +289,12 @@ function CanteensSection() {
         <table>
           <thead><tr><th>CANTEEN</th><th>COLLEGE</th><th>CITY</th><th>LOCATION</th><th>ORDERS</th><th>REVENUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
           <tbody>
+            {loadingCanteens && (
+              <tr><td colSpan={8} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>Loading…</td></tr>
+            )}
+            {!loadingCanteens && canteens.length === 0 && (
+              <tr><td colSpan={8} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No canteens yet — click <strong>+ Add Canteen</strong> to create one.</td></tr>
+            )}
             {canteens.map(c => (
               <tr key={c.id}>
                 <td style={{ fontWeight: 600 }}>{c.name}</td>
@@ -1114,25 +1149,12 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
 
 
 function CitiesSection() {
-  const INIT_CITIES = [
-    { id: "city1", name: "Mumbai", state: "Maharashtra", colleges: 12, canteens: 8, active: true },
-    { id: "city2", name: "Rajasthan", state: "Rajasthan", colleges: 5, canteens: 3, active: true },
-    { id: "city3", name: "Chennai", state: "Tamil Nadu", colleges: 9, canteens: 6, active: true },
-    { id: "city4", name: "Vellore", state: "Tamil Nadu", colleges: 3, canteens: 2, active: false },
-    { id: "city5", name: "Delhi NCR", state: "Delhi", colleges: 18, canteens: 14, active: true },
-  ];
-  const INIT_COLLEGES = [
-    { id: "col1", name: "IIT Bombay", city: "Mumbai", students: 8200, canteens: 4, active: true },
-    { id: "col2", name: "BITS Pilani", city: "Rajasthan", students: 6500, canteens: 3, active: true },
-    { id: "col3", name: "NIT Trichy", city: "Chennai", students: 5400, canteens: 2, active: true },
-    { id: "col4", name: "VIT Vellore", city: "Vellore", students: 25000, canteens: 6, active: false },
-  ];
-  type City = typeof INIT_CITIES[number];
-  type College = typeof INIT_COLLEGES[number];
+  type City = { id: string; name: string; state: string; colleges: number; canteens: number; active: boolean };
+  type College = { id: string; name: string; city: string; students: number; canteens: number; active: boolean };
 
   const [tab, setTab] = useState<"cities" | "colleges">("cities");
-  const [cities, setCities] = useState<City[]>(INIT_CITIES);
-  const [colleges, setColleges] = useState<College[]>(INIT_COLLEGES);
+  const [cities, setCities] = useState<City[]>([]);
+  const [colleges, setColleges] = useState<College[]>([]);
   const [modal, setModal] = useState<{ type: "city" | "college"; item: City | College | null } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
 
@@ -1487,37 +1509,13 @@ function relativeTime(iso: string) {
 
 
 function AnalyticsSection() {
-  const revenueData = [
-    { month: "Nov", value: 148000 },
-    { month: "Dec", value: 192000 },
-    { month: "Jan", value: 176000 },
-    { month: "Feb", value: 214000 },
-    { month: "Mar", value: 198000 },
-    { month: "Apr", value: 240000 },
-  ];
-  const ordersData = [
-    { month: "Nov", value: 9200 },
-    { month: "Dec", value: 11800 },
-    { month: "Jan", value: 10600 },
-    { month: "Feb", value: 13400 },
-    { month: "Mar", value: 12200 },
-    { month: "Apr", value: 14820 },
-  ];
-  const canteenShare = [
-    { name: "IIT Bombay – Main", pct: 42, color: "#f97316" },
-    { name: "BITS Pilani – Mess", pct: 33, color: "#3b82f6" },
-    { name: "VIT Vellore – Caf 2", pct: 25, color: "#22c55e" },
-  ];
-  const topItems = [
-    { name: "Veg Thali", orders: 4820, revenue: "₹72,300", canteen: "IIT Bombay" },
-    { name: "Masala Dosa", orders: 3940, revenue: "₹59,100", canteen: "VIT Vellore" },
-    { name: "Chicken Curry", orders: 3210, revenue: "₹96,300", canteen: "BITS Pilani" },
-    { name: "Cold Coffee", orders: 2890, revenue: "₹57,800", canteen: "IIT Bombay" },
-    { name: "Samosa (2 pc)", orders: 2640, revenue: "₹26,400", canteen: "VIT Vellore" },
-  ];
+  const revenueData: { month: string; value: number }[] = [];
+  const ordersData: { month: string; value: number }[] = [];
+  const canteenShare: { name: string; pct: number; color: string }[] = [];
+  const topItems: { name: string; orders: number; revenue: string; canteen: string }[] = [];
 
-  const maxRev = Math.max(...revenueData.map(d => d.value));
-  const maxOrd = Math.max(...ordersData.map(d => d.value));
+  const maxRev = Math.max(1, ...revenueData.map(d => d.value));
+  const maxOrd = Math.max(1, ...ordersData.map(d => d.value));
 
   // Build SVG polyline points for revenue line chart
   const chartW = 480, chartH = 120, padX = 10;

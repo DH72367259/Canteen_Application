@@ -445,24 +445,9 @@ function VendorMenuView() {
   type Item = { id: string; name: string; price: number; maxPerSlot: number; enabled: boolean };
   const [meal, setMeal] = useState<MealType>("lunch");
   const [items, setItems] = useState<Record<MealType, Item[]>>({
-    breakfast: [
-      { id: "b1", name: "Poha", price: 30, maxPerSlot: 20, enabled: true },
-      { id: "b2", name: "Idli Sambhar", price: 45, maxPerSlot: 25, enabled: true },
-      { id: "b3", name: "Paratha + Curd", price: 55, maxPerSlot: 15, enabled: false },
-      { id: "b4", name: "Tea / Coffee", price: 15, maxPerSlot: 50, enabled: true },
-    ],
-    lunch: [
-      { id: "l1", name: "Veg Thali", price: 90, maxPerSlot: 30, enabled: true },
-      { id: "l2", name: "Paneer Butter Masala", price: 75, maxPerSlot: 20, enabled: true },
-      { id: "l3", name: "Roti (2 pcs)", price: 20, maxPerSlot: 60, enabled: true },
-      { id: "l4", name: "Chicken Curry", price: 110, maxPerSlot: 15, enabled: true },
-      { id: "l5", name: "Lassi Sweet", price: 35, maxPerSlot: 25, enabled: false },
-    ],
-    dinner: [
-      { id: "d1", name: "Dinner Thali", price: 80, maxPerSlot: 25, enabled: true },
-      { id: "d2", name: "Khichdi", price: 55, maxPerSlot: 20, enabled: true },
-      { id: "d3", name: "Egg Curry", price: 65, maxPerSlot: 12, enabled: false },
-    ],
+    breakfast: [],
+    lunch: [],
+    dinner: [],
   });
 
   const [modal, setModal] = useState<{ item: Item | null } | null>(null);
@@ -576,13 +561,7 @@ function VendorMenuView() {
 
 function VendorSlotsView() {
   type Slot = { id: string; time: string; type: "Breakfast" | "Lunch" | "Dinner" | "Snacks"; capacity: number; booked: number; enabled: boolean };
-  const INIT: Slot[] = [
-    { id: "s1", time: "8:00 AM – 8:30 AM",    type: "Breakfast", capacity: 20, booked: 12, enabled: true },
-    { id: "s2", time: "12:30 PM – 12:45 PM",  type: "Lunch",     capacity: 30, booked: 28, enabled: true },
-    { id: "s3", time: "1:00 PM – 1:15 PM",    type: "Lunch",     capacity: 30, booked: 18, enabled: true },
-    { id: "s4", time: "1:30 PM – 1:45 PM",    type: "Lunch",     capacity: 25, booked: 6,  enabled: true },
-    { id: "s5", time: "8:00 PM – 8:15 PM",    type: "Dinner",    capacity: 20, booked: 0,  enabled: false },
-  ];
+  const INIT: Slot[] = [];
   const [slots, setSlots] = useState<Slot[]>(INIT);
   const [modal, setModal] = useState<Slot | null | false>(false); // null = add new
   const [form, setForm] = useState({ time: "", type: "Lunch" as Slot["type"], capacity: "" });
@@ -704,30 +683,14 @@ function VendorSalesView() {
     <div className="page-content">
       <div className="page-header"><h2>Sales & Earnings</h2></div>
       <div className="stats-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        <div className="stat-card"><div className="stat-num">₹3,240</div><div className="stat-label">Today</div></div>
-        <div className="stat-card"><div className="stat-num">₹21,680</div><div className="stat-label">This Week</div></div>
-        <div className="stat-card"><div className="stat-num">₹86,400</div><div className="stat-label">This Month</div></div>
+        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">Today</div></div>
+        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">This Week</div></div>
+        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">This Month</div></div>
       </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>DATE</th><th>ORDERS</th><th>REVENUE</th><th>AVG ORDER</th></tr></thead>
-          <tbody>
-            {[
-              { date: "Today", orders: 42, revenue: "₹3,240", avg: "₹77" },
-              { date: "Yesterday", orders: 38, revenue: "₹2,940", avg: "₹77" },
-              { date: "Mon", orders: 45, revenue: "₹3,510", avg: "₹78" },
-              { date: "Sun", orders: 22, revenue: "₹1,760", avg: "₹80" },
-              { date: "Sat", orders: 29, revenue: "₹2,260", avg: "₹78" },
-            ].map(r => (
-              <tr key={r.date}>
-                <td>{r.date}</td>
-                <td>{r.orders}</td>
-                <td style={{ fontWeight: 700 }}>{r.revenue}</td>
-                <td style={{ color: "var(--ink-3)" }}>{r.avg}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="empty-state" style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>
+        <span className="empty-icon">📊</span>
+        <h3>No sales yet</h3>
+        <p>Sales will appear here once orders start coming in.</p>
       </div>
     </div>
   );
@@ -817,16 +780,7 @@ function VendorBinsView({ bins, setBins }: { bins: Bin[]; setBins: React.Dispatc
 }
 
 function VendorLogsView() {
-  const LOGS = [
-    { id: 1, time: "1:05 PM", action: "OTP Verified", detail: "Bin #3 · ORD-104 · Rajan M. · OTP: 4291", actor: "Staff", success: true },
-    { id: 2, time: "12:58 PM", action: "Item Hidden", detail: "Chicken Curry hidden from Lunch menu", actor: "Manager", success: true },
-    { id: 3, time: "12:45 PM", action: "OTP Failed", detail: "Bin #1 · ORD-103 · Ananya S. · Wrong OTP attempt", actor: "Staff", success: false },
-    { id: 4, time: "12:30 PM", action: "Slot Opened", detail: "1:30 PM Lunch slot opened – capacity 25", actor: "Manager", success: true },
-    { id: 5, time: "12:15 PM", action: "Manual Override", detail: "Bin #4 → marked Completed (staff override)", actor: "Manager", success: true },
-    { id: 6, time: "11:50 AM", action: "Order Skipped", detail: "ORD-099 · Dev P. · No-show after 20 min", actor: "System", success: false },
-    { id: 7, time: "11:30 AM", action: "Menu Updated", detail: "Poha price changed ₹25 → ₹30", actor: "Manager", success: true },
-    { id: 8, time: "10:00 AM", action: "Canteen Opened", detail: "Canteen status set to OPEN for the day", actor: "Manager", success: true },
-  ];
+  const LOGS: { id: number; time: string; action: string; detail: string; actor: string; success: boolean }[] = [];
   const [filter, setFilter] = useState<"all" | "otp" | "menu" | "override">("all");
 
   const filtered = LOGS.filter(l => {
@@ -867,18 +821,18 @@ function VendorLogsView() {
 }
 
 function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: boolean; setCanteenOpen: (v: boolean) => void }) {
-  const [name, setName] = useState("Central Canteen");
-  const [location, setLocation] = useState("Block A, Ground Floor");
-  const [phone, setPhone] = useState("+91 90000 00000");
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [phone, setPhone] = useState("");
   const [saved, setSaved] = useState(false);
 
   // Operating hours — editable, stored in localStorage
   type HourRow = { day: string; opens: string; closes: string; active: boolean };
   const HOURS_KEY = "vendor_operating_hours";
   const DEFAULT_HOURS: HourRow[] = [
-    { day: "Monday – Friday", opens: "07:30", closes: "21:00", active: true },
-    { day: "Saturday",        opens: "08:00", closes: "17:00", active: true },
-    { day: "Sunday",          opens: "08:00", closes: "17:00", active: false },
+    { day: "Monday – Friday", opens: "", closes: "", active: false },
+    { day: "Saturday",        opens: "", closes: "", active: false },
+    { day: "Sunday",          opens: "", closes: "", active: false },
   ];
   const [hours, setHours] = useState<HourRow[]>(() => {
     if (typeof window === "undefined") return DEFAULT_HOURS;

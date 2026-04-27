@@ -4,32 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
-const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {
-  c1: { name: "Main Canteen",       emoji: "🍱", desc: "Breakfast · Lunch · Dinner",  status: "open"   },
-  c2: { name: "Snack Corner",       emoji: "☕", desc: "Snacks · Tea · Coffee",        status: "busy"   },
-  c3: { name: "Hostel Mess",        emoji: "🥘", desc: "Breakfast · Dinner",           status: "open"   },
-  c4: { name: "Ground Floor Cafe",  emoji: "🥗", desc: "All Day Dining",              status: "closed" },
-};
+// Canteen + menu data is loaded from Supabase per canteen — no seed data.
+// Until wired to /api/canteens/[id] + /api/canteen/menu, the page renders empty states.
+const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {};
 
 const MENU: Record<string, { id: string; name: string; price: number; desc: string; veg: boolean; category: string }[]> = {
-  breakfast: [
-    { id: "b1", name: "Poha", price: 30, desc: "Flattened rice with peas, onion & lemon", veg: true, category: "breakfast" },
-    { id: "b2", name: "Idli Sambhar (4 pcs)", price: 45, desc: "Soft idli with hot sambhar and chutney", veg: true, category: "breakfast" },
-    { id: "b3", name: "Paratha with Curd", price: 55, desc: "Butter paratha with fresh curd & pickle", veg: true, category: "breakfast" },
-    { id: "b4", name: "Tea / Coffee", price: 15, desc: "Freshly brewed hot beverage", veg: true, category: "breakfast" },
-  ],
-  lunch: [
-    { id: "l1", name: "Thali – Veg", price: 90, desc: "Dal, 2 sabzi, rice, roti, papad, pickle", veg: true, category: "lunch" },
-    { id: "l2", name: "Paneer Butter Masala", price: 75, desc: "Rich tomato gravy with cottage cheese", veg: true, category: "lunch" },
-    { id: "l3", name: "Roti (2 pcs)", price: 20, desc: "Freshly made whole wheat roti", veg: true, category: "lunch" },
-    { id: "l4", name: "Chicken Curry", price: 110, desc: "Spiced chicken curry with gravy", veg: false, category: "lunch" },
-    { id: "l5", name: "Lassi (Sweet)", price: 35, desc: "Chilled sweet lassi", veg: true, category: "lunch" },
-  ],
-  dinner: [
-    { id: "d1", name: "Dinner Thali", price: 80, desc: "Dal, 1 sabzi, rice, roti, dessert", veg: true, category: "dinner" },
-    { id: "d2", name: "Khichdi", price: 55, desc: "Comforting moong dal khichdi with ghee", veg: true, category: "dinner" },
-    { id: "d3", name: "Egg Curry", price: 65, desc: "Spiced egg curry with 2 eggs", veg: false, category: "dinner" },
-  ],
+  breakfast: [],
+  lunch: [],
+  dinner: [],
 };
 
 type CartItem = { id: string; name: string; price: number; qty: number };
@@ -38,7 +20,7 @@ export default function CanteenMenuPage() {
   const params = useParams();
   const router = useRouter();
   const canteenId = (params.canteenId as string) || "c1";
-  const info = CANTEEN_INFO[canteenId] || CANTEEN_INFO.c1;
+  const info = CANTEEN_INFO[canteenId] || { name: "Canteen", emoji: "🍽️", desc: "", status: "open" as const };
   const isClosed = info.status === "closed";
 
   const [meal, setMeal] = useState<"breakfast" | "lunch" | "dinner">("lunch");

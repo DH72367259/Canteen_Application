@@ -26,15 +26,10 @@ interface ApiCanteen {
   distance_km: number | null;
 }
 
-// Campus area coordinates — update lat/lng to real values for your campus
-const CANTEENS = [
-  { id: "c1", name: "Main Canteen",      desc: "Breakfast · Lunch · Dinner", emoji: "🍱", status: "open",   nextSlot: "12:30 PM",   items: 42, rating: 4.6, location: "Main Building", lat: 12.9716, lng: 77.5946 },
-  { id: "c2", name: "Snack Corner",      desc: "Snacks · Tea · Coffee",       emoji: "☕", status: "busy",   nextSlot: "11:45 AM",   items: 18, rating: 4.3, location: "North Block",   lat: 12.9726, lng: 77.5950 },
-  { id: "c3", name: "Hostel Mess",       desc: "Breakfast · Dinner",          emoji: "🥘", status: "open",   nextSlot: "7:30 AM",    items: 12, rating: 4.1, location: "Hostel",        lat: 12.9730, lng: 77.5940 },
-  { id: "c4", name: "Ground Floor Cafe", desc: "All Day Dining",              emoji: "🥗", status: "closed", nextSlot: "Opens 8 AM", items: 28, rating: 4.4, location: "South Block",   lat: 12.9706, lng: 77.5948 },
-];
+// Canteens are loaded live from /api/canteens (Phase 4) — no seed data.
+const CANTEENS: { id: string; name: string; desc: string; emoji: string; status: string; nextSlot: string; items: number; rating: number; location: string; lat: number; lng: number }[] = [];
 
-const LOCATIONS = Array.from(new Set(CANTEENS.map(c => c.location)));
+const LOCATIONS: string[] = [];
 const MAX_RADIUS_KM = 10;
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
