@@ -1574,24 +1574,24 @@ function AnalyticsSection() {
       {/* KPI row */}
       <div className="stats-row">
         <div className="stat-card">
-          <div className="stat-num">₹2.4L</div>
+          <div className="stat-num">₹0</div>
           <div className="stat-label">Revenue This Month</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 21% vs last month</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">14,820</div>
+          <div className="stat-num">0</div>
           <div className="stat-label">Orders This Month</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 18% vs last month</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">2,841</div>
+          <div className="stat-num">0</div>
           <div className="stat-label">Active Users</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--green)", marginTop: 2 }}>▲ 128 new this week</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num" style={{ color: "var(--green)" }}>4.4★</div>
+          <div className="stat-num" style={{ color: "var(--ink-3)" }}>—</div>
           <div className="stat-label">Avg Platform Rating</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>across 3 canteens</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No ratings yet</div>
         </div>
       </div>
 
@@ -1661,7 +1661,7 @@ function AnalyticsSection() {
                 style={{ transform: "rotate(-90deg)", transformOrigin: `${donutCX}px ${donutCY}px` }}
               />
             ))}
-            <text x={donutCX} y={donutCY - 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#111">₹2.4L</text>
+            <text x={donutCX} y={donutCY - 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#111">₹0</text>
             <text x={donutCX} y={donutCY + 10} textAnchor="middle" fontSize="7" fill="#6b7280">total</text>
           </svg>
           <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
