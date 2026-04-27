@@ -17,8 +17,12 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
     placed: "received", confirmed: "preparing", preparing: "preparing",
     ready_for_placement: "ready", placed_in_bin: "ready",
     ready_for_pickup: "ready", collected: "completed", cancelled: "cancelled",
+    grace_bin: "ready",
   };
   const rawSt = String(row.status ?? "placed");
+
+  const binRow  = row.bins  as Record<string, unknown> | null;
+  const slotRow = row.time_slots as Record<string, unknown> | null;
 
   return {
     id:           String(row.id),
@@ -34,8 +38,10 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
                     ? String((row.canteens as Record<string, unknown>).name) : undefined,
     paymentId:    row.payment_id ? String(row.payment_id) : undefined,
     otp:          row.otp ? String(row.otp) : undefined,
-    binLabel:     row.bin_label ? String(row.bin_label) : undefined,
-    binColor:     row.bin_color ? String(row.bin_color) : undefined,
+    binLabel:     binRow?.bin_code ? String(binRow.bin_code) : (row.bin_label ? String(row.bin_label) : undefined),
+    binColor:     binRow?.color ? String(binRow.color) : (row.bin_color ? String(row.bin_color) : undefined),
+    binId:        row.bin_id ? String(row.bin_id) : undefined,
+    pickupSlot:   slotRow?.slot_name ? String(slotRow.slot_name) : undefined,
     slotLabel:    row.slot_label ? String(row.slot_label) : undefined,
   };
 }
@@ -52,13 +58,15 @@ export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
   return (data ?? []).map((row) => toCanteenOrder(row as Record<string, unknown>));
 }
 
-export async function listRecentOrders(limitCount = 100): Promise<CanteenOrder[]> {
+export async function listRecentOrders(limitCount = 100, canteenId?: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("orders")
-    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name)")
+    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time)")
     .order("created_at", { ascending: false })
     .limit(limitCount);
+  if (canteenId) query = query.eq("canteen_id", canteenId);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => toCanteenOrder(row as Record<string, unknown>));
 }

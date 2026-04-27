@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
-type AdminSection = "overview" | "canteens" | "users" | "managers" | "cities" | "analytics" | "payments" | "support" | "account";
+type AdminSection = "overview" | "canteens" | "users" | "managers" | "cities" | "analytics" | "payments" | "support" | "notifications" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
@@ -15,6 +15,7 @@ const ADMIN_NAV = [
   { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "payments",  icon: "💳", label: "Payments" },
   { id: "support",   icon: "🎧", label: "Support" },
+  { id: "notifications", icon: "🔔", label: "Notifications" },
   { id: "account",   icon: "🔑", label: "My Account" },
 ];
 
@@ -65,8 +66,9 @@ export default function SuperAdminDashboard() {
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments"  && <PaymentsSection />}
         {section === "cities"    && <CitiesSection />}
-        {section === "support"   && <SupportSection />}
-        {section === "account"   && <AccountSection />}
+        {section === "support"       && <SupportSection />}
+        {section === "notifications" && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
+        {section === "account"       && <AccountSection />}
       </main>
     </div>
   );
@@ -2134,6 +2136,194 @@ function AccountSection() {
             {saving ? "Updating…" : "Update Password"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── NOTIFICATIONS SECTION ────────────────────────────────────────────────────
+interface NotificationRecord {
+  id: string;
+  title: string;
+  body: string;
+  recipient_type: string;
+  recipient_id: string | null;
+  created_at: string;
+}
+
+function NotificationsSection({ session, isSuperAdmin }: { session: { access_token?: string } | null; isSuperAdmin: boolean }) {
+  const [title, setTitle]         = useState("");
+  const [message, setMessage]     = useState("");
+  const [recipientType, setType]  = useState("all");
+  const [recipientId, setRid]     = useState("");
+  const [sending, setSending]     = useState(false);
+  const [msg, setMsg]             = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [history, setHistory]     = useState<NotificationRecord[]>([]);
+  const [loadingHist, setLoadingH]= useState(true);
+
+  const fetchHistory = async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await fetch("/api/notifications", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      setHistory(data.notifications ?? []);
+    } catch { /* ignore */ }
+    finally { setLoadingH(false); }
+  };
+
+  useEffect(() => { fetchHistory(); }, []); // eslint-disable-line
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !message.trim()) return;
+    if ((recipientType === "canteen" || recipientType === "user") && !recipientId.trim()) {
+      setMsg({ type: "error", text: "Please enter the recipient ID." });
+      return;
+    }
+    setSending(true); setMsg(null);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          title: title.trim(),
+          message: message.trim(),
+          recipient_type: recipientType,
+          recipient_id: (recipientType === "canteen" || recipientType === "user") ? recipientId.trim() : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to send.");
+      setMsg({ type: "success", text: "Notification sent successfully!" });
+      setTitle(""); setMessage(""); setRid("");
+      fetchHistory();
+    } catch (err) {
+      setMsg({ type: "error", text: err instanceof Error ? err.message : "Failed to send notification." });
+    } finally { setSending(false); }
+  };
+
+  const RECIPIENT_OPTS = [
+    { value: "all",          label: "All Users & Canteens" },
+    { value: "all_users",    label: "All Users only" },
+    { value: "all_canteens", label: "All Canteens only" },
+    { value: "canteen",      label: "Specific Canteen (by ID)" },
+    { value: "user",         label: "Specific User (by ID)" },
+  ];
+
+  const needsId = recipientType === "canteen" || recipientType === "user";
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>🔔 Push Notifications</h2>
+        <span className="tag tag-blue">Broadcast</span>
+      </div>
+
+      {/* Send Form */}
+      <div className="card" style={{ maxWidth: 560, marginBottom: "2rem" }}>
+        <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "1.25rem" }}>Send a Notification</h3>
+        <form onSubmit={handleSend} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div>
+            <label className="form-label">Title</label>
+            <input
+              className="form-input"
+              type="text"
+              maxLength={120}
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Canteen closed today"
+              required
+            />
+          </div>
+          <div>
+            <label className="form-label">Message</label>
+            <textarea
+              className="form-input"
+              rows={3}
+              maxLength={500}
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              placeholder="Enter your message…"
+              required
+              style={{ resize: "vertical", fontFamily: "inherit" }}
+            />
+          </div>
+          <div>
+            <label className="form-label">Send To</label>
+            <select
+              className="form-input"
+              value={recipientType}
+              onChange={e => { setType(e.target.value); setRid(""); }}
+            >
+              {RECIPIENT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {needsId && (
+            <div>
+              <label className="form-label">{recipientType === "canteen" ? "Canteen ID" : "User ID"}</label>
+              <input
+                className="form-input"
+                type="text"
+                value={recipientId}
+                onChange={e => setRid(e.target.value)}
+                placeholder={`Paste the ${recipientType === "canteen" ? "canteen" : "user"} UUID here`}
+                required
+              />
+            </div>
+          )}
+          {msg && (
+            <p style={{ fontSize: "0.85rem", color: msg.type === "success" ? "var(--green)" : "var(--red)", margin: 0 }}>
+              {msg.type === "success" ? "✓ " : "⚠ "}{msg.text}
+            </p>
+          )}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ alignSelf: "flex-start", padding: "0.55rem 1.75rem" }}
+            disabled={sending || !isSuperAdmin}
+          >
+            {sending ? "Sending…" : "📤 Send Notification"}
+          </button>
+          {!isSuperAdmin && (
+            <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>
+              Only super admins can send notifications.
+            </p>
+          )}
+        </form>
+      </div>
+
+      {/* History */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: 0 }}>Recent Notifications</h3>
+          <button className="btn btn-secondary" onClick={fetchHistory} style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}>↻ Refresh</button>
+        </div>
+        {loadingHist ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)", fontSize: "0.85rem" }}>Loading…</div>
+        ) : history.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)", fontSize: "0.85rem" }}>No notifications sent yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+            {history.map(n => (
+              <div key={n.id} style={{ background: "var(--surface-2, #f8fafc)", borderRadius: 10, padding: "0.85rem 1rem", border: "1px solid var(--border, #e2e8f0)" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 700, fontSize: "0.92rem", margin: "0 0 0.2rem" }}>{n.title}</p>
+                    <p style={{ fontSize: "0.84rem", color: "var(--ink-2, #64748b)", margin: "0 0 0.5rem" }}>{n.body}</p>
+                    <span style={{ fontSize: "0.72rem", background: "#e0e7ff", color: "#4338ca", borderRadius: 6, padding: "0.15rem 0.5rem", fontWeight: 600 }}>
+                      {RECIPIENT_OPTS.find(o => o.value === n.recipient_type)?.label ?? n.recipient_type}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3, #94a3b8)", whiteSpace: "nowrap" as const, marginTop: "0.1rem" }}>
+                    {new Date(n.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

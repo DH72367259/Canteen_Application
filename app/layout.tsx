@@ -48,6 +48,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Canteen-Application" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="apple-touch-startup-image" href="/icons/icon-512.png" />
+        {/* Establish connection to Supabase before any JS runs — cuts ~200-400ms on cold loads */}
+        <link rel="preconnect" href="https://dpycfyeiyhzvwbythcrp.supabase.co" />
+        <link rel="dns-prefetch" href="https://dpycfyeiyhzvwbythcrp.supabase.co" />
       </head>
       <body>
         <ServiceWorkerRegistrar />

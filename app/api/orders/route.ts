@@ -59,9 +59,18 @@ export async function GET(request: Request) {
   try {
     const context = await getRequestContext(request);
     if (!context) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    const orders = canManageOrders(context.role)
-      ? await listRecentOrders(200)
-      : await listOrdersForUser(context.uid);
+
+    let orders;
+    if (canManageOrders(context.role)) {
+      // Workers only see their own canteen's orders; admins see all
+      if (context.role === "worker" && context.canteenId) {
+        orders = await listRecentOrders(200, context.canteenId);
+      } else {
+        orders = await listRecentOrders(200);
+      }
+    } else {
+      orders = await listOrdersForUser(context.uid);
+    }
 
     return NextResponse.json({ orders, role: context.role });
   } catch {

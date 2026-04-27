@@ -39,7 +39,7 @@ const PROFILE_CACHE_KEY = 'canteen_profile_v1'
 
 function getCachedProfile(userId: string): Partial<AuthUser> | null {
   try {
-    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY)
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
     if (!raw) return null
     const { uid, data, ts } = JSON.parse(raw)
     if (uid !== userId) return null
@@ -50,12 +50,12 @@ function getCachedProfile(userId: string): Partial<AuthUser> | null {
 
 function setCachedProfile(userId: string, data: Partial<AuthUser>) {
   try {
-    sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: userId, data, ts: Date.now() }))
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: userId, data, ts: Date.now() }))
   } catch { /* SSR safe */ }
 }
 
 function clearProfileCache() {
-  try { sessionStorage.removeItem(PROFILE_CACHE_KEY) } catch { /* SSR safe */ }
+  try { localStorage.removeItem(PROFILE_CACHE_KEY) } catch { /* SSR safe */ }
 }
 
 // ============================================================
@@ -190,10 +190,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Safety timeout: if Supabase is unreachable, stop the spinner after 6s.
-    // 6 s gives Railway cold-starts and slow networks enough time to respond before
-    // the fallback fires and falsely treats an authenticated user as unauthenticated.
-    const fallback = setTimeout(() => setLoading(false), 3000)
+    // Safety timeout: if Supabase is unreachable, stop the spinner after 1.5s.
+    // Profile cache (localStorage) means returning users load instantly anyway;
+    // 1.5s is enough for Railway cold-starts on first visit.
+    const fallback = setTimeout(() => setLoading(false), 1500)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {

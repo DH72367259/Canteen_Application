@@ -43,6 +43,8 @@ export type CanteenOrder = {
   otp?: string;
   binLabel?: string;
   binColor?: string;
+  binId?: string;
+  pickupSlot?: string;
   slotLabel?: string;
 };
 

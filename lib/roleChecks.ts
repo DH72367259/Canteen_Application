@@ -8,7 +8,7 @@ export function isAdminRole(role: UserRole | null): boolean {
 }
 
 export function canManageOrders(role: UserRole | null): boolean {
-  return role === "super_admin" || role === "co_admin" || role === "canteen_admin" || role === "vendor";
+  return role === "super_admin" || role === "co_admin" || role === "canteen_admin" || role === "vendor" || role === "worker";
 }
 
 export function canManageMenu(role: UserRole | null): boolean {
