@@ -25,6 +25,8 @@ interface Bin {
 
 const NAV_ITEMS = [
   { id: "live", icon: "📊", label: "Live Orders" },
+  { id: "slot-control", icon: "🎚️", label: "Slot Control" },
+  { id: "prep-summary", icon: "📋", label: "Prep Summary" },
   { id: "menu", icon: "🍽️", label: "Menu & Items" },
   { id: "slots", icon: "🕐", label: "Time Slots" },
   { id: "bins", icon: "📦", label: "Bin Management" },
@@ -374,6 +376,8 @@ export default function VendorDashboard() {
           </>
         )}
 
+        {activeNav === "slot-control" && <VendorSlotControlView session={session} />}
+        {activeNav === "prep-summary" && <VendorPrepSummaryView session={session} />}
         {activeNav === "menu" && <VendorMenuView />}
         {activeNav === "slots" && <VendorSlotsView />}
         {activeNav === "sales" && <VendorSalesView />}
@@ -1374,4 +1378,211 @@ interface EarningsOrder {
 interface EarningsPayment {
   id: string; amount_paid: number; payment_mode: string;
   transaction_ref: string | null; notes: string | null; created_at: string;
+}
+// Phase 3 vendor dashboard components — appended to page.tsx
+// These rely on React hooks already imported at the top of page.tsx.
+
+interface SlotControlState {
+  canteen_id: string;
+  max_bins: number;
+  slot_duration_mins: number;
+  morning_start: string; morning_end: string;
+  afternoon_start: string; afternoon_end: string;
+  evening_start: string; evening_end: string;
+  grace_period_mins: number;
+  extra_bin_fee_paise: number;
+  meals_per_bin: number;
+  snacks_per_bin: number;
+  max_orders_per_slot: number;
+  batched_prepared_cap: number;
+  made_to_order_cap: number;
+}
+interface SlotControlResp {
+  slot_control: SlotControlState;
+  capacity: { maxBins: number; maxOrdersPerSlot: number; batchedPreparedCap: number; madeToOrderCap: number; bufferBins: number };
+  windows: { morning: { start: string; end: string }[]; afternoon: { start: string; end: string }[]; evening: { start: string; end: string }[] };
+}
+
+function VendorSlotControlView({ session }: { session: { access_token: string } | null }) {
+  const [data, setData] = useState<SlotControlResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [maxBinsInput, setMaxBinsInput] = useState<string>("");
+  const [duration, setDuration] = useState<string>("15");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch("/api/canteen/slot-control", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed");
+      setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
+      setDuration(String(j.slot_control.slot_duration_mins));
+    } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setLoading(false); }
+  }, [session]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save() {
+    if (!session) return;
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch("/api/canteen/slot-control", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ max_bins: Number(maxBinsInput), slot_duration_mins: Number(duration) }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Save failed");
+      setData(j);
+    } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <div className="page-content"><p>Loading slot control…</p></div>;
+  if (!data) return <div className="page-content"><p style={{ color: "#dc2626" }}>{error ?? "No slot control row found for this canteen."}</p></div>;
+
+  const sc = data.slot_control, cap = data.capacity, win = data.windows;
+  const previewMaxOrders  = Math.floor((Number(maxBinsInput) || 0) * 0.75);
+  const previewBatched    = Math.floor(previewMaxOrders * 0.7);
+  const previewMadeToOrd  = previewMaxOrders - previewBatched;
+
+  return (
+    <div className="page-content">
+      <div className="page-header"><h2>Slot Control</h2><span className="tag tag-blue">Auto-derived caps</span></div>
+      {error && <p style={{ color: "#dc2626", marginBottom: "0.5rem" }}>{error}</p>}
+
+      <div className="dashboard-grid" style={{ marginBottom: "1.5rem" }}>
+        <div className="stat-card"><div className="stat-num">{cap.maxBins}</div><div className="stat-label">Max bins (editable)</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>{cap.maxOrdersPerSlot}</div><div className="stat-label">Orders / slot (75%)</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--blue)" }}>{cap.batchedPreparedCap}</div><div className="stat-label">Batched cap (70%)</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--orange)" }}>{cap.madeToOrderCap}</div><div className="stat-label">Made-to-order cap (30%)</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "#94a3b8" }}>{cap.bufferBins}</div><div className="stat-label">Buffer bins (25%)</div></div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Adjust capacity</h3>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Max bins</span>
+            <input type="number" min={1} value={maxBinsInput} onChange={e => setMaxBinsInput(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8, width: 120 }} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Slot duration (min)</span>
+            <select value={duration} onChange={e => setDuration(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8 }}>
+              <option value="10">10</option><option value="15">15</option><option value="20">20</option>
+            </select>
+          </label>
+          <button onClick={save} disabled={saving} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "0.6rem 1.2rem", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+        <p style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "0.85rem" }}>
+          Caps update automatically: <strong>{previewMaxOrders}</strong> orders/slot,{" "}
+          <strong>{previewBatched}</strong> batched, <strong>{previewMadeToOrd}</strong> made-to-order.
+        </p>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}>Generated time slots</h3>
+        {(["morning", "afternoon", "evening"] as const).map(period => {
+          const slots = win[period];
+          const range =
+            period === "morning"   ? `${sc.morning_start.slice(0,5)} – ${sc.morning_end.slice(0,5)}` :
+            period === "afternoon" ? `${sc.afternoon_start.slice(0,5)} – ${sc.afternoon_end.slice(0,5)}` :
+                                     `${sc.evening_start.slice(0,5)} – ${sc.evening_end.slice(0,5)}`;
+          return (
+            <div key={period} style={{ marginBottom: "1rem" }}>
+              <h4 style={{ textTransform: "capitalize", marginBottom: "0.4rem" }}>{period} ({range}) — {slots.length} slots</h4>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                {slots.map((s, i) => (
+                  <span key={i} style={{ background: "#f1f5f9", padding: "0.3rem 0.55rem", borderRadius: 6, fontSize: "0.78rem", fontFamily: "monospace" }}>
+                    {s.start}–{s.end}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface PrepSummaryItem { name: string; quantity: number; availabilityType: string; isMeal: boolean }
+interface PrepSummarySlot { slot: string; batched: PrepSummaryItem[]; made_to_order: PrepSummaryItem[] }
+interface PrepSummaryResp {
+  slots: PrepSummarySlot[];
+  caps: { batched_prepared_cap: number; made_to_order_cap: number; max_orders_per_slot: number; max_bins: number } | null;
+}
+
+function VendorPrepSummaryView({ session }: { session: { access_token: string } | null }) {
+  const [data, setData] = useState<PrepSummaryResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch("/api/canteen/prep-summary", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed");
+      setData(j);
+    } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setLoading(false); }
+  }, [session]);
+
+  useEffect(() => { load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
+
+  if (loading) return <div className="page-content"><p>Loading prep summary…</p></div>;
+  if (error)   return <div className="page-content"><p style={{ color: "#dc2626" }}>{error}</p></div>;
+  if (!data || data.slots.length === 0) {
+    return <div className="page-content"><div className="page-header"><h2>Prep Summary</h2></div><p>No active orders to summarize.</p></div>;
+  }
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Prep Summary</h2>
+        <button onClick={load} className="tag tag-blue" style={{ cursor: "pointer", border: "none" }}>↻ Refresh</button>
+      </div>
+      {data.caps && (
+        <p style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: "1rem" }}>
+          Caps: <strong>{data.caps.batched_prepared_cap}</strong> batched · <strong>{data.caps.made_to_order_cap}</strong> made-to-order · <strong>{data.caps.max_orders_per_slot}</strong> total per slot
+        </p>
+      )}
+      {data.slots.map(slot => (
+        <div key={slot.slot} className="panel" style={{ marginBottom: "1.25rem" }}>
+          <h3 style={{ marginTop: 0 }}>Slot: {slot.slot}</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <PrepBucket title="Batched / Prepared" color="#3b82f6" items={slot.batched} />
+            <PrepBucket title="Made to Order"      color="#f97316" items={slot.made_to_order} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PrepBucket({ title, color, items }: { title: string; color: string; items: PrepSummaryItem[] }) {
+  const total = items.reduce((s, i) => s + i.quantity, 0);
+  return (
+    <div style={{ border: `1px solid ${color}30`, borderRadius: 10, padding: "0.75rem 1rem", background: `${color}08` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+        <strong style={{ color }}>{title}</strong>
+        <span style={{ fontSize: "0.78rem", color: "#64748b" }}>{total} items</span>
+      </div>
+      {items.length === 0 && <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0 }}>—</p>}
+      {items.map((it, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "0.3rem 0", borderBottom: i < items.length - 1 ? "1px solid #e2e8f0" : "none", fontSize: "0.88rem" }}>
+          <span>{it.name} {it.isMeal && <span style={{ background: "#fef3c7", color: "#92400e", padding: "0.05rem 0.4rem", borderRadius: 4, fontSize: "0.68rem", marginLeft: "0.3rem" }}>MEAL</span>}</span>
+          <strong>{it.quantity}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }

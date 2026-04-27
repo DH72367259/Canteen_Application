@@ -17,16 +17,32 @@ export async function GET(request: Request) {
   // Build the filter: notifications targeted at 'all', or specific canteen/user
   let query = supabase
     .from("notifications")
-    .select("id, title, body, type, recipient_type, recipient_id, created_at")
+    .select("id, title, body, type, recipient_type, recipient_id, target_role, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
 
   // Super/co admins see all notifications
   if (auth.role !== "super_admin" && auth.role !== "co_admin") {
-    // Regular users and workers: filter to relevant ones
-    const filters = [`recipient_type.eq.all`];
+    // Per-role routing via target_role:
+    //   - 'all'         -> visible to everyone
+    //   - 'all_staff'   -> visible to worker/canteen_admin/vendor (any staff role)
+    //   - 'user'        -> visible to user role
+    //   - 'worker'      -> visible only to worker
+    //   - 'canteen_admin' -> visible to canteen_admin / vendor
+    const isStaff = ["worker", "canteen_admin", "vendor"].includes(auth.role);
+    const roleTargets = ["all"];
+    if (isStaff) roleTargets.push("all_staff");
+    if (auth.role === "worker") roleTargets.push("worker");
+    if (auth.role === "canteen_admin" || auth.role === "vendor") roleTargets.push("canteen_admin");
+    if (auth.role === "user") roleTargets.push("user");
+
+    const filters: string[] = [];
+    // recipient-based (legacy)
+    filters.push(`recipient_type.eq.all`);
     if (canteenId) filters.push(`and(recipient_type.eq.canteen,recipient_id.eq.${canteenId})`);
     filters.push(`and(recipient_type.eq.user,recipient_id.eq.${auth.uid})`);
+    // target_role-based (Phase 1)
+    filters.push(`target_role.in.(${roleTargets.join(",")})`);
     query = query.or(filters.join(","));
   }
 
