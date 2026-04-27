@@ -206,6 +206,8 @@ function LoginContent() {
           ? "Connection timed out. Check your internet and try again."
           : msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("no account")
           ? "No account found with that username. Try your phone number instead, or register."
+          : msg.toLowerCase().includes("database error") || msg.toLowerCase().includes("querying schema")
+          ? "Login service temporarily unavailable. Please try again in a moment."
           : msg
       );
       setBusy(false);
@@ -306,6 +308,8 @@ function LoginContent() {
           ? "Incorrect email or password. Please check and try again."
           : msg.toLowerCase().includes("timed out")
           ? "Connection timed out. Please check your internet and try again."
+          : msg.toLowerCase().includes("database error") || msg.toLowerCase().includes("querying schema")
+          ? "Login service temporarily unavailable. Please try again in a moment or contact your administrator."
           : msg
       );
       setBusy(false);

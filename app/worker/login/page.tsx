@@ -29,7 +29,14 @@ export default function WorkerLoginPage() {
       await signInWithIdentifier(identifier.trim(), password);
       // Auth context will redirect via useEffect above
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed. Check your credentials.");
+      const msg = err instanceof Error ? err.message : "Login failed. Check your credentials.";
+      setError(
+        msg.toLowerCase().includes("database error") || msg.toLowerCase().includes("querying schema")
+          ? "Login service temporarily unavailable. Contact your admin or try again shortly."
+          : msg.toLowerCase().includes("invalid login credentials") || msg.toLowerCase().includes("invalid credentials")
+          ? "Incorrect email or password. Please check and try again."
+          : msg
+      );
     } finally {
       setBusy(false);
     }

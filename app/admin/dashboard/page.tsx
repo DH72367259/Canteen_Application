@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
-type AdminSection = "overview" | "canteens" | "users" | "managers" | "cities" | "analytics" | "payments" | "support" | "notifications" | "account";
+type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "analytics" | "payments" | "support" | "notifications" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
   { id: "canteens",  icon: "🏪", label: "Manage Canteens" },
   { id: "managers",  icon: "👨‍💼", label: "Canteen Managers" },
+  { id: "workers",   icon: "🧑‍🍳", label: "Workers" },
   { id: "users",     icon: "👥", label: "All Users" },
   { id: "cities",    icon: "🏫", label: "Cities & Colleges" },
   { id: "analytics", icon: "📈", label: "Analytics" },
@@ -62,6 +63,7 @@ export default function SuperAdminDashboard() {
         {section === "overview"  && <OverviewSection />}
         {section === "canteens"  && <CanteensSection />}
         {section === "managers"  && <ManagersSection isSuperAdmin={isSuperAdmin} session={session} />}
+        {section === "workers"   && <WorkersSection isSuperAdmin={isSuperAdmin} session={session} />}
         {section === "users"     && <UsersSection isSuperAdmin={isSuperAdmin} session={session} />}
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments"  && <PaymentsSection />}
@@ -494,7 +496,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
       const r = await adminFetch("/api/admin/users", session);
       const j = await r.json();
       if (!r.ok) { setError(j.error ?? "Failed to load"); return; }
-      const staffRoles = ["canteen_admin", "vendor", "worker"];
+      const staffRoles = ["canteen_admin", "vendor"];
       setManagers((j.users as ManagerRow[]).filter(u => staffRoles.includes(u.role)));
     } catch { setError("Network error"); }
     finally { setLoading(false); }
@@ -574,7 +576,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
                 <td style={{ fontWeight: 600 }}>{m.name || "—"}</td>
                 <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{m.email}</td>
                 <td><span className="tag tag-blue">{m.role}</span></td>
-                <td style={{ fontSize: "0.82rem" }}>{m.canteen_id || "—"}</td>
+                <td style={{ fontSize: "0.82rem" }}>{m.canteen_id ? m.canteen_id.slice(0, 8) + "…" : "—"}</td>
                 <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString("en-IN") : "—"}</td>
                 {isSuperAdmin && (
                   <td style={{ display: "flex", gap: "0.4rem" }}>
@@ -605,7 +607,6 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
                 <select className="form-input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
                   <option value="canteen_admin">Canteen Admin</option>
                   <option value="vendor">Vendor</option>
-                  <option value="worker">Worker</option>
                 </select>
               </div>
               <div><label className="form-label">Canteen ID (optional)</label><input className="form-input" placeholder="Paste canteen UUID" value={form.canteen_id} onChange={e => setForm(p => ({ ...p, canteen_id: e.target.value }))} /></div>
@@ -645,6 +646,314 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button className="btn btn-ghost btn-full" onClick={() => setDeleteTarget(null)}>Cancel</button>
               <button className="btn btn-primary btn-full" style={{ background: "#ef4444" }} onClick={handleDelete}>Yes, Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── WorkersSection — create / manage workers assigned to canteens ────────────
+interface WorkerRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+interface CanteenOption { id: string; name: string; city: string; college: string; }
+
+function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
+  const [workers,   setWorkers]   = useState<WorkerRow[]>([]);
+  const [canteens,  setCanteens]  = useState<CanteenOption[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+  const [search,    setSearch]    = useState("");
+
+  // Create form
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "", name: "", canteen_id: "" });
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Edit canteen modal
+  const [editTarget,   setEditTarget]   = useState<WorkerRow | null>(null);
+  const [editCanteen,  setEditCanteen]  = useState("");
+  const [editBusy,     setEditBusy]     = useState(false);
+
+  // Reset password modal
+  const [resetTarget, setResetTarget] = useState<WorkerRow | null>(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<WorkerRow | null>(null);
+
+  const canteenName = (id: string | null) => {
+    if (!id) return "—";
+    const c = canteens.find(c => c.id === id);
+    return c ? `${c.name}` : id.slice(0, 8) + "…";
+  };
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const [usersRes, canteensRes] = await Promise.all([
+        adminFetch("/api/admin/users", session),
+        adminFetch("/api/admin/canteens", session),
+      ]);
+      const usersJ    = await usersRes.json();
+      const canteensJ = await canteensRes.json();
+      if (!usersRes.ok) { setError(usersJ.error ?? "Failed to load users"); return; }
+      setWorkers((usersJ.users as WorkerRow[]).filter(u => u.role === "worker"));
+      setCanteens(canteensJ.canteens ?? []);
+    } catch { setError("Network error"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreate() {
+    if (!form.canteen_id) { setFormError("Please select a canteen."); return; }
+    setFormBusy(true); setFormError(null);
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "POST",
+        body: JSON.stringify({ ...form, role: "worker" }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setFormError(j.error ?? "Failed to create worker"); return; }
+      setShowCreate(false);
+      setForm({ email: "", password: "", name: "", canteen_id: "" });
+      await load();
+    } catch { setFormError("Network error"); }
+    finally { setFormBusy(false); }
+  }
+
+  async function handleEditCanteen() {
+    if (!editTarget) return;
+    setEditBusy(true);
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "PATCH",
+        body: JSON.stringify({ uid: editTarget.uid, canteen_id: editCanteen }),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed to update canteen"); return; }
+      setEditTarget(null);
+      await load();
+    } catch { alert("Network error"); }
+    finally { setEditBusy(false); }
+  }
+
+  async function handleResetPassword() {
+    if (!resetTarget || newPwd.length < 8) return;
+    setResetBusy(true);
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "PATCH",
+        body: JSON.stringify({ uid: resetTarget.uid, new_password: newPwd }),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed to reset password"); return; }
+      setResetTarget(null); setNewPwd("");
+      alert("Password reset successfully.");
+    } catch { alert("Network error"); }
+    finally { setResetBusy(false); }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      const r = await adminFetch("/api/admin/users", session, {
+        method: "DELETE",
+        body: JSON.stringify({ uid: deleteTarget.uid }),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert(j.error ?? "Failed to delete"); return; }
+      setDeleteTarget(null);
+      await load();
+    } catch { alert("Network error"); }
+  }
+
+  const filtered = workers.filter(w =>
+    w.name?.toLowerCase().includes(search.toLowerCase()) ||
+    w.email?.toLowerCase().includes(search.toLowerCase()) ||
+    canteenName(w.canteen_id).toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>🧑‍🍳 Workers</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input className="form-input" type="search" placeholder="Search…" value={search}
+            onChange={e => setSearch(e.target.value)} style={{ width: 200 }} />
+          {isSuperAdmin && (
+            <button className="btn btn-primary" onClick={() => { setShowCreate(true); setFormError(null); }}>
+              + Add Worker
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!isSuperAdmin && (
+        <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 10, padding: "0.6rem 1rem", fontSize: "0.82rem", color: "#78350f", marginBottom: "1rem" }}>
+          👁️ View-only mode — only super_admin can create, edit, or remove workers.
+        </div>
+      )}
+
+      {error && <p className="error-msg">{error}</p>}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>NAME</th><th>EMAIL</th><th>ASSIGNED CANTEEN</th><th>JOINED</th>
+              {isSuperAdmin && <th>ACTIONS</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>Loading…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No workers found</td></tr>
+            ) : filtered.map(w => (
+              <tr key={w.uid}>
+                <td style={{ fontWeight: 600 }}>{w.name || "—"}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{w.email}</td>
+                <td>
+                  {w.canteen_id ? (
+                    <span className="tag tag-green" title={w.canteen_id}>{canteenName(w.canteen_id)}</span>
+                  ) : (
+                    <span className="tag" style={{ background: "#fee2e2", color: "#b91c1c" }}>⚠ Unassigned</span>
+                  )}
+                </td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
+                  {w.created_at ? new Date(w.created_at).toLocaleDateString("en-IN") : "—"}
+                </td>
+                {isSuperAdmin && (
+                  <td style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem" }}
+                      onClick={() => { setEditTarget(w); setEditCanteen(w.canteen_id ?? ""); }}>🏪 Canteen</button>
+                    <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem" }}
+                      onClick={() => { setResetTarget(w); setNewPwd(""); }}>🔑 Reset PW</button>
+                    <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", color: "#ef4444" }}
+                      onClick={() => setDeleteTarget(w)}>🗑 Remove</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Create Worker Modal ── */}
+      {showCreate && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+              <h3 style={{ margin: 0 }}>Add New Worker</h3>
+              <button onClick={() => setShowCreate(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+              <div>
+                <label className="form-label">Full Name *</label>
+                <input className="form-input" placeholder="e.g. Rahul Sharma"
+                  value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Login Email *</label>
+                <input className="form-input" type="email" placeholder="worker@canteen.com"
+                  value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 chars)</span></label>
+                <input className="form-input" type="password" placeholder="Set a strong password"
+                  value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label">Assign to Canteen *</label>
+                <select className="form-input" value={form.canteen_id}
+                  onChange={e => setForm(p => ({ ...p, canteen_id: e.target.value }))}>
+                  <option value="">— Select a canteen —</option>
+                  {canteens.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} – {c.city}</option>
+                  ))}
+                </select>
+                {canteens.length === 0 && (
+                  <p style={{ fontSize: "0.78rem", color: "#f97316", marginTop: "0.3rem" }}>
+                    No canteens found. Create a canteen first.
+                  </p>
+                )}
+              </div>
+              {formError && <p className="error-msg">{formError}</p>}
+              <button className="btn btn-primary btn-full"
+                disabled={formBusy || !form.name || !form.email || !form.password || !form.canteen_id}
+                onClick={handleCreate}>
+                {formBusy ? "Creating…" : "Create Worker →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Canteen Assignment Modal ── */}
+      {editTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0 }}>Change Canteen</h3>
+              <button onClick={() => setEditTarget(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+              Worker: <strong>{editTarget.name}</strong>
+            </p>
+            <label className="form-label">Assign to Canteen</label>
+            <select className="form-input" value={editCanteen}
+              onChange={e => setEditCanteen(e.target.value)} style={{ marginBottom: "1rem" }}>
+              <option value="">— Unassign —</option>
+              {canteens.map(c => (
+                <option key={c.id} value={c.id}>{c.name} – {c.city}</option>
+              ))}
+            </select>
+            <button className="btn btn-primary btn-full" disabled={editBusy} onClick={handleEditCanteen}>
+              {editBusy ? "Saving…" : "Save Assignment →"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reset Password Modal ── */}
+      {resetTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setResetTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0 }}>Reset Password</h3>
+              <button onClick={() => setResetTarget(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+              Setting new password for <strong>{resetTarget.name}</strong> ({resetTarget.email})
+            </p>
+            <input className="form-input" type="password" placeholder="New password (min 8 chars)"
+              value={newPwd} onChange={e => setNewPwd(e.target.value)} style={{ marginBottom: "0.75rem" }} />
+            <button className="btn btn-primary btn-full"
+              disabled={resetBusy || newPwd.length < 8} onClick={handleResetPassword}>
+              {resetBusy ? "Resetting…" : "Reset Password →"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirm Modal ── */}
+      {deleteTarget && isSuperAdmin && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 360, textAlign: "center" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>⚠️</div>
+            <h3>Remove Worker?</h3>
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", margin: "0.5rem 0 1.25rem" }}>
+              This will permanently delete <strong>{deleteTarget.name}</strong> and revoke their login. Cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn btn-ghost btn-full" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-primary btn-full" style={{ background: "#ef4444" }} onClick={handleDelete}>
+                Yes, Remove
+              </button>
             </div>
           </div>
         </div>

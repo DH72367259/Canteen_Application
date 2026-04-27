@@ -6,6 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "jest --runInBand --forceExit --testTimeout=30000",
+    "test:coverage": "jest --runInBand --forceExit --coverage",
     "admin:create": "node scripts/create-admin-user.mjs",
     "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public"
   },
@@ -19,12 +21,17 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.3",
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.4",
+    "jest": "^30.3.0",
+    "jest-environment-node": "^30.3.0",
     "tailwindcss": "^4.2.3",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
 }
