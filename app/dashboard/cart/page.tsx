@@ -14,6 +14,15 @@ declare global {
 
 interface CartItem { id: string; name: string; price: number; qty: number; }
 interface SlotOption { id: string; label: string; available: boolean; is_full: boolean; }
+interface CartCheck {
+  slot_available: boolean;
+  slot_full: boolean;
+  slot_orders_used: number;
+  slot_capacity: { maxOrdersPerSlot: number };
+  bin_plan: { bins: { binIndex: number }[] };
+  requires_extra_bin: boolean;
+  extra_fee_paise: number;
+}
 
 function loadRazorpay(): Promise<boolean> {
   return new Promise(resolve => {
@@ -53,6 +62,7 @@ function CartContent() {
   const [proChoice,   setProChoice]   = useState<"go_pro" | "skip">("skip");
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  const [cartCheck,   setCartCheck]   = useState<CartCheck | null>(null);
 
   useEffect(() => {
     const proStatus = localStorage.getItem("noqx_pro_active");
@@ -87,10 +97,37 @@ function CartContent() {
     return () => { cancelled = true; clearInterval(timer); };
   }, [canteenId]);
 
+  // ── Pre-checkout cart check: slot fullness + extra-bin plan ────────────
+  useEffect(() => {
+    if (!canteenId || !slot || cart.length === 0 || !session?.access_token) {
+      setCartCheck(null);
+      return;
+    }
+    const slotLabel = slots.find(s => s.id === slot)?.label;
+    if (!slotLabel) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/cart/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            canteen_id: canteenId,
+            slot: slotLabel,
+            items: cart.map(c => ({ id: c.id, quantity: c.qty })),
+          }),
+        });
+        if (!cancelled && res.ok) setCartCheck(await res.json());
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [canteenId, slot, slots, cart, session?.access_token]);
+
   const convFee    = isPro ? 0 : 4;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const walletDisc = useWallet ? Math.min(walletBal, subtotal) : 0;
-  const payable    = Math.max(0, subtotal + convFee - walletDisc);
+  const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
+  const payable    = Math.max(0, subtotal + convFee + extraBinFee - walletDisc);
 
   function updateQty(id: string, delta: number) {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
@@ -164,6 +201,7 @@ function CartContent() {
   async function handleCheckout() {
     if (!slot)            { setError("Please choose a pickup time slot."); return; }
     if (cart.length === 0) { setError("Your cart is empty."); return; }
+    if (cartCheck?.slot_full) { setError("This slot just filled up. Please pick another."); return; }
 
     // If user chose go_pro, redirect to pro page first
     if (!isPro && proChoice === "go_pro") {
@@ -305,6 +343,26 @@ function CartContent() {
           </div>
         </section>
 
+        {/* ── Slot full / extra-bin notices ────────────────────────────── */}
+        {cartCheck?.slot_full && (
+          <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #dc2626", background: "#fef2f2" }}>
+            <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: "0.25rem" }}>⚠️ Slot just filled up</div>
+            <div style={{ fontSize: "0.82rem", color: "#7f1d1d" }}>
+              {cartCheck.slot_orders_used}/{cartCheck.slot_capacity.maxOrdersPerSlot} orders booked. Please pick a different slot to continue.
+            </div>
+          </div>
+        )}
+        {cartCheck?.requires_extra_bin && !cartCheck.slot_full && (
+          <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #f97316", background: "#fff7ed" }}>
+            <div style={{ fontWeight: 700, color: "#9a3412", marginBottom: "0.25rem" }}>
+              📦 Your order needs {cartCheck.bin_plan.bins.length} pickup bins
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#7c2d12" }}>
+              An extra-bin fee of <strong>₹{extraBinFee}</strong> will be added at checkout.
+            </div>
+          </div>
+        )}
+
         {walletBal > 0 && (
           <section className="card" style={{ padding: "0.85rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -396,6 +454,11 @@ function CartContent() {
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem" }}>
             <span>Subtotal</span><span>₹{subtotal}</span>
           </div>
+          {extraBinFee > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#9a3412" }}>
+              <span>Extra-bin fee</span><span>+₹{extraBinFee}</span>
+            </div>
+          )}
           <div style={{ marginBottom: "0.4rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem" }}>
               <span style={{ color: isPro ? "var(--green)" : "var(--ink)" }}>
