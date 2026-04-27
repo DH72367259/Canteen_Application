@@ -45,7 +45,9 @@ export default function VendorDashboard() {
   const [bins, setBins] = useState<Bin[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
-  const [slotsConfigured, setSlotsConfigured] = useState(false);
+  const [slotsConfigured, setSlotsConfigured] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true"
+  );
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
@@ -62,13 +64,6 @@ export default function VendorDashboard() {
       router.replace("/login");
     }
   }, [user, loading, router]);
-
-  // Load slots-configured flag from localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setSlotsConfigured(localStorage.getItem("vendor_slots_configured") === "true");
-    }
-  }, []);
 
   const handleToggleCanteen = async () => {
     if (toggleBusy) return;
@@ -182,7 +177,8 @@ export default function VendorDashboard() {
 
   // Auto-refresh every 30 seconds (reduced from 5s to lower DB load at scale)
   useEffect(() => {
-    fetchOrders();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchOrders();
     refreshRef.current = setInterval(fetchOrders, 30_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
   }, [fetchOrders]);
@@ -1060,7 +1056,8 @@ function VendorSupportView() {
   };
 
   useEffect(() => {
-    if (tab === "track") loadTickets();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (tab === "track") void loadTickets();
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1232,11 +1229,8 @@ function VendorSupportView() {
 
 // ─── Vendor Earnings View ─────────────────────────────────────────────────────
 function VendorEarningsView({ session }: { session: { access_token: string } | null }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
-
-  const [periodStart, setPeriodStart] = useState(monthAgo);
-  const [periodEnd,   setPeriodEnd]   = useState(today);
+  const [periodStart, setPeriodStart] = useState<string>(() => new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10));
+  const [periodEnd,   setPeriodEnd]   = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [data,        setData]        = useState<EarningsData | null>(null);
   const [loading,     setLoading]     = useState(false);
   const [err,         setErr]         = useState<string | null>(null);
@@ -1256,7 +1250,8 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page-content">
@@ -1424,7 +1419,8 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
     finally { setLoading(false); }
   }, [session]);
 
-  useEffect(() => { load(); }, [load]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, [load]);
 
   async function save() {
     if (!session) return;
@@ -1536,7 +1532,8 @@ function VendorPrepSummaryView({ session }: { session: { access_token: string } 
     finally { setLoading(false); }
   }, [session]);
 
-  useEffect(() => { load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
 
   if (loading) return <div className="page-content"><p>Loading prep summary…</p></div>;
   if (error)   return <div className="page-content"><p style={{ color: "#dc2626" }}>{error}</p></div>;
