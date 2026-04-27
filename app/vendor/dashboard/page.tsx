@@ -226,7 +226,7 @@ export default function VendorDashboard() {
             <span className="dot" />
             Canteen
           </div>
-          <p>{user?.displayName || "Central Canteen"}</p>
+          <p>{user?.displayName || "My Canteen"}</p>
         </div>
 
         <nav className="sidebar-nav">

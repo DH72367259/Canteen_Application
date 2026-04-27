@@ -82,12 +82,12 @@ function OverviewSection() {
       <div className="page-header"><h2>Platform Overview</h2><span className="tag tag-green">● Live</span></div>
       <div className="dashboard-grid">
         {[
-          { icon: "🏪", label: "Active Canteens", value: "3", sub: "+1 this month", color: "var(--orange)" },
-          { icon: "👥", label: "Total Users", value: "2,841", sub: "+128 this week", color: "var(--blue)" },
-          { icon: "📦", label: "Orders Today", value: "1,248", sub: "₹96,240 revenue", color: "var(--green)" },
-          { icon: "💰", label: "Canteen Cash Given", value: "₹14,220", sub: "rewards this month", color: "var(--yellow)" },
-          { icon: "⭐", label: "Avg. Rating", value: "4.4", sub: "across all canteens", color: "var(--orange)" },
-          { icon: "📱", label: "App Users", value: "1,922", sub: "iOS + Android", color: "var(--blue)" },
+          { icon: "🏪", label: "Active Canteens", value: "0", sub: "—", color: "var(--orange)" },
+          { icon: "👥", label: "Total Users", value: "0", sub: "—", color: "var(--blue)" },
+          { icon: "📦", label: "Orders Today", value: "0", sub: "₹0 revenue", color: "var(--green)" },
+          { icon: "💰", label: "Canteen Cash Given", value: "₹0", sub: "this month", color: "var(--yellow)" },
+          { icon: "⭐", label: "Avg. Rating", value: "—", sub: "—", color: "var(--orange)" },
+          { icon: "📱", label: "App Users", value: "0", sub: "—", color: "var(--blue)" },
         ].map(s => (
           <div key={s.label} className="stat-card" style={{ textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
@@ -105,20 +105,7 @@ function OverviewSection() {
         <table>
           <thead><tr><th>TIME</th><th>EVENT</th><th>CANTEEN</th><th>DETAIL</th></tr></thead>
           <tbody>
-            {[
-              { time: "1:08 PM", event: "New Order", canteen: "IIT Bombay – Main", detail: "ORD-1248 · ₹145" },
-              { time: "1:05 PM", event: "OTP Verified", canteen: "BITS Pilani", detail: "Bin #3 · Arjun S." },
-              { time: "12:58 PM", event: "Menu Updated", canteen: "VIT Vellore", detail: "Chicken Curry OFF" },
-              { time: "12:45 PM", event: "Slot Opened", canteen: "IIT Bombay – Main", detail: "1:30 PM slot (capacity 25)" },
-              { time: "12:30 PM", event: "Settlement", canteen: "BITS Pilani", detail: "₹22,400 transferred" },
-            ].map((r, i) => (
-              <tr key={i}>
-                <td style={{ color: "var(--ink-3)", fontSize: "0.8rem" }}>{r.time}</td>
-                <td><span className="tag tag-orange">{r.event}</span></td>
-                <td style={{ fontSize: "0.82rem" }}>{r.canteen}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{r.detail}</td>
-              </tr>
-            ))}
+            <tr><td colSpan={4} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No activity yet.</td></tr>
           </tbody>
         </table>
       </div>
