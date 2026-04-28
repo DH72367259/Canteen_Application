@@ -35,18 +35,48 @@ export default function ProPage() {
   const { user, session } = useAuth();
   const [isPro, setIsPro] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [daysLeft, setDaysLeft] = useState<number>(0);
+  const [savingsPaise, setSavingsPaise] = useState<number>(0);
+  const [ordersSincePro, setOrdersSincePro] = useState<number>(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    // Fast-path from localStorage so the UI never flashes "Get Pro" for an
+    // already-paid member while the server fetch is in flight.
     const proActive = localStorage.getItem("noqx_pro_active");
     if (proActive === "true") {
       setIsPro(true);
       const exp = localStorage.getItem("noqx_pro_expires");
       if (exp) setExpiresAt(exp);
     }
-  }, []);
+    // Authoritative refresh from the server (covers expiry + savings).
+    if (!session?.access_token) return;
+    let cancelled = false;
+    fetch("/api/subscriptions", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j) return;
+        if (j.isActive) {
+          setIsPro(true);
+          if (j.subscription?.expires_at) {
+            setExpiresAt(j.subscription.expires_at);
+            localStorage.setItem("noqx_pro_active", "true");
+            localStorage.setItem("noqx_pro_expires", j.subscription.expires_at);
+          }
+          setDaysLeft(Number(j.daysLeft) || 0);
+          setSavingsPaise(Number(j.savingsPaise) || 0);
+          setOrdersSincePro(Number(j.ordersSincePro) || 0);
+        } else {
+          setIsPro(false);
+          localStorage.removeItem("noqx_pro_active");
+          localStorage.removeItem("noqx_pro_expires");
+        }
+      })
+      .catch(() => { /* keep localStorage fast-path */ });
+    return () => { cancelled = true; };
+  }, [session]);
 
   async function handleSubscribe() {
     if (!user) { router.push("/login"); return; }
@@ -63,7 +93,7 @@ export default function ProPage() {
       const res = await fetch("/api/payments/razorpay-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 49, canteenId: "pro", userId: user.uid, slotId: "pro" }),
+        body: JSON.stringify({ amount: 69, canteenId: "pro", userId: user.uid, slotId: "pro" }),
       });
       const json = await res.json();
       if (!res.ok || !json.orderId) {
@@ -77,7 +107,7 @@ export default function ProPage() {
         amount:      json.amount,
         currency:    json.currency,
         name:        "NoQx Pro",
-        description: "Monthly subscription — ₹49/month",
+        description: "Monthly subscription — ₹69/month",
         order_id:    json.orderId,
         prefill:     { name: user.displayName || "", email: user.email || "" },
         theme:       { color: "#f97316" },
@@ -102,7 +132,7 @@ export default function ProPage() {
               await fetch("/api/subscriptions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-                body: JSON.stringify({ paymentId: resp.razorpay_payment_id, amount: 49 }),
+                body: JSON.stringify({ paymentId: resp.razorpay_payment_id, amount: 69 }),
               });
             }
             // Save to localStorage as fast-path
@@ -160,21 +190,33 @@ export default function ProPage() {
             Skip queues every day · Zero convenience fee, every order
           </p>
           <div style={{ fontSize: "2.25rem", fontWeight: 900 }}>
-            ₹49<span style={{ fontSize: "1rem", fontWeight: 500, opacity: 0.85 }}>/month</span>
+            ₹69<span style={{ fontSize: "1rem", fontWeight: 500, opacity: 0.85 }}>/month</span>
           </div>
         </div>
 
-        {/* Active badge */}
+        {/* Active badge — shows days-left + total saved (PDF requirement) */}
         {isPro && (
-          <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 14, padding: "0.85rem 1rem", display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontSize: "1.2rem" }}>✅</span>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#15803d" }}>You&apos;re a Pro member!</div>
-              {expiresAt && (
-                <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: "0.1rem" }}>
-                  Active until {new Date(expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                </div>
-              )}
+          <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 14, padding: "0.95rem 1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem" }}>
+              <span style={{ fontSize: "1.2rem" }}>✅</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#15803d" }}>You&apos;re a Pro member!</div>
+                {expiresAt && (
+                  <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: "0.1rem" }}>
+                    Active until {new Date(expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+              <div style={{ background: "#fff", border: "1px solid #bbf7d0", borderRadius: 10, padding: "0.55rem 0.75rem", textAlign: "center" }}>
+                <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "#15803d" }}>{daysLeft}</div>
+                <div style={{ fontSize: "0.7rem", color: "#166534", fontWeight: 600 }}>days left</div>
+              </div>
+              <div style={{ background: "#fff", border: "1px solid #bbf7d0", borderRadius: 10, padding: "0.55rem 0.75rem", textAlign: "center" }}>
+                <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "#15803d" }}>₹{(savingsPaise / 100).toFixed(0)}</div>
+                <div style={{ fontSize: "0.7rem", color: "#166534", fontWeight: 600 }}>saved · {ordersSincePro} orders</div>
+              </div>
             </div>
           </div>
         )}
@@ -219,7 +261,7 @@ export default function ProPage() {
             className="btn btn-primary btn-full"
             style={{ padding: "0.95rem", fontSize: "1.05rem", fontWeight: 800 }}
           >
-            {busy ? "Processing…" : "Get Pro — ₹49/month →"}
+            {busy ? "Processing…" : "Order Now — Avail Benefits →"}
           </button>
         ) : (
           <div style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--ink-3)", padding: "0.5rem" }}>

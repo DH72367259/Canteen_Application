@@ -101,12 +101,38 @@ export async function POST(req: NextRequest) {
   const { data: slotRows } = slotName
     ? await supabase
         .from("time_slots")
-        .select("id")
+        .select("id, start_time")
         .eq("canteen_id", canteenId)
         .ilike("slot_name", `%${slotName}%`)
         .limit(1)
     : { data: null };
   const slotId = slotRows?.[0]?.id ?? null;
+  const slotStart = slotRows?.[0]?.start_time as string | undefined;
+
+  // ── Order cutoff (PDF requirement) ───────────────────────────────────────
+  // A slot closes for new orders one slot_duration BEFORE its start time.
+  //   e.g. 1:00 PM slot with 15-min duration → cutoff is 12:45 PM.
+  // We compare wall-clock minutes-of-day in the canteen's local timezone
+  // (server is UTC; time_slots.start_time is "HH:MM:SS" in local time).
+  if (slotId && slotStart) {
+    const { data: scRow } = await supabase
+      .from("slot_control")
+      .select("slot_duration_mins")
+      .eq("canteen_id", canteenId)
+      .single();
+    const durMins = Number(scRow?.slot_duration_mins) || 15;
+    const [sh, sm] = slotStart.split(":").map(Number);
+    const slotStartMin = sh * 60 + sm;
+    const cutoffMin = slotStartMin - durMins;
+    // Treat current time in IST (Asia/Kolkata, UTC+5:30) — the canteen tz.
+    const nowUtc = new Date();
+    const istMin = (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() + 330) % 1440;
+    if (istMin > cutoffMin) {
+      return Response.json({
+        error: `Slot has closed for new orders. Orders for the ${slotStart.slice(0,5)} slot had to be placed by ${String(Math.floor(cutoffMin / 60)).padStart(2,"0")}:${String(cutoffMin % 60).padStart(2,"0")}.`,
+      }, { status: 400 });
+    }
+  }
 
   // Create the order using the server-calculated total
   const { data: order, error: orderError } = await supabase

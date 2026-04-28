@@ -77,8 +77,12 @@ export async function POST(request: Request) {
       lat:       lat ? parseFloat(lat) : null,
       lng:       lng ? parseFloat(lng) : null,
       gmap_link: gmapLink?.trim() || null,
-      is_active: true,
-      status:    "open",
+      // New canteens start CLOSED. The vendor must explicitly turn the toggle
+      // ON from their dashboard before the canteen card appears coloured /
+      // accepts orders on the user app. This is per the revised workflow:
+      // "when canteen goes online card must show in colour, otherwise grey".
+      is_active: false,
+      status:    "closed",
     })
     .select("id, name")
     .single();

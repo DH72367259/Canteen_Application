@@ -25,18 +25,22 @@ interface Bin {
 
 
 
+// Sidebar order per the revised workflow PDF: Live Orders, Prep Summary,
+// Menu & Items, Slot Control, Time Slots, Bin Management, Sales,
+// Earnings & Payouts, Logs, Settings, then Raise a Concern (logout sits
+// in the toolbar, not the sidebar).
 const NAV_ITEMS = [
-  { id: "live", icon: "📊", label: "Live Orders" },
-  { id: "slot-control", icon: "🎚️", label: "Slot Control" },
+  { id: "live",         icon: "📊", label: "Live Orders" },
   { id: "prep-summary", icon: "📋", label: "Prep Summary" },
-  { id: "menu", icon: "🍽️", label: "Menu & Items" },
-  { id: "slots", icon: "🕐", label: "Time Slots" },
-  { id: "bins", icon: "📦", label: "Bin Management" },
-  { id: "sales", icon: "💰", label: "Sales" },
-  { id: "earnings", icon: "💼", label: "Earnings & Payouts" },
-  { id: "logs", icon: "📋", label: "Logs" },
-  { id: "settings", icon: "⚙️", label: "Settings" },
-  { id: "support", icon: "🎧", label: "Raise a Concern" },
+  { id: "menu",         icon: "🍽️", label: "Menu & Items" },
+  { id: "slot-control", icon: "🎚️", label: "Slot Control" },
+  { id: "slots",        icon: "🕐", label: "Time Slots" },
+  { id: "bins",         icon: "📦", label: "Bin Management" },
+  { id: "sales",        icon: "💰", label: "Sales" },
+  { id: "earnings",     icon: "💼", label: "Earnings & Payouts" },
+  { id: "logs",         icon: "📝", label: "Logs" },
+  { id: "settings",     icon: "⚙️", label: "Settings" },
+  { id: "support",      icon: "🎧", label: "Raise a Concern" },
 ];
 
 export default function VendorDashboard() {
@@ -59,9 +63,25 @@ export default function VendorDashboard() {
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Redirect if not vendor/canteen_admin
+  // The double-check against a stored Supabase session prevents the
+  // login-flicker bug: when a vendor first logs in, useAuth briefly returns
+  // user=null between the explicit signIn() resolving and the profile being
+  // hydrated. Without this guard the dashboard bounced to /login and the login
+  // page bounced back — a visible double-flash. If the supabase session
+  // cookie/localStorage is present, we wait instead of bouncing.
   useEffect(() => {
     if (loading) return; // wait for Supabase auth to settle
-    if (!user) { router.replace("/login"); return; }
+    if (!user) {
+      // If a Supabase session exists in storage we are mid-hydration — wait,
+      // don't bounce. The auth-context will deliver the user shortly.
+      if (typeof window !== "undefined") {
+        const keys = Object.keys(localStorage);
+        const hasSupabaseSession = keys.some(k => k.startsWith("sb-") && k.endsWith("-auth-token"));
+        if (hasSupabaseSession) return;
+      }
+      router.replace("/login");
+      return;
+    }
     if (user.role !== "vendor" && user.role !== "canteen_admin") {
       router.replace("/login");
     }
@@ -111,6 +131,22 @@ export default function VendorDashboard() {
       setToggleBusy(false);
     }
   };
+
+  // Sync toggle state from the canteen row on mount so the vendor never sees
+  // a stale "OFF" banner when their canteen is actually live (or vice versa).
+  useEffect(() => {
+    const canteenId = (user as { canteenId?: string })?.canteenId;
+    if (!canteenId || canteenId === "demo") return;
+    let cancelled = false;
+    fetch(`/api/canteens/${canteenId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j?.canteen) return;
+        setCanteenOpen(!!j.canteen.is_active);
+      })
+      .catch(() => { /* keep optimistic default */ });
+    return () => { cancelled = true; };
+  }, [user]);
 
   // Fetch real orders from DB and map to bins
   const fetchOrders = useCallback(async () => {

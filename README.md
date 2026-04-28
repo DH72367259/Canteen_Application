@@ -11,6 +11,25 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
+## Latest Round (Revised Workflow PDF)
+
+**Client-reported bug fixes**
+- Login double-bounce on first canteen-staff login fixed — vendor dashboard auth guard now waits when a Supabase session token is present in `localStorage` instead of redirecting to `/login`.
+- Items added to a brand-new canteen now appear in the user app menu — created public `GET /api/canteens/{id}/menu` and rewired [app/dashboard/menu/[canteenId]/page.tsx](app/dashboard/menu/%5BcanteenId%5D/page.tsx) to fetch real items + dynamic categories (the page previously rendered a hardcoded empty `MENU` constant).
+- New canteens now stay grey/closed until the vendor explicitly toggles them ON — admin canteen-create defaults flipped to `is_active: false, status: "closed"` in [app/api/admin/canteens/create/route.ts](app/api/admin/canteens/create/route.ts).
+- Vendor toggle UI now syncs from the DB on first paint (no more stale "Open" while the canteen is actually closed).
+
+**PDF feature work delivered**
+- Sidebar reordered to PDF spec: Live Orders → Prep Summary → Menu & Items → Slot Control → Time Slots → Bin Management → Sales → Earnings & Payouts → Logs → Settings → Raise a Concern.
+- NoQx Pro page: ₹49 → **₹69/month**, CTA copy updated to *"Order Now — Avail Benefits →"*, and a new **days-left + total-saved** card driven by `GET /api/subscriptions` (savings = orders since `started_at` × ₹4).
+- Home-page "Skip queues every day" banner is now a tappable link into [app/dashboard/pro/page.tsx](app/dashboard/pro/page.tsx).
+- Slot Control auto-derive: vendor edits **Max Bins + slot duration** only; the system computes Max Orders / slot (75% of bins), Batched Prepared (70% of orders), Made-to-Order (remaining 30%), and 25% buffer bins via [lib/slotCapacity.ts](lib/slotCapacity.ts).
+- **Order cutoff** enforced in [app/api/orders/place/route.ts](app/api/orders/place/route.ts): an order for the 1:00 PM slot with a 15-min duration must arrive by 12:45 PM IST or the API returns 400.
+
+All 133 tests in 11 suites pass; production build is clean.
+
+---
+
 ## Table of Contents
 
 1. [Live URLs](#live-urls)

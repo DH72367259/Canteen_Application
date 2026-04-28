@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
-// Until wired to /api/canteens/[id] + /api/canteen/menu, the page renders empty states.
 const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {};
 
-const MENU: Record<string, { id: string; name: string; price: number; desc: string; veg: boolean; category: string }[]> = {
-  breakfast: [],
-  lunch: [],
-  dinner: [],
+type MenuItem = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  is_meal: boolean;
 };
 
 type CartItem = { id: string; name: string; price: number; qty: number };
@@ -60,7 +62,33 @@ export default function CanteenMenuPage() {
     : fallback;
   const isClosed = info.status === "closed";
 
-  const [meal, setMeal] = useState<"breakfast" | "lunch" | "dinner">("lunch");
+  // ── Live menu items (server truth) ────────────────────────────────
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("All");
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMenuLoading(true);
+    fetch(`/api/canteens/${canteenId}/menu`)
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then((j: { items: MenuItem[]; categories: string[] }) => {
+        if (cancelled) return;
+        setItems(j.items ?? []);
+        setCategories(["All", ...(j.categories ?? [])]);
+        setMenuError(null);
+      })
+      .catch(() => { if (!cancelled) setMenuError("Could not load menu items."); })
+      .finally(() => { if (!cancelled) setMenuLoading(false); });
+    return () => { cancelled = true; };
+  }, [canteenId]);
+
+  const visibleItems = activeCategory === "All"
+    ? items
+    : items.filter(i => i.category === activeCategory);
+
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const addItem = (item: { id: string; name: string; price: number }) => {
@@ -121,27 +149,45 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-      {/* Meal tabs */}
-      <div className="meal-tabs">
-        {(["breakfast", "lunch", "dinner"] as const).map(m => (
-          <button key={m} className={`meal-tab ${meal === m ? "active" : ""}`} onClick={() => setMeal(m)}>
-            {m === "breakfast" ? "🌅 Breakfast" : m === "lunch" ? "☀️ Lunch" : "🌙 Dinner"}
-          </button>
-        ))}
-      </div>
+      {/* Category tabs (driven by live menu) */}
+      {categories.length > 1 && (
+        <div className="meal-tabs" style={{ overflowX: "auto", whiteSpace: "nowrap" }}>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              className={`meal-tab ${activeCategory === cat ? "active" : ""}`}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Menu items */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem", paddingBottom: cartCount > 0 ? "8rem" : "5rem" }}>
-        {MENU[meal].map(item => {
+        {menuLoading && (
+          <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem 0", fontSize: "0.85rem" }}>Loading menu…</div>
+        )}
+        {!menuLoading && menuError && (
+          <div style={{ textAlign: "center", color: "#b91c1c", padding: "1.5rem 0", fontSize: "0.85rem" }}>{menuError}</div>
+        )}
+        {!menuLoading && !menuError && visibleItems.length === 0 && (
+          <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2.5rem 0", fontSize: "0.9rem" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
+            No items available right now.
+          </div>
+        )}
+        {visibleItems.map(item => {
           const inCart = cart.find(c => c.id === item.id);
           return (
             <div key={item.id} className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "center", opacity: isClosed ? 0.6 : 1 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.15rem" }}>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", border: `2px solid ${item.veg ? "var(--green)" : "var(--red)"}`, backgroundColor: item.veg ? "var(--green)" : "var(--red)", flexShrink: 0 }} />
                   <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{item.name}</span>
+                  {item.is_meal && <span style={{ fontSize: "0.65rem", color: "var(--orange)", fontWeight: 700 }}>MEAL</span>}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>{item.desc}</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>{item.description}</div>
                 <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>₹{item.price}</div>
               </div>
               <div>

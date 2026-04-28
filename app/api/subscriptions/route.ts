@@ -24,7 +24,33 @@ export async function GET(request: Request) {
     !data.expires_at || new Date(data.expires_at) > new Date()
   );
 
-  return NextResponse.json({ subscription: data ?? null, isActive });
+  // Compute total savings since the subscription started:
+  //   savings = (#orders since started_at) × ₹4 convenience fee waived per order.
+  // Failure here must NOT fail the whole call — the savings card just shows ₹0.
+  let savingsPaise = 0;
+  let ordersSincePro = 0;
+  let daysLeft = 0;
+  if (isActive && data?.started_at) {
+    const { count } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", ctx.uid)
+      .gte("created_at", data.started_at);
+    ordersSincePro = count ?? 0;
+    savingsPaise = ordersSincePro * 400; // ₹4 = 400 paise
+    if (data.expires_at) {
+      const ms = new Date(data.expires_at).getTime() - Date.now();
+      daysLeft = Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+    }
+  }
+
+  return NextResponse.json({
+    subscription: data ?? null,
+    isActive,
+    savingsPaise,
+    ordersSincePro,
+    daysLeft,
+  });
 }
 
 // POST /api/subscriptions — create or renew Pro subscription after payment
