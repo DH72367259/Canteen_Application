@@ -46,9 +46,21 @@ export async function POST(request: Request) {
   });
 
   if (authError) {
-    const msg = authError.message.includes("already registered")
-      ? "A user with this email already exists."
-      : "Failed to create user account.";
+    // Surface the real Supabase error so the admin can act on it (weak password,
+    // disabled signups, invalid email, rate limit, etc.). This endpoint is restricted
+    // to super_admin so leaking the underlying message is not a privacy concern.
+    console.error("[admin/canteens/create] auth.admin.createUser failed:", authError);
+    const raw = (authError.message ?? "").toLowerCase();
+    let msg: string;
+    if (raw.includes("already registered") || raw.includes("already been registered") || raw.includes("already exists")) {
+      msg = "A user with this email already exists.";
+    } else if (raw.includes("password")) {
+      msg = `Password rejected by Supabase: ${authError.message}`;
+    } else if (raw.includes("signup") && raw.includes("disabled")) {
+      msg = "Email signups are disabled in Supabase project settings. Enable them in Authentication > Providers > Email.";
+    } else {
+      msg = `Failed to create user account: ${authError.message}`;
+    }
     return Response.json({ error: msg }, { status: 400 });
   }
 
@@ -73,8 +85,9 @@ export async function POST(request: Request) {
 
   if (canteenError) {
     // Rollback: delete the auth user we just created
+    console.error("[admin/canteens/create] canteens insert failed:", canteenError);
     await supabase.auth.admin.deleteUser(userId);
-    return Response.json({ error: "Failed to create canteen." }, { status: 500 });
+    return Response.json({ error: `Failed to create canteen: ${canteenError.message}` }, { status: 500 });
   }
 
   // 3. Create / upsert profile for this user with canteen_admin role + canteen linkage
@@ -90,9 +103,10 @@ export async function POST(request: Request) {
 
   if (profileError) {
     // Rollback both
+    console.error("[admin/canteens/create] profiles upsert failed:", profileError);
     await supabase.auth.admin.deleteUser(userId);
     await supabase.from("canteens").delete().eq("id", canteen.id);
-    return Response.json({ error: "Failed to create user profile." }, { status: 500 });
+    return Response.json({ error: `Failed to create user profile: ${profileError.message}` }, { status: 500 });
   }
 
   return Response.json({

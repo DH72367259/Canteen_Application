@@ -60,9 +60,19 @@ export async function POST(request: Request) {
     user_metadata: { has_password: true, password_changed_at: new Date().toISOString() },
   });
   if (authError) {
-    const msg = authError.message.includes("already registered")
-      ? "A user with this email already exists."
-      : "Failed to create user account.";
+    // Surface the real Supabase reason — this endpoint is super_admin only.
+    console.error("[admin/users] auth.admin.createUser failed:", authError);
+    const raw = (authError.message ?? "").toLowerCase();
+    let msg: string;
+    if (raw.includes("already registered") || raw.includes("already been registered") || raw.includes("already exists")) {
+      msg = "A user with this email already exists.";
+    } else if (raw.includes("password")) {
+      msg = `Password rejected by Supabase: ${authError.message}`;
+    } else if (raw.includes("signup") && raw.includes("disabled")) {
+      msg = "Email signups are disabled in Supabase project settings. Enable them in Authentication > Providers > Email.";
+    } else {
+      msg = `Failed to create user account: ${authError.message}`;
+    }
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
