@@ -24,6 +24,7 @@ interface ApiCanteen {
   status: string | null;
   is_active: boolean;
   distance_km: number | null;
+  item_count?: number;
 }
 
 // Canteens are loaded live from /api/canteens (Phase 4) — no seed data.
@@ -65,6 +66,8 @@ export default function UserHomePage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs] = useState<Array<{ id: string; title: string; body: string; created_at: string; is_read: boolean }>>([]);
+  // Inline canteen-name search (PDF requirement: search bar after greeting)
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Live wall-clock in toolbar (PDF requirement: digital time on tool bar)
   const [now, setNow] = useState<Date>(() => new Date());
@@ -245,7 +248,7 @@ export default function UserHomePage() {
         status: (c.is_active ? ((c.status as "open" | "busy" | "closed" | null) ?? "open") : "closed") as "open" | "busy" | "closed",
         isOnline: c.is_active,
         nextSlot: "",
-        items: 0,
+        items: c.item_count ?? 0,
         rating: 4.5,
         location: c.college ?? c.city ?? "",
         lat: c.lat ?? 0,
@@ -263,7 +266,18 @@ export default function UserHomePage() {
     : canteensWithDist;
 
   const visibleCanteens = (() => {
-    const pool = inRadius;
+    let pool = inRadius;
+    // Apply free-text search across canteen name, description, and location.
+    // Matched as substring (case-insensitive) so users can find "Christ" via
+    // "kengeri", a canteen via its address fragment, etc.
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      pool = pool.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.desc.toLowerCase().includes(q) ||
+        c.location.toLowerCase().includes(q)
+      );
+    }
     if (showAll || !selectedLocation || selectedLocation === "All") {
       return userCoords
         ? [...pool].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
@@ -470,6 +484,28 @@ export default function UserHomePage() {
           <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--ink)" }}>
             {user?.displayName || user?.email?.split("@")[0] || "Guest"}
           </div>
+        </div>
+      </div>
+
+      {/* ── Inline canteen search (PDF requirement) ── */}
+      <div style={{ padding: "0.6rem 1rem 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#f3f4f6", border: "1px solid var(--border)", borderRadius: 12, padding: "0.55rem 0.85rem" }}>
+          <span style={{ color: "var(--ink-3)", fontSize: "0.95rem" }} aria-hidden>🔍</span>
+          <input
+            ref={searchRef}
+            type="search"
+            placeholder="Search canteens or items…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: "0.88rem", color: "var(--ink)" }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", fontSize: "0.95rem" }}
+            >✕</button>
+          )}
         </div>
       </div>
 

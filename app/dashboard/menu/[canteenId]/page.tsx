@@ -188,6 +188,11 @@ export default function CanteenMenuPage() {
                   {item.is_meal && <span style={{ fontSize: "0.65rem", color: "var(--orange)", fontWeight: 700 }}>MEAL</span>}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>{item.description}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.25rem" }}>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, background: "#ecfdf5", color: "#15803d", border: "1px solid #a7f3d0" }}>
+                    ⚡ Available in next slot
+                  </span>
+                </div>
                 <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>₹{item.price}</div>
               </div>
               <div>

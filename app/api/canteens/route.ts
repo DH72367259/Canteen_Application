@@ -50,7 +50,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   let query = supabase
     .from("canteens")
-    .select("id, name, college, city, address, lat, lng, status, is_active");
+    .select("id, name, college, city, address, lat, lng, status, is_active, menu_items(count)");
 
   if (college) {
     query = query.ilike("college", college);
@@ -63,12 +63,18 @@ export async function GET(request: Request) {
   const { data, error } = await query.order("name");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const rows = (data ?? []) as CanteenRow[];
+  const rows = (data ?? []) as (CanteenRow & { menu_items?: { count: number }[] | { count: number } | null })[];
   const withDist = rows.map(c => {
     const distKm = hasCoords && c.lat !== null && c.lng !== null
       ? haversineKm(lat as number, lng as number, c.lat, c.lng)
       : null;
-    return { ...c, distance_km: distKm };
+    // PostgREST returns the count embed as either an array of {count} or a single object;
+    // normalise to a plain number so each canteen card can render it directly.
+    const mi = c.menu_items;
+    const item_count = Array.isArray(mi) ? (mi[0]?.count ?? 0) : (mi?.count ?? 0);
+    const { menu_items: _omit, ...rest } = c;
+    void _omit;
+    return { ...rest, distance_km: distKm, item_count };
   });
 
   const filtered = hasCoords && radiusKm !== null
