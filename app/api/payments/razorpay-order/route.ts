@@ -1,9 +1,18 @@
 import { NextRequest } from "next/server";
+import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 
 const KEY_ID     = process.env.RAZORPAY_KEY_ID     || "";
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
 
 export async function POST(req: NextRequest) {
+  // Rate limit before doing any expensive work — IP-based since this endpoint
+  // is called pre-auth (Razorpay order creation happens before payment).
+  // 20 attempts/min is plenty for retry storms but blocks scraping.
+  const rl = checkRateLimit(`rzp-order:${clientKey(req)}`, { limit: 20, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return Response.json({ error: rl.message }, { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } });
+  }
+
   if (!KEY_ID || !KEY_SECRET) {
     return Response.json({ error: "Razorpay is not configured on this server." }, { status: 503 });
   }

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { recordPaymentIdempotent } from "@/lib/paymentLedger";
+import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,13 @@ export async function POST(req: NextRequest) {
   const context = await getRequestContext(req);
   if (!context) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: a real student places at most ~5 orders/hour. 10/min is
+  // generous enough for double-tap retries but blocks runaway loops.
+  const rl = checkRateLimit(`orders:${clientKey(req, context.uid)}`, { limit: 10, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return Response.json({ error: rl.message }, { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } });
   }
 
   const body = await req.json().catch(() => null);

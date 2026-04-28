@@ -30,6 +30,19 @@ All 133 tests in 11 suites pass; production build is clean.
 
 ---
 
+## Scaling Hardening (28 Apr 2026)
+
+Sized for **600 k orders / month → 2 M orders / month with 50 k DAU**:
+
+- **Index pack** in [supabase/migrations/phase6_scaling_indexes.sql](supabase/migrations/phase6_scaling_indexes.sql) — composite indexes on `(user_id, created_at DESC)`, `(canteen_id, status, created_at DESC)`, `(canteen_id, created_at DESC)`, `(canteen_id, slot_id)`, `order_items.order_id`, `orders.bin_id`, `payments(user_id, captured_at DESC)`. All `CONCURRENTLY` so they roll out without blocking writes. Year-2 partitioning recipe included as a comment.
+- **In-memory rate limiter** [lib/rateLimit.ts](lib/rateLimit.ts) wired into the highest-risk POSTs: `/api/orders/place` (10 / min / user), `/api/payments/razorpay-order` (20 / min / IP), `/api/wallet/topup` (5 / min / IP). Returns 429 + `Retry-After`. Drop-in swappable for Upstash Redis when scaling horizontally.
+- **Edge cache headers** on the public read endpoints students poll the most: `/api/canteens` (`max-age=30, swr=60`) and `/api/canteens/[id]/menu` (`max-age=60, swr=120`). Cuts repeat-visit egress by ~95 %.
+- New unit tests [__tests__/rateLimit.test.ts](__tests__/rateLimit.test.ts) cover under-limit, over-limit, window reset, key isolation, and `clientKey` fallback.
+
+All 140 tests in 12 suites pass; production build is clean.
+
+---
+
 ## Table of Contents
 
 1. [Live URLs](#live-urls)

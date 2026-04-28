@@ -79,5 +79,11 @@ export async function GET(request: Request) {
     ? [...filtered].sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity))
     : filtered;
 
-  return Response.json({ canteens: sorted, count: sorted.length });
+  // Short-TTL caching: canteens list rarely changes within seconds, but a stale
+  // 30 s window dramatically cuts egress when 50k students poll on the home
+  // screen. `s-maxage` lets any CDN in front (Cloudflare/Railway) cache too.
+  return Response.json(
+    { canteens: sorted, count: sorted.length },
+    { headers: { "Cache-Control": "public, max-age=30, s-maxage=30, stale-while-revalidate=60" } },
+  );
 }

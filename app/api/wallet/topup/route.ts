@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 
 const KEY_ID = process.env.RAZORPAY_KEY_ID || "";
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
@@ -14,6 +15,13 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("Authorization") ?? "";
   const token = auth.replace("Bearer ", "").trim();
   if (!token) return Response.json({ error: "Unauthorised" }, { status: 401 });
+
+  // Rate limit: a real top-up flow happens at most a few times per day.
+  // 5/min on the IP cap blocks card-cycling abuse without hurting users.
+  const rl = checkRateLimit(`wallet-topup:${clientKey(req)}`, { limit: 5, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return Response.json({ error: rl.message }, { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } });
+  }
 
   if (!KEY_ID || !KEY_SECRET) {
     return Response.json({ error: "Razorpay is not yet configured on this server. Contact support." }, { status: 503 });

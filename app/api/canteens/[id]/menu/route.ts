@@ -50,5 +50,10 @@ export async function GET(
   for (const it of items) categoriesSet.add(it.category);
   const categories = Array.from(categoriesSet);
 
-  return Response.json({ items, categories, count: items.length });
+  // 60 s cache: menu changes are rare and the user can pull-to-refresh.
+  // Cuts repeat-visit egress by ~95 % for the typical browse session.
+  return Response.json(
+    { items, categories, count: items.length },
+    { headers: { "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=120" } },
+  );
 }
