@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { UpdateBanner, ForceUpdateGate } from "@/components/UpdateGate";
+import { CapacitorBoot } from "@/components/CapacitorBoot";
 
 export const metadata: Metadata = {
   title: "Canteen-Application",
@@ -54,6 +55,7 @@ export default function RootLayout({
       </head>
       <body>
         <ServiceWorkerRegistrar />
+        <CapacitorBoot />
         <AuthProvider>
           <ForceUpdateGate>
             <UpdateBanner />

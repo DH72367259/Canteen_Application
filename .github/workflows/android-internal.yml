@@ -1,0 +1,68 @@
+# Build & upload the Android app to the Play Store internal track.
+#
+# Requires the following GitHub repo secrets:
+#   ANDROID_KEYSTORE_BASE64        - the upload keystore (.jks), base64
+#   ANDROID_KEYSTORE_PASSWORD      - keystore password
+#   ANDROID_KEY_ALIAS              - key alias inside the keystore
+#   ANDROID_KEY_PASSWORD           - alias password
+#   PLAY_STORE_JSON_KEY            - Google service-account JSON for the Play Developer API
+#
+# Until those are populated this workflow is a no-op (manual trigger only).
+
+name: android-internal
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Bootstrap Android native project
+        run: |
+          npm run cap:add:android || true
+          npm run cap:sync
+
+      - name: Decode upload keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload.jks
+
+      - name: Build release bundle
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file=upload.jks \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          packageName: com.noqx.app
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed

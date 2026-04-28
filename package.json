@@ -9,10 +9,21 @@
     "test": "jest --runInBand --forceExit --testTimeout=30000",
     "test:coverage": "jest --runInBand --forceExit --coverage",
     "admin:create": "node scripts/create-admin-user.mjs",
-    "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public"
+    "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
+    "cap:add:ios": "npx cap add ios",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android"
   },
   "private": true,
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.2",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "next": "^16.2.4",
@@ -20,6 +31,9 @@
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^7.6.2",
+    "@capacitor/ios": "^8.3.1",
     "@tailwindcss/postcss": "^4.2.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",

@@ -41,3 +41,7 @@ serviceAccountKey.json
 # IDE
 .vscode/
 .idea/
+
+# Capacitor — native projects are scaffolded per-developer (see CAPACITOR.md)
+/ios
+/android

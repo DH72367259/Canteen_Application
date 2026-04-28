@@ -1,0 +1,89 @@
+# Build & upload the iOS app to TestFlight.
+#
+# Requires the following GitHub repo secrets:
+#   APP_STORE_CONNECT_API_KEY_ID    - "Key ID" from App Store Connect → Users & Access → Keys
+#   APP_STORE_CONNECT_ISSUER_ID     - "Issuer ID" on the same page
+#   APP_STORE_CONNECT_API_KEY       - the .p8 contents (base64-encoded)
+#   IOS_DIST_CERT_P12_BASE64        - distribution cert exported from Keychain (.p12), base64
+#   IOS_DIST_CERT_PASSWORD          - password for that .p12
+#   IOS_PROVISIONING_PROFILE_BASE64 - the .mobileprovision, base64
+#
+# Until those are populated this workflow is a no-op (the trigger is
+# manual-only). Documented here so the next person can flip it on.
+
+name: ios-testflight
+
+on:
+  workflow_dispatch:                          # manual trigger only — wire up secrets first
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Bootstrap iOS native project
+        run: |
+          npm run cap:add:ios || true       # idempotent
+          npm run cap:sync
+
+      - name: Import distribution cert
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          echo "$P12_BASE64" | base64 --decode > /tmp/dist.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/dist.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+      - name: Build & archive
+        working-directory: ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App \
+                     -configuration Release -archivePath build/App.xcarchive archive
+
+      - name: Export IPA
+        working-directory: ios/App
+        run: |
+          cat > ExportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/App.xcarchive \
+                     -exportOptionsPlist ExportOptions.plist \
+                     -exportPath build/ipa
+
+      - name: Upload to TestFlight
+        env:
+          API_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_KEY:        ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$API_KEY" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8
+          xcrun altool --upload-app -f ios/App/build/ipa/App.ipa -t ios \
+                       --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
