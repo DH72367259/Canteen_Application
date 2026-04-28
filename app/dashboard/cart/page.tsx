@@ -133,7 +133,11 @@ function CartContent() {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
   }
 
-  async function finaliseOrder(paymentId: string) {
+  async function finaliseOrder(
+    paymentId: string,
+    razorpayOrderId?: string,
+    razorpaySignature?: string
+  ) {
     const slotLabel = slots.find(s => s.id === slot)?.label || "";
 
     // Create the order in Supabase via API
@@ -155,6 +159,8 @@ function CartContent() {
           total: payable,
           slotLabel,
           paymentId,
+          razorpayOrderId,
+          razorpaySignature,
         }),
       });
       const json = await res.json();
@@ -278,7 +284,7 @@ function CartContent() {
             setBusy(false);
             return;
           }
-          await finaliseOrder(resp.razorpay_payment_id);
+          await finaliseOrder(resp.razorpay_payment_id, resp.razorpay_order_id, resp.razorpay_signature);
         } catch {
           setError("Verification error. If money was debited, it will be auto-refunded within 5-7 business days. Payment ID: " + resp.razorpay_payment_id);
           setBusy(false);

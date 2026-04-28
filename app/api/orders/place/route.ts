@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 
 export const dynamic = "force-dynamic";
 
 const MAX_CART_ITEMS = 20; // prevent DoS via oversized payloads
+const RZP_PAYMENT_RE = /^pay_[A-Za-z0-9]{14,}$/;
+const RZP_ORDER_RE   = /^order_[A-Za-z0-9]{14,}$/;
 
 export async function POST(req: NextRequest) {
   // Authenticate caller
@@ -16,7 +19,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return Response.json({ error: "Invalid body" }, { status: 400 });
 
-  const { canteenId, cartItems, slotLabel, paymentId } = body;
+  const { canteenId, cartItems, slotLabel, paymentId, razorpayOrderId, razorpaySignature } = body;
   // NOTE: `total` is intentionally NOT trusted from client — we recalculate server-side
 
   if (!canteenId || typeof canteenId !== "string" || canteenId.length > 100) {
@@ -146,6 +149,32 @@ export async function POST(req: NextRequest) {
       .from("bins")
       .update({ is_occupied: true, order_id: order.id, updated_at: new Date().toISOString() })
       .eq("id", bin.id);
+  }
+
+  // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
+  // We snapshot the commission split RIGHT NOW so future tariff changes
+  // never retroactively rewrite history. Idempotent on razorpay_payment_id —
+  // safe even if the webhook fires before/after this. Failure here must NOT
+  // fail the order (the user has already paid); we just log it.
+  if (
+    typeof paymentId === "string" && RZP_PAYMENT_RE.test(paymentId) &&
+    typeof razorpayOrderId === "string" && RZP_ORDER_RE.test(razorpayOrderId)
+  ) {
+    try {
+      await recordPaymentIdempotent({
+        razorpay_order_id:   razorpayOrderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature:  typeof razorpaySignature === "string" ? razorpaySignature.slice(0, 200) : null,
+        order_id:            order.id,
+        user_id:             context.uid,
+        canteen_id:          canteenId,
+        amount_paise:        Math.round(serverTotal * 100),
+        status:              "captured",
+      });
+    } catch (e) {
+      // Order is already created and paid — never bubble this to the user.
+      console.error("[orders/place] payment-ledger insert failed:", e);
+    }
   }
 
   return Response.json({ orderId: order.id, otp, binLabel, binColor, total: serverTotal });
