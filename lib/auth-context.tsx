@@ -190,10 +190,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Safety timeout: if Supabase is unreachable, stop the spinner after 1.5s.
-    // Profile cache (localStorage) means returning users load instantly anyway;
-    // 1.5s is enough for Railway cold-starts on first visit.
-    const fallback = setTimeout(() => setLoading(false), 1500)
+    // Safety timeout: if Supabase is unreachable, stop the spinner after 5s.
+    // We avoid a tighter timeout because on slow mobile networks (cellular cold-start,
+    // bridge tunnels, etc.) the legitimate getSession() round-trip can take ~2-3s, and a
+    // shorter cutoff caused student sessions to be misread as "logged out" on navigation.
+    const fallback = setTimeout(() => setLoading(false), 5000)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {

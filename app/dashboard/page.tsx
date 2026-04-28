@@ -69,9 +69,23 @@ export default function UserHomePage() {
   // Auth guard — redirect unauthenticated users to login;
   // redirect privileged users (admin/vendor/worker) to their correct dashboards so they
   // are never stranded on the student page after a TOKEN_REFRESHED role-restore.
+  // We also check localStorage for a stored Supabase session before redirecting:
+  // on slow mobile networks getSession() can take a few seconds, and we don't want to
+  // bounce a returning student to /login while their session is still being restored.
   useEffect(() => {
     if (loading) return;
-    if (!user) { router.replace("/login?role=user"); return; }
+    if (!user) {
+      // If a Supabase session token is sitting in localStorage but hasn't hydrated yet,
+      // give the auth provider a moment to finish restoring it instead of redirecting.
+      let hasStoredSession = false;
+      try {
+        const raw = localStorage.getItem("canteen_auth_v2");
+        hasStoredSession = !!raw && raw.length > 20;
+      } catch { /* SSR safe */ }
+      if (hasStoredSession) return;
+      router.replace("/login?role=user");
+      return;
+    }
     if (user.role === "super_admin" || user.role === "co_admin") { router.replace("/admin/dashboard"); return; }
     if (user.role === "vendor" || user.role === "canteen_admin") { router.replace("/vendor/dashboard"); return; }
     if (user.role === "worker") { router.replace("/worker/dashboard"); return; }
@@ -248,9 +262,14 @@ export default function UserHomePage() {
         : pool;
     }
     const areaFiltered = pool.filter(c => c.location === selectedLocation);
+    // Graceful fallback: if the picked campus label doesn't exactly match any canteen's
+    // college/city string (e.g. user picked a nearby zone but canteens are tagged with
+    // the parent campus name), fall back to the full pool rather than rendering an empty
+    // list. This prevents users from seeing "no canteens" when canteens do exist nearby.
+    const effective = areaFiltered.length > 0 ? areaFiltered : pool;
     return userCoords
-      ? [...areaFiltered].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
-      : areaFiltered;
+      ? [...effective].sort((a, b) => (a.distKm ?? 0) - (b.distKm ?? 0))
+      : effective;
   })();
 
   const isFiltered = !showAll && selectedLocation && selectedLocation !== "All";

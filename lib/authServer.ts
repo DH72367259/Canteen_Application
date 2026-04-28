@@ -54,10 +54,35 @@ export async function getRequestContext(
     profileData = data
   }
 
+  const role = (profileData?.role ?? 'user') as UserRole
+  let canteenId: string | undefined = profileData?.canteen_id ?? undefined
+
+  // Fallback: vendor / canteen_admin / worker without an assigned canteen would otherwise
+  // hit a 400 "canteenId required" on every canteen-scoped endpoint. Resolve the first
+  // available canteen and backfill the profile so subsequent calls hit the fast path.
+  // We deliberately limit this to canteen-scoped roles — never elevate a normal student.
+  if (!canteenId && (role === 'vendor' || role === 'canteen_admin' || role === 'worker')) {
+    const { data: firstCanteen } = await supabase
+      .from('canteens')
+      .select('id')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (firstCanteen?.id) {
+      canteenId = firstCanteen.id
+      // Backfill profile (best-effort; failure must not block the request).
+      await supabase
+        .from('profiles')
+        .update({ canteen_id: canteenId })
+        .eq('id', user.id)
+        .then(() => undefined, () => undefined)
+    }
+  }
+
   return {
     uid:       user.id,
-    role:      (profileData?.role ?? 'user') as UserRole,
-    canteenId: profileData?.canteen_id,
+    role,
+    canteenId,
     email:     user.email,
   }
 }
