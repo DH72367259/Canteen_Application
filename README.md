@@ -195,6 +195,36 @@ The `/auth/confirm` page accepts either path. The OTP code is always the safest 
 
 All Supabase auth calls are wrapped with a 15-second timeout. If Supabase doesn't respond within 15 seconds, the error is surfaced to the user with a retry prompt instead of hanging forever on "Verifying…".
 
+### Self-service password reset (all roles)
+
+Every account — super_admin, co_admin, canteen_admin, vendor, worker, student — can reset their own password without contacting the super admin:
+
+1. On the login page, click **Forgot Password?** (visible on the Canteen Login tab and on the Worker Login page; deep-link is `/login?forgot=1`).
+2. Enter the registered email → Supabase sends a **6-digit OTP** to the inbox via `signInWithOtp({ email, options: { shouldCreateUser: false } })`. The `shouldCreateUser: false` flag ensures wrong-typed emails do NOT silently create a stub account.
+3. User types the OTP into the app → `verifyOtp({ type: "email" })` returns a fresh session.
+4. App immediately prompts **Set new password** → `auth.updateUser({ password })` writes the new hash and refreshes `user_metadata.password_changed_at`.
+
+The first-time password is still set by the super admin during onboarding (so workers/managers don't need email access on day 1). After that, anyone can rotate their own password from the login screen.
+
+#### REQUIRED Supabase email-template config
+
+Supabase's default **Magic Link** template only renders `{{ .ConfirmationURL }}`. To make the 6-digit OTP visible (which our flow requires) you MUST update the template once per project:
+
+1. Go to **Supabase Dashboard → Authentication → Email Templates → Magic Link**.
+2. Replace the body with something like:
+
+```html
+<h2>Your NoQx verification code</h2>
+<p>Use this 6-digit code to sign in or reset your password:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px;">{{ .Token }}</p>
+<p>This code expires in 1 hour. If you didn't request it, ignore this email.</p>
+<p style="font-size:12px;color:#888">Or click <a href="{{ .ConfirmationURL }}">this link</a> to sign in directly.</p>
+```
+
+3. Save. Existing users will receive the OTP from the very next request — no DB changes needed.
+
+> The same template covers both new-student email-OTP signup and the staff forgot-password flow. Both call `signInWithOtp` under the hood.
+
 ---
 
 ## Auth Session Safeguards

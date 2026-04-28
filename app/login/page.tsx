@@ -66,14 +66,17 @@ function LoginContent() {
   const params = useSearchParams();
   const {
     user, loading, session,
-    sendEmailOtp, verifyEmailOtp,
+    sendEmailOtp, sendPasswordResetOtp, verifyEmailOtp,
     signInWithIdentifier, signInWithPassword,
     logout,
   } = useAuth();
 
   type Tab = "student" | "password" | "forgot";
   const roleParam = params.get("role") || "user";
-  const [tab, setTab] = useState<Tab>(roleParam === "user" ? "student" : "password");
+  const forgotParam = params.get("forgot") === "1";
+  const [tab, setTab] = useState<Tab>(
+    forgotParam ? "forgot" : roleParam === "user" ? "student" : "password"
+  );
 
   // ── Common state ──────────────────────────────────────────────────────────
   const [email,      setEmail]     = useState("");
@@ -316,7 +319,7 @@ function LoginContent() {
     }
   }
 
-  // ── Forgot password — email OTP flow ────────────────────────────────────
+  // ── Forgot password — email OTP flow (works for staff + students) ───────────────────
   async function handleForgotSendCode() {
     const emailTrimmed = email.trim();
     if (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
@@ -324,7 +327,9 @@ function LoginContent() {
     }
     setBusy(true); setError(null); setInfo(null);
     try {
-      await sendEmailOtp(emailTrimmed);
+      // Use the password-reset variant (shouldCreateUser: false) so we never
+      // create a stub account if someone mistypes their email.
+      await sendPasswordResetOtp(emailTrimmed);
       setOtpSentTo(emailTrimmed);
       setInfo(`Verification code sent to ${emailTrimmed}. Check your inbox.`);
     } catch (e: unknown) {
@@ -394,8 +399,8 @@ function LoginContent() {
           <p>Smart Institutional Dining</p>
         </div>
 
-        {/* Tab switcher — hidden during account setup */}
-        {!showSetup && (
+        {/* Tab switcher — hidden during account setup OR forgot-password flow */}
+        {!showSetup && tab !== "forgot" && (
           <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
             {(["student", "password"] as Tab[]).map(t => (
               <button
@@ -647,8 +652,11 @@ function LoginContent() {
             <button className="btn btn-primary btn-full" disabled={busy} onClick={handlePasswordLogin} style={{ padding: "0.8rem" }}>
               {busy ? "Signing in…" : "Sign In →"}
             </button>
+            <button className="btn btn-ghost btn-full" onClick={() => switchTab("forgot")} style={{ fontSize: "0.82rem" }}>
+              Forgot Password?
+            </button>
             <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
-              🔐 Passwords are managed by your super admin. Contact them if you need access.
+              🔐 First-time login? Use the password your super admin shared. You can change it any time via Forgot Password.
             </p>
             <div style={{ textAlign: "center", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid var(--line-2)" }}>
               <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>

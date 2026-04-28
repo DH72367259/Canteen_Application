@@ -155,6 +155,19 @@ export default function WorkerLoginPage() {
           {busy ? "Signing in…" : "Sign In"}
         </button>
 
+        <button
+          type="button"
+          onClick={() => router.push("/login?forgot=1")}
+          style={{
+            marginTop: "0.75rem", width: "100%",
+            background: "none", border: "none",
+            color: "#f97316", fontWeight: 600, fontSize: "0.85rem",
+            cursor: "pointer", padding: "0.4rem",
+          }}
+        >
+          Forgot Password?
+        </button>
+
         <p style={{ marginTop: "1.25rem", textAlign: "center", fontSize: "0.78rem", color: "#94a3b8" }}>
           Not a worker?{" "}
           <button

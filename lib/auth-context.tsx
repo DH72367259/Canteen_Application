@@ -92,6 +92,7 @@ interface AuthContextValue {
   forceLogoutAllSessions: () => Promise<void>
   logout: () => Promise<void>
   sendEmailOtp: (email: string) => Promise<void>
+  sendPasswordResetOtp: (email: string) => Promise<void>
   verifyEmailOtp: (email: string, token: string) => Promise<void>
   linkEmail: (email: string) => Promise<void>
   verifyEmailLink: (email: string, token: string) => Promise<void>
@@ -410,6 +411,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error
   }
 
+  /** Forgot-password OTP — sends 6-digit code ONLY to existing accounts.
+   *  Used by all roles (super_admin, co_admin, canteen_admin, vendor, worker, user)
+   *  so they can reset their own password without contacting the super admin. */
+  async function sendPasswordResetOtp(email: string) {
+    if (!isSupabaseConfigured()) return
+    const { error } = await withTimeout(
+      supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false },
+      })
+    )
+    if (error) {
+      const raw = (error.message ?? '').toLowerCase()
+      if (raw.includes('signups not allowed') || raw.includes('user not found') || raw.includes('not found')) {
+        throw new Error('No account found with that email. Please check the address or contact your super admin.')
+      }
+      throw error
+    }
+  }
+
   async function verifyEmailOtp(email: string, token: string) {
     if (!isSupabaseConfigured()) {
       const role = demoRoleFor(email)
@@ -542,6 +563,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         forceLogoutAllSessions,
         logout,
         sendEmailOtp,
+        sendPasswordResetOtp,
         verifyEmailOtp,
         linkEmail,
         verifyEmailLink,
