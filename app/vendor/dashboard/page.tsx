@@ -48,6 +48,14 @@ export default function VendorDashboard() {
   const { user, logout, session, loading } = useAuth();
   const [activeNav, setActiveNav] = useState("live");
   const [activeSlot, setActiveSlot] = useState("all");
+  // Live Orders status filter (PDF requirement: Placed-in-Bin / Preparing / All)
+  const [statusFilter, setStatusFilter] = useState<"all" | "placed" | "preparing">("all");
+  // Live wall clock shown in the toolbar (updates every second)
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
   const [bins, setBins] = useState<Bin[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
@@ -257,6 +265,7 @@ export default function VendorDashboard() {
   const STATUS_ORDER: Record<BinStatus, number> = { placed: 0, preparing: 1, completed: 2, delayed: 3, empty: 99 };
   const visibleSlotBins = [...slotBins]
     .filter(b => b.status !== "empty" && !!b.orderId)
+    .filter(b => statusFilter === "all" ? true : b.status === statusFilter)
     .sort((a, b) => {
       const sa = STATUS_ORDER[a.status]; const sb = STATUS_ORDER[b.status];
       if (sa !== sb) return sa - sb;
@@ -313,6 +322,23 @@ export default function VendorDashboard() {
             <div className="topbar-sub">Auto-refreshes every 5 seconds</div>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+            {/* Live time clock (PDF requirement: "Add Time in toolbar") */}
+            <div
+              title="Current time"
+              style={{
+                fontFamily: "monospace",
+                fontSize: "0.85rem",
+                fontWeight: 700,
+                background: "#f1f5f9",
+                color: "#0f172a",
+                borderRadius: 8,
+                padding: "0.3rem 0.6rem",
+                border: "1px solid #cbd5e1",
+                letterSpacing: "0.5px",
+              }}
+            >
+              🕒 {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600 }}>Canteen</span>
               {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 180 }}>{toggleError}</span>}
@@ -377,6 +403,31 @@ export default function VendorDashboard() {
                   ))}
                 </select>
               )}
+              {/* Status sorter (PDF: Placed-in-Bin / Preparing / All) */}
+              <div style={{ display: "flex", gap: "0.3rem", marginLeft: "auto" }}>
+                {([
+                  { id: "placed",     label: "Placed-in-Bin", color: "var(--blue)" },
+                  { id: "preparing",  label: "Preparing",     color: "var(--yellow)" },
+                  { id: "all",        label: "All",           color: "var(--ink-3)" },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setStatusFilter(opt.id)}
+                    style={{
+                      padding: "0.35rem 0.7rem",
+                      borderRadius: 8,
+                      border: statusFilter === opt.id ? `1.5px solid ${opt.color}` : "1.5px solid var(--border)",
+                      background: statusFilter === opt.id ? `${opt.color}15` : "#fff",
+                      color: statusFilter === opt.id ? opt.color : "var(--ink-2)",
+                      fontWeight: 700,
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Legend */}
