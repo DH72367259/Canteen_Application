@@ -94,10 +94,26 @@ describe("POST /api/admin/users", () => {
 
   it("returns 400 if role is invalid", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    const res = await POST(makeRequest({ email: "a@b.com", password: "Abcd1234!", name: "A", role: "user" }));
+    const res = await POST(makeRequest({ email: "a@b.com", password: "Abcd1234!", name: "A", phone: "9876543210", role: "user" }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/role/i);
+  });
+
+  it("returns 400 if phone missing", async () => {
+    mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
+    const res = await POST(makeRequest({ email: "a@b.com", password: "Abcd1234!", name: "A", role: "worker" }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/phone/i);
+  });
+
+  it("returns 400 if phone format invalid", async () => {
+    mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
+    const res = await POST(makeRequest({ email: "a@b.com", password: "Abcd1234!", name: "A", role: "worker", phone: "123" }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/phone/i);
   });
 
   it("creates a worker user successfully", async () => {
@@ -114,6 +130,7 @@ describe("POST /api/admin/users", () => {
       password: "Abcd1234!",
       name: "Worker Test",
       role: "worker",
+      phone: "9876543210",
       canteen_id: "canteen-uuid",
     }));
 
@@ -121,11 +138,12 @@ describe("POST /api/admin/users", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.role).toBe("worker");
+    expect(body.phone).toBe("+919876543210");
     expect(mockAdminUsersCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ email_confirm: true })
+      expect.objectContaining({ email_confirm: true, phone: "+919876543210", phone_confirm: true })
     );
     expect(mockUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "worker", canteen_id: "canteen-uuid" })
+      expect.objectContaining({ role: "worker", canteen_id: "canteen-uuid", phone: "+919876543210" })
     );
   });
 
@@ -144,6 +162,7 @@ describe("POST /api/admin/users", () => {
       email: "fail@test.com",
       password: "Abcd1234!",
       name: "Fail",
+      phone: "9876543210",
       role: "worker",
     }));
 
@@ -162,6 +181,7 @@ describe("POST /api/admin/users", () => {
       email: "existing@test.com",
       password: "Abcd1234!",
       name: "Existing",
+      phone: "9876543210",
       role: "worker",
     }));
 
@@ -186,6 +206,7 @@ describe("POST /api/admin/users", () => {
         email: `${role}@test.com`,
         password: "Abcd1234!",
         name: role,
+        phone: "9876543210",
         role,
       }));
       expect(res.status).toBe(200);

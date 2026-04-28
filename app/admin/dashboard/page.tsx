@@ -120,7 +120,7 @@ function CanteensSection() {
   const [loadingCanteens, setLoadingCanteens] = useState(true);
   const [editing, setEditing] = useState<Canteen | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active" as "active" | "inactive", email: "", password: "", phone: "" });
   const [gmapParseError, setGmapParseError] = useState("");
   const [savingCanteen, setSavingCanteen] = useState(false);
   const [canteenApiError, setCanteenApiError] = useState("");
@@ -194,14 +194,14 @@ function CanteensSection() {
 
   const openEdit = (c: Canteen) => {
     setEditing(c);
-    setForm({ name: c.name, college: c.college, city: c.city, address: c.address, lat: c.lat, lng: c.lng, gmapLink: c.gmapLink, status: c.status, email: "", password: "" });
+    setForm({ name: c.name, college: c.college, city: c.city, address: c.address, lat: c.lat, lng: c.lng, gmapLink: c.gmapLink, status: c.status, email: "", password: "", phone: "" });
     setAdding(false);
     setGmapParseError("");
     setCanteenApiError("");
   };
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active", email: "", password: "" });
+    setForm({ name: "", college: "", city: "", address: "", lat: "", lng: "", gmapLink: "", status: "active", email: "", password: "", phone: "" });
     setAdding(true);
     setGmapParseError("");
     setCanteenApiError("");
@@ -218,6 +218,7 @@ function CanteensSection() {
     if (adding) {
       if (!form.email.trim()) { setCanteenApiError("Login email is required."); return; }
       if (!form.password.trim() || form.password.length < 8) { setCanteenApiError("Password must be at least 8 characters."); return; }
+      if (!form.phone.trim()) { setCanteenApiError("Manager phone number is required."); return; }
       setSavingCanteen(true);
       setCanteenApiError("");
       try {
@@ -227,7 +228,7 @@ function CanteensSection() {
           body: JSON.stringify({
             name: form.name, college: form.college, city: form.city, address: form.address,
             lat: form.lat, lng: form.lng, gmapLink: form.gmapLink,
-            email: form.email, password: form.password,
+            email: form.email, password: form.password, phone: form.phone,
           }),
         });
         const data = await res.json();
@@ -448,6 +449,10 @@ function CanteensSection() {
                     <input className="form-input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="e.g. iitbombay@canteen.app" autoComplete="off" />
                   </div>
                   <div>
+                    <label className="form-label">Manager Phone Number * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(10-digit Indian or +country)</span></label>
+                    <input className="form-input" type="tel" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="e.g. 9876543210 or +919876543210" autoComplete="off" />
+                  </div>
+                  <div>
                     <label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 characters)</span></label>
                     <div style={{ position: "relative" }}>
                       <input
@@ -537,7 +542,7 @@ async function adminFetch(path: string, session: { access_token?: string } | nul
 }
 
 // ── ManagersSection — onboard / offboard canteen managers ─────────────────
-interface ManagerRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+interface ManagerRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
 
 function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
   const [managers, setManagers] = useState<ManagerRow[]>([]);
@@ -547,7 +552,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
 
   // Create form
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "", phone: "" });
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -575,11 +580,12 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
 
   async function handleCreate() {
     setFormBusy(true); setFormError(null);
+    if (!form.phone.trim()) { setFormError("Phone number is required."); setFormBusy(false); return; }
     try {
       const r = await adminFetch("/api/admin/users", session, { method: "POST", body: JSON.stringify(form) });
       const j = await r.json();
       if (!r.ok) { setFormError(j.error ?? "Failed"); return; }
-      setShowCreate(false); setForm({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "" });
+      setShowCreate(false); setForm({ email: "", password: "", name: "", role: "canteen_admin", canteen_id: "", phone: "" });
       await load();
     } catch { setFormError("Network error"); }
     finally { setFormBusy(false); }
@@ -643,7 +649,10 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
             ) : filtered.map(m => (
               <tr key={m.uid}>
                 <td style={{ fontWeight: 600 }}>{m.name || "—"}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{m.email}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>
+                  <div>{m.email}</div>
+                  {m.phone && <div style={{ fontSize: "0.74rem", marginTop: 2 }}>📞 {m.phone}</div>}
+                </td>
                 <td><span className="tag tag-blue">{m.role}</span></td>
                 <td style={{ fontSize: "0.82rem" }}>{m.canteen_id ? m.canteen_id.slice(0, 8) + "…" : "—"}</td>
                 <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString("en-IN") : "—"}</td>
@@ -668,9 +677,10 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
               <button onClick={() => setShowCreate(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div><label className="form-label">Full Name</label><input className="form-input" placeholder="e.g. Ramesh Kumar" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-              <div><label className="form-label">Login Email</label><input className="form-input" type="email" placeholder="manager@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
-              <div><label className="form-label">Password (min 8 chars)</label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
+              <div><label className="form-label">Full Name *</label><input className="form-input" placeholder="e.g. Ramesh Kumar" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label className="form-label">Login Email *</label><input className="form-input" type="email" placeholder="manager@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
+              <div><label className="form-label">Phone Number * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(10-digit Indian or +country)</span></label><input className="form-input" type="tel" placeholder="e.g. 9876543210 or +919876543210" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div><label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 chars)</span></label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
               <div>
                 <label className="form-label">Role</label>
                 <select className="form-input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
@@ -724,7 +734,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
 }
 
 // ── WorkersSection — create / manage workers assigned to canteens ────────────
-interface WorkerRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+interface WorkerRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
 interface CanteenOption { id: string; name: string; city: string; college: string; }
 
 function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
@@ -736,7 +746,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
 
   // Create form
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", name: "", canteen_id: "" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", canteen_id: "", phone: "" });
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -779,6 +789,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
 
   async function handleCreate() {
     if (!form.canteen_id) { setFormError("Please select a canteen."); return; }
+    if (!form.phone.trim()) { setFormError("Phone number is required."); return; }
     setFormBusy(true); setFormError(null);
     try {
       const r = await adminFetch("/api/admin/users", session, {
@@ -788,7 +799,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
       const j = await r.json();
       if (!r.ok) { setFormError(j.error ?? "Failed to create worker"); return; }
       setShowCreate(false);
-      setForm({ email: "", password: "", name: "", canteen_id: "" });
+      setForm({ email: "", password: "", name: "", canteen_id: "", phone: "" });
       await load();
     } catch { setFormError("Network error"); }
     finally { setFormBusy(false); }
@@ -885,7 +896,10 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
             ) : filtered.map(w => (
               <tr key={w.uid}>
                 <td style={{ fontWeight: 600 }}>{w.name || "—"}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{w.email}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>
+                  <div>{w.email}</div>
+                  {w.phone && <div style={{ fontSize: "0.74rem", marginTop: 2 }}>📞 {w.phone}</div>}
+                </td>
                 <td>
                   {w.canteen_id ? (
                     <span className="tag tag-green" title={w.canteen_id}>{canteenName(w.canteen_id)}</span>
@@ -932,6 +946,11 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
                   value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
               </div>
               <div>
+                <label className="form-label">Phone Number * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(10-digit Indian or +country)</span></label>
+                <input className="form-input" type="tel" placeholder="e.g. 9876543210 or +919876543210"
+                  value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+              </div>
+              <div>
                 <label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 chars)</span></label>
                 <input className="form-input" type="password" placeholder="Set a strong password"
                   value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
@@ -953,7 +972,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
               </div>
               {formError && <p className="error-msg">{formError}</p>}
               <button className="btn btn-primary btn-full"
-                disabled={formBusy || !form.name || !form.email || !form.password || !form.canteen_id}
+                disabled={formBusy || !form.name || !form.email || !form.password || !form.canteen_id || !form.phone}
                 onClick={handleCreate}>
                 {formBusy ? "Creating…" : "Create Worker →"}
               </button>
@@ -1033,7 +1052,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
 
 // ── UsersSection — all platform users from Supabase ───────────────────────
 function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
-  interface UserRow { uid: string; name: string; email: string; role: string; canteen_id: string | null; created_at: string; }
+  interface UserRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
   const [users,   setUsers]   = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -1041,7 +1060,7 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
 
   // Create co-admin form
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", phone: "" });
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -1084,6 +1103,7 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreateCoAdmin() {
+    if (!form.phone.trim()) { setFormError("Phone number is required."); return; }
     setFormBusy(true); setFormError(null);
     try {
       const r = await adminFetch("/api/admin/users", session, {
@@ -1092,7 +1112,7 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
       });
       const j = await r.json();
       if (!r.ok) { setFormError(j.error ?? "Failed"); return; }
-      setShowCreate(false); setForm({ email: "", password: "", name: "" }); await load();
+      setShowCreate(false); setForm({ email: "", password: "", name: "", phone: "" }); await load();
     } catch { setFormError("Network error"); }
     finally { setFormBusy(false); }
   }
@@ -1148,7 +1168,10 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
             ) : filtered.map(u => (
               <tr key={u.uid}>
                 <td style={{ fontWeight: 600 }}>{u.name || "—"}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{u.email || "—"}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>
+                  <div>{u.email || "—"}</div>
+                  {u.phone && <div style={{ fontSize: "0.74rem", marginTop: 2 }}>📞 {u.phone}</div>}
+                </td>
                 <td><span className={`tag ${roleTag[u.role] ?? "tag-gray"}`}>{u.role}</span></td>
                 <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN") : "—"}</td>
                 {isSuperAdmin && (
@@ -1176,11 +1199,12 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
               <button onClick={() => setShowCreate(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div><label className="form-label">Full Name</label><input className="form-input" placeholder="e.g. Priya Sharma" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-              <div><label className="form-label">Login Email</label><input className="form-input" type="email" placeholder="coadmin@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
-              <div><label className="form-label">Password (min 8 chars)</label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
+              <div><label className="form-label">Full Name *</label><input className="form-input" placeholder="e.g. Priya Sharma" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label className="form-label">Login Email *</label><input className="form-input" type="email" placeholder="coadmin@example.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
+              <div><label className="form-label">Phone Number * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(10-digit Indian or +country)</span></label><input className="form-input" type="tel" placeholder="e.g. 9876543210 or +919876543210" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div><label className="form-label">Password * <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>(min 8 chars)</span></label><input className="form-input" type="password" placeholder="Set a strong password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></div>
               {formError && <p className="error-msg">{formError}</p>}
-              <button className="btn btn-primary btn-full" disabled={formBusy} onClick={handleCreateCoAdmin}>
+              <button className="btn btn-primary btn-full" disabled={formBusy || !form.name || !form.email || !form.password || !form.phone} onClick={handleCreateCoAdmin}>
                 {formBusy ? "Creating…" : "Create Co-Admin →"}
               </button>
             </div>

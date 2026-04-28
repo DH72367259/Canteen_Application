@@ -25,12 +25,29 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, college, city, address, lat, lng, gmapLink, email, password } = body;
+  const { name, college, city, address, lat, lng, gmapLink, email, password, phone } = body;
 
   if (!name?.trim())     return Response.json({ error: "Canteen name is required" }, { status: 400 });
   if (!email?.trim())    return Response.json({ error: "Login email is required" }, { status: 400 });
   if (!password?.trim()) return Response.json({ error: "Password is required" }, { status: 400 });
   if (password.length < 8) return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  if (!phone?.trim())    return Response.json({ error: "Manager phone number is required" }, { status: 400 });
+
+  // Normalise phone (E.164). Accept Indian 10-digit, +91, or any +<country><number>.
+  const phoneRaw = phone.trim().replace(/[\s()\-]/g, "");
+  let phoneNormalised: string;
+  if (phoneRaw.startsWith("+")) {
+    phoneNormalised = phoneRaw;
+  } else if (/^[0-9]{10}$/.test(phoneRaw)) {
+    phoneNormalised = `+91${phoneRaw}`;
+  } else if (/^91[0-9]{10}$/.test(phoneRaw)) {
+    phoneNormalised = `+${phoneRaw}`;
+  } else {
+    return Response.json({ error: "Phone must be a valid 10-digit Indian number or include a country code (e.g. +919876543210)." }, { status: 400 });
+  }
+  if (!/^\+[0-9]{8,15}$/.test(phoneNormalised)) {
+    return Response.json({ error: "Phone format is invalid." }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
@@ -38,7 +55,9 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email: email.trim().toLowerCase(),
     password,
+    phone: phoneNormalised,
     email_confirm: true,
+    phone_confirm: true,
     user_metadata: {
       has_password: true,
       password_changed_at: new Date().toISOString(),
@@ -101,6 +120,7 @@ export async function POST(request: Request) {
       id:         userId,
       email:      email.trim().toLowerCase(),
       name:       name.trim() + " Manager",
+      phone:      phoneNormalised,
       role:       "canteen_admin",
       canteen_id: canteen.id,
     });

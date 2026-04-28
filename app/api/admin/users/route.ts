@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, name, email, role, canteen_id, created_at")
+    .select("id, name, email, phone, role, canteen_id, created_at")
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     role: context.role,
     isSuperAdmin: context.role === "super_admin",
     users: (data ?? []).map(u => ({
-      uid: u.id, email: u.email, name: u.name,
+      uid: u.id, email: u.email, name: u.name, phone: u.phone,
       role: u.role, canteen_id: u.canteen_id, created_at: u.created_at,
     })),
   });
@@ -40,11 +40,30 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { email, password, name, role, canteen_id } = body as Record<string, string>;
+  const { email, password, name, role, canteen_id, phone } = body as Record<string, string>;
   if (!email?.trim())    return NextResponse.json({ error: "Email is required." }, { status: 400 });
   if (!password?.trim()) return NextResponse.json({ error: "Password is required." }, { status: 400 });
   if ((password as string).length < 8) return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   if (!name?.trim())     return NextResponse.json({ error: "Name is required." }, { status: 400 });
+  if (!phone?.trim())    return NextResponse.json({ error: "Phone number is required." }, { status: 400 });
+
+  // Normalise phone to E.164 (assumes Indian numbers if no country code present).
+  // Accept inputs like "9876543210", "+919876543210", "+1 555 010 1234" and reject
+  // anything that doesn't end up as a valid 8-15 digit international number.
+  const phoneRaw = phone.trim().replace(/[\s()\-]/g, "");
+  let phoneNormalised: string;
+  if (phoneRaw.startsWith("+")) {
+    phoneNormalised = phoneRaw;
+  } else if (/^[0-9]{10}$/.test(phoneRaw)) {
+    phoneNormalised = `+91${phoneRaw}`;
+  } else if (/^91[0-9]{10}$/.test(phoneRaw)) {
+    phoneNormalised = `+${phoneRaw}`;
+  } else {
+    return NextResponse.json({ error: "Phone must be a valid 10-digit Indian number or include a country code (e.g. +919876543210)." }, { status: 400 });
+  }
+  if (!/^\+[0-9]{8,15}$/.test(phoneNormalised)) {
+    return NextResponse.json({ error: "Phone format is invalid." }, { status: 400 });
+  }
 
   const allowedRoles = ["co_admin", "canteen_admin", "vendor", "worker"];
   if (!role || !allowedRoles.includes(role)) {
@@ -56,7 +75,9 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email: email.trim().toLowerCase(),
     password,
+    phone: phoneNormalised,
     email_confirm: true,
+    phone_confirm: true,
     user_metadata: { has_password: true, password_changed_at: new Date().toISOString() },
   });
   if (authError) {
@@ -65,7 +86,9 @@ export async function POST(request: Request) {
     const raw = (authError.message ?? "").toLowerCase();
     let msg: string;
     if (raw.includes("already registered") || raw.includes("already been registered") || raw.includes("already exists")) {
-      msg = "A user with this email already exists.";
+      msg = "A user with this email or phone already exists.";
+    } else if (raw.includes("phone")) {
+      msg = `Phone rejected by Supabase: ${authError.message}`;
     } else if (raw.includes("password")) {
       msg = `Password rejected by Supabase: ${authError.message}`;
     } else if (raw.includes("signup") && raw.includes("disabled")) {
@@ -81,6 +104,7 @@ export async function POST(request: Request) {
     id: userId,
     email: email.trim().toLowerCase(),
     name: name.trim(),
+    phone: phoneNormalised,
     role,
     canteen_id: canteen_id || null,
   });
@@ -90,7 +114,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create user profile." }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, uid: userId, email: email.trim().toLowerCase(), name: name.trim(), role });
+  return NextResponse.json({ success: true, uid: userId, email: email.trim().toLowerCase(), name: name.trim(), phone: phoneNormalised, role });
 }
 
 // ── PATCH /api/admin/users — update user or reset password (super_admin only) ─
@@ -103,7 +127,7 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { uid, name, role, canteen_id, new_password } = body as Record<string, string>;
+  const { uid, name, role, canteen_id, new_password, phone } = body as Record<string, string>;
   if (!uid) return NextResponse.json({ error: "uid is required." }, { status: 400 });
 
   const supabase = createAdminClient();
@@ -119,11 +143,32 @@ export async function PATCH(request: Request) {
     });
   }
 
+  // Update phone (auth + profile) if requested
+  let phoneNormalised: string | null = null;
+  if (phone !== undefined) {
+    if (!phone?.trim()) return NextResponse.json({ error: "Phone cannot be empty." }, { status: 400 });
+    const phoneRaw = phone.trim().replace(/[\s()\-]/g, "");
+    if (phoneRaw.startsWith("+")) phoneNormalised = phoneRaw;
+    else if (/^[0-9]{10}$/.test(phoneRaw)) phoneNormalised = `+91${phoneRaw}`;
+    else if (/^91[0-9]{10}$/.test(phoneRaw)) phoneNormalised = `+${phoneRaw}`;
+    else return NextResponse.json({ error: "Phone must be a valid 10-digit Indian number or include a country code." }, { status: 400 });
+    if (!/^\+[0-9]{8,15}$/.test(phoneNormalised)) {
+      return NextResponse.json({ error: "Phone format is invalid." }, { status: 400 });
+    }
+    const { error: phErr } = await supabase.auth.admin.updateUserById(uid, { phone: phoneNormalised, phone_confirm: true });
+    if (phErr) {
+      const raw = (phErr.message ?? "").toLowerCase();
+      const msg = raw.includes("already") ? "Another user already has this phone number." : `Failed to update phone: ${phErr.message}`;
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+  }
+
   // Update profile fields
   const update: Record<string, string | null> = {};
   if (name)  update.name = name.trim();
   if (role)  update.role = role;
   if (canteen_id !== undefined) update.canteen_id = canteen_id || null;
+  if (phoneNormalised) update.phone = phoneNormalised;
 
   if (Object.keys(update).length > 0) {
     const { error: profileErr } = await supabase.from("profiles").update(update).eq("id", uid);
