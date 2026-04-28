@@ -240,8 +240,54 @@ function CanteensSection() {
         setSavingCanteen(false);
       }
     } else if (editing) {
-      setCanteens(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } : c));
-      closeModal();
+      // Persist edits to the server. Local-only updates were silently lost on refresh.
+      setSavingCanteen(true);
+      setCanteenApiError("");
+      try {
+        const res = await fetch(`/api/admin/canteens/${editing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            name: form.name,
+            college: form.college,
+            city: form.city,
+            address: form.address,
+            lat: form.lat ? Number(form.lat) : null,
+            lng: form.lng ? Number(form.lng) : null,
+            gmap_link: form.gmapLink,
+            is_active: form.status === "active",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setCanteenApiError(data.error || "Failed to update canteen."); return; }
+        setCanteens(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } : c));
+        closeModal();
+      } catch {
+        setCanteenApiError("Network error — please try again.");
+      } finally {
+        setSavingCanteen(false);
+      }
+    }
+  };
+
+  const deleteCanteen = async (id: string, name: string) => {
+    if (!session?.access_token) return;
+    if (!window.confirm(`Delete canteen "${name}"? This cannot be undone.`)) return;
+    const previous = canteens;
+    setCanteens(prev => prev.filter(c => c.id !== id));
+    try {
+      const res = await fetch(`/api/admin/canteens/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCanteens(previous);
+        alert(data.error || "Failed to delete canteen.");
+      }
+    } catch {
+      setCanteens(previous);
+      alert("Network error — please try again.");
     }
   };
 
@@ -311,6 +357,7 @@ function CanteensSection() {
                 <td style={{ display: "flex", gap: "0.4rem" }}>
                   <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => openEdit(c)}>Edit</button>
                   <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }} onClick={() => { setTimingsCanteen(c); setTimings(DEFAULT_TIMINGS); setTimingsSaved(false); }}>🕐 Hours</button>
+                  <button className="btn btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem", color: "var(--red)" }} onClick={() => deleteCanteen(c.id, c.name)}>Delete</button>
                 </td>
               </tr>
             ))}

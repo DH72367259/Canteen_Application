@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
@@ -16,11 +16,48 @@ const MENU: Record<string, { id: string; name: string; price: number; desc: stri
 
 type CartItem = { id: string; name: string; price: number; qty: number };
 
+interface LiveCanteenInfo {
+  name: string;
+  status: "open" | "busy" | "closed";
+  isActive: boolean;
+  desc: string;
+}
+
 export default function CanteenMenuPage() {
   const params = useParams();
   const router = useRouter();
   const canteenId = (params.canteenId as string) || "c1";
-  const info = CANTEEN_INFO[canteenId] || { name: "Canteen", emoji: "🍽️", desc: "", status: "open" as const };
+
+  // ── Live canteen info (server truth) ──────────────────────────────
+  // We always fetch the canteen's current is_active/status from the API so a
+  // student who navigates directly to /dashboard/menu/<id> for an offline
+  // canteen sees the closed banner and cannot order — even if they bypass
+  // the dashboard's grey-card guard.
+  const [live, setLive] = useState<LiveCanteenInfo | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/canteens/${canteenId}`)
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(j => {
+        if (cancelled) return;
+        const c = j.canteen;
+        setLive({
+          name:     c.name ?? "Canteen",
+          status:   (c.is_active ? (c.status ?? "open") : "closed") as "open" | "busy" | "closed",
+          isActive: !!c.is_active,
+          desc:     c.address ?? c.college ?? c.city ?? "",
+        });
+      })
+      .catch(() => { if (!cancelled) setLiveError("Could not load canteen info."); });
+    return () => { cancelled = true; };
+  }, [canteenId]);
+
+  const fallback = CANTEEN_INFO[canteenId] || { name: "Canteen", emoji: "🍽️", desc: "", status: "open" as const };
+  const info = live
+    ? { name: live.name, emoji: "🍽️", desc: live.desc, status: live.status }
+    : fallback;
   const isClosed = info.status === "closed";
 
   const [meal, setMeal] = useState<"breakfast" | "lunch" | "dinner">("lunch");
@@ -76,6 +113,11 @@ export default function CanteenMenuPage() {
             <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#991b1b" }}>Canteen is currently closed</div>
             <div style={{ fontSize: "0.78rem", color: "#b91c1c", marginTop: "0.15rem" }}>Orders are not being accepted right now. Please check back later.</div>
           </div>
+        </div>
+      )}
+      {liveError && !live && (
+        <div style={{ margin: "0.75rem 1rem 0", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "0.6rem 0.85rem", fontSize: "0.78rem", color: "#92400e" }}>
+          ⚠️ {liveError} Showing limited info.
         </div>
       )}
 

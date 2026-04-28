@@ -16,7 +16,9 @@ ALTER TABLE public.canteens
   ADD COLUMN IF NOT EXISTS lat        double precision,
   ADD COLUMN IF NOT EXISTS lng        double precision,
   ADD COLUMN IF NOT EXISTS gmap_link  text,
-  ADD COLUMN IF NOT EXISTS status     text NOT NULL DEFAULT 'open';
+  ADD COLUMN IF NOT EXISTS status     text NOT NULL DEFAULT 'open',
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES auth.users(id) ON DELETE SET NULL;
 
 -- Constrain status to known values. Drop-then-add so re-running is safe.
 ALTER TABLE public.canteens
