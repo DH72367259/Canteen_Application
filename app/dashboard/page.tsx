@@ -66,6 +66,14 @@ export default function UserHomePage() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs] = useState<Array<{ id: string; title: string; body: string; created_at: string; is_read: boolean }>>([]);
 
+  // Live wall-clock in toolbar (PDF requirement: digital time on tool bar)
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
+
   // Auth guard — redirect unauthenticated users to login;
   // redirect privileged users (admin/vendor/worker) to their correct dashboards so they
   // are never stranded on the student page after a TOKEN_REFRESHED role-restore.
@@ -432,6 +440,12 @@ export default function UserHomePage() {
           </div>
         </button>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span
+            title="Live time"
+            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", fontWeight: 700, color: "var(--ink)", background: "#f3f4f6", border: "1px solid var(--border)", borderRadius: 6, padding: "0.2rem 0.45rem", letterSpacing: "0.02em" }}
+          >
+            {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}
+          </span>
           <button
             onClick={e => { e.stopPropagation(); handleOpenNotifs(); }}
             title="Notifications"
@@ -452,7 +466,7 @@ export default function UserHomePage() {
       {/* ── Greeting row ── */}
       <div style={{ padding: "0.75rem 1rem 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>Good morning 👋</div>
+          <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{greeting} 👋</div>
           <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--ink)" }}>
             {user?.displayName || user?.email?.split("@")[0] || "Guest"}
           </div>

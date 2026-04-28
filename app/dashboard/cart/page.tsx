@@ -334,7 +334,7 @@ function CartContent() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.6rem" }}>Pickup Time Slot</h2>
+          <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.6rem" }}>Choose ready time</h2>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {slotsLoading ? (
               <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Loading slots…</span>
