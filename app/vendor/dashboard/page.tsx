@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import type { CanteenOrder } from "@/types/canteen";
 
-type BinStatus = "preparing" | "completed" | "delayed" | "empty";
+type BinStatus = "placed" | "preparing" | "completed" | "delayed" | "empty";
 
 interface Bin {
   id: string;
@@ -19,6 +19,8 @@ interface Bin {
   rawOrderId?: string;
   binLabel?: string | null;
   binColor?: string | null;
+  rawStatus?: string;
+  placedAt?: string | null;
 }
 
 
@@ -51,7 +53,7 @@ export default function VendorDashboard() {
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
-  const [canteenOpen, setCanteenOpen] = useState(true);
+  const [canteenOpen, setCanteenOpen] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,14 +69,18 @@ export default function VendorDashboard() {
 
   const handleToggleCanteen = async () => {
     if (toggleBusy) return;
-    // Gate: cannot turn ON unless slots have been configured (check localStorage fresh)
+    // Gate: cannot turn ON unless BOTH slots and menu have been configured (check localStorage fresh)
     const next = !canteenOpen;
-    const configured = typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true";
-    if (next && !configured) {
-      setToggleError("Please configure and save your time slots first (Time Slots → Save Configuration).");
+    const slotsOk = typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true";
+    const menuOk  = typeof window !== "undefined" && localStorage.getItem("vendor_menu_configured") === "true";
+    if (next && (!slotsOk || !menuOk)) {
+      const missing: string[] = [];
+      if (!menuOk)  missing.push("add at least one menu item (Menu & Items)");
+      if (!slotsOk) missing.push("save your time slots (Time Slots → Save Configuration)");
+      setToggleError(`Before going online, please ${missing.join(" and ")}.`);
       return;
     }
-    setSlotsConfigured(configured);
+    setSlotsConfigured(slotsOk);
     setToggleBusy(true);
     setToggleError(null);
     // Optimistic update
@@ -124,9 +130,11 @@ export default function VendorDashboard() {
         number: parseInt(o.binLabel ?? String(idx + 1), 10) || idx + 1,
         status: o.rawStatus === "ready_for_pickup" || o.rawStatus === "placed_in_bin"
           ? "completed"
-          : o.rawStatus === "placed" || o.rawStatus === "confirmed" || o.rawStatus === "preparing"
+          : o.rawStatus === "preparing"
             ? "preparing"
-            : "empty",
+            : (o.rawStatus === "placed" || o.rawStatus === "confirmed")
+              ? "placed"
+              : "empty",
         orderId: o.id.substring(0, 8).toUpperCase(),
         customerName: o.customerName || "Customer",
         slot: o.slotLabel ?? o.slotName ?? null,
@@ -135,15 +143,10 @@ export default function VendorDashboard() {
         binLabel: o.binLabel ?? null,
         binColor: o.binColor ?? null,
         rawOrderId: o.id,
+        rawStatus: o.rawStatus,
+        placedAt: o.createdAt ?? null,
       }));
-      // Fill remaining slots as empty bins
-      const maxBin = 8;
-      const usedNumbers = new Set(mapped.map((b) => b.number));
-      for (let n = 1; n <= maxBin; n++) {
-        if (!usedNumbers.has(n)) {
-          mapped.push({ id: `empty-${n}`, number: n, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null });
-        }
-      }
+      // Only show bins that have an assigned order (no empty filler bins)
       mapped.sort((a, b) => a.number - b.number);
       setBins(mapped);
     } catch {
@@ -212,7 +215,20 @@ export default function VendorDashboard() {
 
   const slotBins = activeSlot === "all"
     ? bins
-    : bins.filter(b => !b.slot || b.slot === activeSlot || b.status === "empty");
+    : bins.filter(b => b.slot === activeSlot);
+
+  // Per spec: only show bins that have an assigned order, and sort placed → preparing → just-now (bottom)
+  const STATUS_ORDER: Record<BinStatus, number> = { placed: 0, preparing: 1, completed: 2, delayed: 3, empty: 99 };
+  const visibleSlotBins = [...slotBins]
+    .filter(b => b.status !== "empty" && !!b.orderId)
+    .sort((a, b) => {
+      const sa = STATUS_ORDER[a.status]; const sb = STATUS_ORDER[b.status];
+      if (sa !== sb) return sa - sb;
+      // Within same status, newest ("just now") goes to the bottom
+      const ta = a.placedAt ? Date.parse(a.placedAt) : 0;
+      const tb = b.placedAt ? Date.parse(b.placedAt) : 0;
+      return ta - tb;
+    });
 
   const uniqueSlots = Array.from(new Set(bins.filter(b => b.slot).map(b => b.slot as string)));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
@@ -300,39 +316,53 @@ export default function VendorDashboard() {
               </div>
             </div>
 
-            {/* Slot tabs */}
-            <div className="slot-tabs">
+            {/* Slot tabs + slot changer dropdown (per spec: Live Orders → navigate between slots) */}
+            <div className="slot-tabs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
               <button
                 className={`slot-tab ${activeSlot === "all" ? "active" : ""}`}
                 onClick={() => setActiveSlot("all")}
               >
                 All Bins
               </button>
-              {uniqueSlots.map(s => (
-                <button
-                  key={s}
-                  className={`slot-tab ${activeSlot === s ? "active" : ""}`}
-                  onClick={() => setActiveSlot(s)}
+              {uniqueSlots.length > 0 && (
+                <select
+                  value={activeSlot}
+                  onChange={e => setActiveSlot(e.target.value)}
+                  style={{
+                    padding: "0.4rem 0.7rem", border: "1.5px solid var(--orange)", borderRadius: 8,
+                    fontSize: "0.82rem", fontWeight: 700, background: "#fff7ed", color: "var(--orange-dark)",
+                    cursor: "pointer",
+                  }}
+                  title="Navigate between slots"
                 >
-                  {s}
-                </button>
-              ))}
+                  <option value="all">– Pick a slot –</option>
+                  {uniqueSlots.map(s => (
+                    <option key={s} value={s}>{s} ▾</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Legend */}
-            <div style={{ padding: "0.5rem 1rem 0", display: "flex", gap: "1rem", fontSize: "0.75rem", color: "var(--ink-3)" }}>
+            <div style={{ padding: "0.5rem 1rem 0", display: "flex", gap: "1rem", fontSize: "0.75rem", color: "var(--ink-3)", flexWrap: "wrap" }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--blue)", marginRight: 4 }} />Placed</span>
               <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--yellow)", marginRight: 4 }} />Preparing</span>
               <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--green)", marginRight: 4 }} />Completed</span>
               <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--red)", marginRight: 4 }} />Delayed</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--border)", marginRight: 4 }} />Empty</span>
             </div>
 
             {/* Bin grid */}
             {ordersLoading ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>Loading live orders…</div>
+            ) : visibleSlotBins.length === 0 ? (
+              <div className="empty-state" style={{ padding: "2.5rem", textAlign: "center", color: "var(--ink-3)" }}>
+                <div style={{ fontSize: "2rem" }}>📦</div>
+                <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
+                <p style={{ fontSize: "0.82rem" }}>{activeSlot === "all" ? "Bins will appear here as customers place orders." : `No orders for ${activeSlot}.`}</p>
+              </div>
             ) : (
             <div className="bin-grid">
-              {slotBins.map(bin => (
+              {visibleSlotBins.map(bin => (
                 <div
                   key={bin.id}
                   className={`bin-card ${bin.status}`}
@@ -347,7 +377,7 @@ export default function VendorDashboard() {
                       <div className="bin-order-id">{bin.orderId}</div>
                       <div className="bin-customer">{bin.customerName}</div>
                       <div className="bin-slot">{bin.slot} · {bin.items}</div>
-                      {bin.status === "preparing" && bin.rawOrderId && (
+                      {(bin.status === "placed" || bin.status === "preparing") && bin.rawOrderId && (
                         <button
                           onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
                           style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
@@ -441,52 +471,91 @@ export default function VendorDashboard() {
 /* ─── Sub-views ─── */
 
 function VendorMenuView() {
-  type MealType = "breakfast" | "lunch" | "dinner";
-  type Item = { id: string; name: string; price: number; maxPerSlot: number; enabled: boolean };
-  const [meal, setMeal] = useState<MealType>("lunch");
-  const [items, setItems] = useState<Record<MealType, Item[]>>({
-    breakfast: [],
-    lunch: [],
-    dinner: [],
+  type MealType = "breakfast" | "lunch" | "dinner" | "packed_snacks";
+  type ProductionType = "batch" | "made_to_order";
+  type ServeType = "meals" | "snacks";
+  type Item = {
+    id: string; name: string; price: number; mealType: MealType;
+    productionType: ProductionType; capacity: number; serveType: ServeType; enabled: boolean;
+  };
+  type FormState = {
+    name: string; price: string; mealType: MealType;
+    productionType: ProductionType; capacity: string; serveType: ServeType;
+  };
+
+  const MEAL_TYPES: { value: MealType; label: string }[] = [
+    { value: "breakfast",     label: "Breakfast" },
+    { value: "lunch",         label: "Lunch" },
+    { value: "dinner",        label: "Dinner" },
+    { value: "packed_snacks", label: "Packed snacks" },
+  ];
+  const MEAL_LABEL: Record<MealType, string> = {
+    breakfast: "🌅 Breakfast", lunch: "☀️ Lunch", dinner: "🌙 Dinner", packed_snacks: "🥡 Packed snacks",
+  };
+
+  const [tab, setTab] = useState<MealType>("lunch");
+  const [items, setItems] = useState<Item[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(localStorage.getItem("vendor_menu_items") || "[]") as Item[]; }
+    catch { return []; }
   });
 
   const [modal, setModal] = useState<{ item: Item | null } | null>(null);
-  const [form, setForm] = useState({ name: "", price: "", maxPerSlot: "" });
+  const emptyForm: FormState = { name: "", price: "", mealType: "lunch", productionType: "batch", capacity: "", serveType: "meals" };
+  const [form, setForm] = useState<FormState>(emptyForm);
+
+  // Persist menu items + mark menu configured for the canteen ON gate
+  const persist = (next: Item[]) => {
+    setItems(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("vendor_menu_items", JSON.stringify(next));
+      if (next.length > 0) localStorage.setItem("vendor_menu_configured", "true");
+      else localStorage.removeItem("vendor_menu_configured");
+    }
+  };
 
   const toggleItem = (id: string) => {
-    setItems(prev => ({ ...prev, [meal]: prev[meal].map(item => item.id === id ? { ...item, enabled: !item.enabled } : item) }));
+    persist(items.map(item => item.id === id ? { ...item, enabled: !item.enabled } : item));
   };
 
   const openEdit = (item: Item) => {
     setModal({ item });
-    setForm({ name: item.name, price: String(item.price), maxPerSlot: String(item.maxPerSlot) });
+    setForm({
+      name: item.name, price: String(item.price), mealType: item.mealType,
+      productionType: item.productionType, capacity: String(item.capacity), serveType: item.serveType,
+    });
   };
 
   const openAdd = () => {
     setModal({ item: null });
-    setForm({ name: "", price: "", maxPerSlot: "" });
+    setForm({ ...emptyForm, mealType: tab });
   };
 
   const saveModal = () => {
     if (!form.name.trim()) return;
     const newItem: Item = {
-      id: modal?.item?.id ?? `${meal[0]}${Date.now()}`,
-      name: form.name,
+      id: modal?.item?.id ?? `i${Date.now()}`,
+      name: form.name.trim(),
       price: Number(form.price) || 0,
-      maxPerSlot: Number(form.maxPerSlot) || 10,
+      mealType: form.mealType,
+      productionType: form.productionType,
+      capacity: Number(form.capacity) || 0,
+      serveType: form.serveType,
       enabled: modal?.item?.enabled ?? true,
     };
     if (modal?.item) {
-      setItems(prev => ({ ...prev, [meal]: prev[meal].map(i => i.id === newItem.id ? newItem : i) }));
+      persist(items.map(i => i.id === newItem.id ? newItem : i));
     } else {
-      setItems(prev => ({ ...prev, [meal]: [...prev[meal], newItem] }));
+      persist([...items, newItem]);
     }
     setModal(null);
   };
 
   const removeItem = (id: string) => {
-    setItems(prev => ({ ...prev, [meal]: prev[meal].filter(i => i.id !== id) }));
+    persist(items.filter(i => i.id !== id));
   };
+
+  const visibleItems = items.filter(i => i.mealType === tab);
 
   return (
     <div className="page-content">
@@ -495,27 +564,30 @@ function VendorMenuView() {
         <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Item</button>
       </div>
 
-      <div className="meal-tabs" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", marginBottom: "1rem" }}>
-        {(["breakfast", "lunch", "dinner"] as const).map(m => (
-          <button key={m} className={`meal-tab ${meal === m ? "active" : ""}`} onClick={() => setMeal(m)} style={{ flex: 1 }}>
-            {m === "breakfast" ? "🌅 Breakfast" : m === "lunch" ? "☀️ Lunch" : "🌙 Dinner"}
+      <div className="meal-tabs" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", marginBottom: "1rem", display: "flex" }}>
+        {MEAL_TYPES.map(m => (
+          <button key={m.value} className={`meal-tab ${tab === m.value ? "active" : ""}`} onClick={() => setTab(m.value)} style={{ flex: 1 }}>
+            {MEAL_LABEL[m.value]}
           </button>
         ))}
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        {items[meal].length === 0 && (
+        {visibleItems.length === 0 && (
           <div className="empty-state" style={{ padding: "2rem" }}>
             <span className="empty-icon">🍽️</span>
-            <h3>No items for {meal}</h3>
+            <h3>No items for {MEAL_LABEL[tab]}</h3>
             <p>Add your first item using the button above</p>
           </div>
         )}
-        {items[meal].map((item, i) => (
-          <div key={item.id} style={{ padding: "0.85rem 1rem", borderBottom: i < items[meal].length - 1 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        {visibleItems.map((item, i) => (
+          <div key={item.id} style={{ padding: "0.85rem 1rem", borderBottom: i < visibleItems.length - 1 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{item.name}</div>
-              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>₹{item.price} · Max {item.maxPerSlot}/slot</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
+                ₹{item.price} · {item.productionType === "batch" ? `Batch · ${item.capacity} plates` : `Made to order · ${item.capacity}/slot`}
+                {" · "}{item.serveType === "meals" ? "🍽️ Meal (on plate)" : "🥡 Snack (no plate)"}
+              </div>
             </div>
             <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem" }} onClick={() => openEdit(item)}>✏ Edit</button>
             <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", color: "var(--red)" }} onClick={() => removeItem(item.id)}>✕</button>
@@ -529,25 +601,64 @@ function VendorMenuView() {
 
       {modal !== null && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
               <h3>{modal.item ? "Edit Item" : "Add New Item"}</h3>
               <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               <div>
-                <label className="form-label">Item Name</label>
+                <label className="form-label">Item name</label>
                 <input className="form-input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Chicken Curry" />
+              </div>
+              <div>
+                <label className="form-label">Type</label>
+                <select className="form-input" value={form.mealType} onChange={e => setForm(p => ({ ...p, mealType: e.target.value as MealType }))}>
+                  {MEAL_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </div>
               <div>
                 <label className="form-label">Price (₹)</label>
                 <input className="form-input" type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="e.g. 85" />
               </div>
               <div>
-                <label className="form-label">Max orders per slot</label>
-                <input className="form-input" type="number" value={form.maxPerSlot} onChange={e => setForm(p => ({ ...p, maxPerSlot: e.target.value }))} placeholder="e.g. 20" />
+                <label className="form-label">Production type</label>
+                <select className="form-input" value={form.productionType} onChange={e => setForm(p => ({ ...p, productionType: e.target.value as ProductionType }))}>
+                  <option value="batch">Batch prepared</option>
+                  <option value="made_to_order">Made to order</option>
+                </select>
               </div>
-              <p style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>Meal: <strong style={{ textTransform: "capitalize" }}>{meal}</strong> (change meal tab before adding)</p>
+              {form.productionType === "batch" ? (
+                <div>
+                  <label className="form-label">Total no. of plates</label>
+                  <input className="form-input" type="number" value={form.capacity} onChange={e => setForm(p => ({ ...p, capacity: e.target.value }))} placeholder="e.g. 50" />
+                </div>
+              ) : (
+                <div>
+                  <label className="form-label">Total order per slot</label>
+                  <input className="form-input" type="number" value={form.capacity} onChange={e => setForm(p => ({ ...p, capacity: e.target.value }))} placeholder="e.g. 10" />
+                </div>
+              )}
+              <div>
+                <label className="form-label">How it will be served</label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  {([
+                    { v: "meals",  l: "🍽️ Meal", d: "Given on plate" },
+                    { v: "snacks", l: "🥡 Snack", d: "Not given on plate" },
+                  ] as const).map(opt => (
+                    <label key={opt.v} style={{
+                      flex: 1, cursor: "pointer", border: `2px solid ${form.serveType === opt.v ? "var(--orange)" : "var(--border)"}`,
+                      borderRadius: 10, padding: "0.6rem 0.7rem", background: form.serveType === opt.v ? "#fff7ed" : "var(--surface)",
+                    }}>
+                      <input type="radio" name="serveType" value={opt.v} checked={form.serveType === opt.v}
+                        onChange={() => setForm(p => ({ ...p, serveType: opt.v }))}
+                        style={{ marginRight: "0.4rem", accentColor: "var(--orange)" }} />
+                      <strong style={{ fontSize: "0.85rem" }}>{opt.l}</strong>
+                      <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginLeft: "1.4rem" }}>{opt.d}</div>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <button className="btn btn-primary btn-full" onClick={saveModal} style={{ marginTop: "0.5rem" }}>
                 {modal.item ? "Save Changes" : "Add Item"}
               </button>
@@ -711,7 +822,7 @@ function VendorBinsView({ bins, setBins }: { bins: Bin[]; setBins: React.Dispatc
   const clearBin = (id: string) => setBins(prev => prev.map(b => b.id === id ? { ...b, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null } : b));
   const removeBin = (id: string) => setBins(prev => prev.filter(b => b.id !== id));
 
-  const statusColor: Record<BinStatus, string> = { preparing: "var(--yellow)", completed: "var(--green)", delayed: "var(--red)", empty: "var(--border)" };
+  const statusColor: Record<BinStatus, string> = { placed: "var(--blue)", preparing: "var(--yellow)", completed: "var(--green)", delayed: "var(--red)", empty: "var(--border)" };
 
   return (
     <div className="page-content">
@@ -721,7 +832,7 @@ function VendorBinsView({ bins, setBins }: { bins: Bin[]; setBins: React.Dispatc
       </div>
 
       <div className="stats-row" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "1rem" }}>
-        {(["empty", "preparing", "completed", "delayed"] as BinStatus[]).map(s => (
+        {(["empty", "placed", "preparing", "completed", "delayed"] as BinStatus[]).map(s => (
           <div key={s} className="stat-card">
             <div className="stat-num" style={{ color: statusColor[s] }}>{bins.filter(b => b.status === s).length}</div>
             <div className="stat-label" style={{ textTransform: "capitalize" }}>{s}</div>
@@ -1398,7 +1509,15 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
 
   return (
     <div className="page-content">
-      <div className="page-header"><h2>Slot Control</h2><span className="tag tag-blue">Auto-derived caps</span></div>
+      <div className="page-header">
+        <h2>Slot Control</h2>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span className="tag tag-gray" style={{ fontFamily: "monospace", fontSize: "0.75rem" }} title={`Canteen ID: ${sc.canteen_id}`}>
+            Canteen ID: {sc.canteen_id.slice(0, 8)}…
+          </span>
+          <span className="tag tag-blue">Auto-derived caps</span>
+        </div>
+      </div>
       {error && <p style={{ color: "#dc2626", marginBottom: "0.5rem" }}>{error}</p>}
 
       <div className="dashboard-grid" style={{ marginBottom: "1.5rem" }}>
@@ -1463,12 +1582,14 @@ interface PrepSummarySlot { slot: string; batched: PrepSummaryItem[]; made_to_or
 interface PrepSummaryResp {
   slots: PrepSummarySlot[];
   caps: { batched_prepared_cap: number; made_to_order_cap: number; max_orders_per_slot: number; max_bins: number } | null;
+  canteen_id?: string;
 }
 
 function VendorPrepSummaryView({ session }: { session: { access_token: string } | null }) {
   const [data, setData] = useState<PrepSummaryResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<string>("all");
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -1494,14 +1615,32 @@ function VendorPrepSummaryView({ session }: { session: { access_token: string } 
     <div className="page-content">
       <div className="page-header">
         <h2>Prep Summary</h2>
-        <button onClick={load} className="tag tag-blue" style={{ cursor: "pointer", border: "none" }}>↻ Refresh</button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          {data.canteen_id && (
+            <span className="tag tag-gray" style={{ fontFamily: "monospace", fontSize: "0.75rem" }} title={`Canteen ID: ${data.canteen_id}`}>
+              Canteen ID: {data.canteen_id.slice(0, 8)}…
+            </span>
+          )}
+          {data.slots.length > 1 && (
+            <select
+              value={activeSlot}
+              onChange={e => setActiveSlot(e.target.value)}
+              style={{ padding: "0.4rem 0.6rem", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: "0.82rem", fontWeight: 600, background: "#fff7ed", color: "var(--orange-dark)" }}
+              title="Filter by slot"
+            >
+              <option value="all">All slots</option>
+              {data.slots.map(s => <option key={s.slot} value={s.slot}>{s.slot}</option>)}
+            </select>
+          )}
+          <button onClick={load} className="tag tag-blue" style={{ cursor: "pointer", border: "none" }}>↻ Refresh</button>
+        </div>
       </div>
       {data.caps && (
         <p style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: "1rem" }}>
           Caps: <strong>{data.caps.batched_prepared_cap}</strong> batched · <strong>{data.caps.made_to_order_cap}</strong> made-to-order · <strong>{data.caps.max_orders_per_slot}</strong> total per slot
         </p>
       )}
-      {data.slots.map(slot => (
+      {(activeSlot === "all" ? data.slots : data.slots.filter(s => s.slot === activeSlot)).map(slot => (
         <div key={slot.slot} className="panel" style={{ marginBottom: "1.25rem" }}>
           <h3 style={{ marginTop: 0 }}>Slot: {slot.slot}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>

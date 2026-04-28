@@ -130,42 +130,6 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* Wallet balance */}
-        <div style={{
-          background: "white",
-          borderRadius: 16,
-          overflow: "hidden",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}>
-          <div style={{ padding: "0.75rem 1.25rem", borderBottom: "1px solid var(--border, #e5e5e3)" }}>
-            <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--ink-3, #9b9b94)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Canteen Cash
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.875rem 1.25rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span style={{ fontSize: "1.1rem" }}>💰</span>
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--ink-3, #9b9b94)", marginBottom: 2 }}>Available balance</div>
-                <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--ink-1, #1a1a18)" }}>
-                  ₹{(user.walletBalance ?? 0).toFixed(2)}
-                </div>
-              </div>
-            </div>
-            <Link href="/dashboard/rewards" style={{
-              background: "var(--orange, #f36f20)",
-              color: "white",
-              padding: "0.4rem 0.9rem",
-              borderRadius: 20,
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              textDecoration: "none",
-            }}>
-              Rewards →
-            </Link>
-          </div>
-        </div>
-
         {/* Quick links */}
         <div style={{
           background: "white",
@@ -228,10 +192,10 @@ export default function ProfilePage() {
 
       {/* Bottom navigation */}
       <nav className="bottom-nav">
-        {(["home", "orders", "rewards", "profile"] as const).map(tab => {
-          const icons: Record<string, string>  = { home: "🏠", orders: "📦", rewards: "🎁", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", rewards: "Rewards", profile: "Profile" };
-          const hrefs: Record<string, string>  = { home: "/dashboard", orders: "/dashboard/orders", rewards: "/dashboard/rewards", profile: "/dashboard/profile" };
+        {(["home", "orders", "profile"] as const).map(tab => {
+          const icons: Record<string, string>  = { home: "🏠", orders: "📦", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "My Orders", profile: "Profile" };
+          const hrefs: Record<string, string>  = { home: "/dashboard", orders: "/dashboard/orders", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}

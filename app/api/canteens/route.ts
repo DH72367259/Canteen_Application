@@ -50,8 +50,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   let query = supabase
     .from("canteens")
-    .select("id, name, college, city, address, lat, lng, status, is_active")
-    .eq("is_active", true);
+    .select("id, name, college, city, address, lat, lng, status, is_active");
 
   if (college) {
     query = query.ilike("college", college);

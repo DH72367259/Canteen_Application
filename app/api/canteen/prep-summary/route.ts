@@ -107,5 +107,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     slots: result,
     caps: sc ?? null,
+    canteen_id: canteenId,
   });
 }

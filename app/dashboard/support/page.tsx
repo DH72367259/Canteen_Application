@@ -300,7 +300,6 @@ export default function StudentSupportPage() {
         {[
           { tab: "home",    icon: "🏠", label: "Home",      href: "/dashboard" },
           { tab: "orders",  icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { tab: "rewards", icon: "🎁", label: "Rewards",   href: "/dashboard/rewards" },
           { tab: "profile", icon: "👤", label: "Profile",   href: "/dashboard/profile" },
         ].map(item => (
           <Link key={item.tab} href={item.href} className="bottom-nav-item">

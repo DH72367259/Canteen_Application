@@ -47,10 +47,9 @@ function formatDist(km: number) {
 }
 
 export default function UserHomePage() {
-  const { user, session, loading, logout } = useAuth();
+  const { user, session, loading } = useAuth();
   const router = useRouter();
-  const [activeNav, setActiveNav] = useState<"home" | "orders" | "rewards" | "profile">("home");
-  const [walletBalance, setWalletBalance] = useState(0);
+  const [activeNav, setActiveNav] = useState<"home" | "orders" | "profile">("home");
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -79,8 +78,6 @@ export default function UserHomePage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    const bal = localStorage.getItem("canteen_wallet_balance");
-    if (bal) setWalletBalance(Number(bal));
     const order = localStorage.getItem("canteen_active_order");
     if (order) {
       try { setActiveOrder(JSON.parse(order)); } catch { /* invalid data */ }
@@ -205,7 +202,6 @@ export default function UserHomePage() {
     );
   };
 
-  const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
   // Text search: only filter when there's a match; otherwise show all (fallback)
   // Use live colleges from API when available, else fall back to seed LOCATIONS.
   const baseLocations = colleges.length > 0 ? colleges : LOCATIONS;
@@ -224,7 +220,8 @@ export default function UserHomePage() {
         name: c.name,
         desc: c.address ?? c.city ?? "",
         emoji: "\uD83C\uDF7D\uFE0F",
-        status: (c.status as "open" | "busy" | "closed" | null) ?? "open",
+        status: (c.is_active ? ((c.status as "open" | "busy" | "closed" | null) ?? "open") : "closed") as "open" | "busy" | "closed",
+        isOnline: c.is_active,
         nextSlot: "",
         items: 0,
         rating: 4.5,
@@ -232,7 +229,7 @@ export default function UserHomePage() {
         lat: c.lat ?? 0,
         lng: c.lng ?? 0,
       }))
-    : CANTEENS;
+    : CANTEENS.map(c => ({ ...c, isOnline: c.status !== "closed" }));
   const canteensWithDist = baseCanteens.map(c => ({
     ...c,
     distKm: userCoords && c.lat && c.lng ? haversineKm(userCoords.lat, userCoords.lng, c.lat, c.lng) : null,
@@ -428,18 +425,6 @@ export default function UserHomePage() {
               </span>
             )}
           </button>
-          <Link
-            href="/dashboard/rewards"
-            onClick={e => e.stopPropagation()}
-            style={{ background: "var(--orange-light)", borderRadius: 999, padding: "0.3rem 0.7rem", fontSize: "0.78rem", fontWeight: 700, color: "var(--orange-dark)", textDecoration: "none" }}
-          >
-            {walletBalance > 0 ? `₹${walletBalance}` : "Top Up"}
-          </Link>
-          <button
-            onClick={e => { e.stopPropagation(); handleLogout(); }}
-            style={{ background: "none", border: "none", fontSize: "1.15rem", cursor: "pointer", padding: "0.2rem" }}
-            title="Logout"
-          >🚪</button>
           <Link href="/dashboard/support" onClick={e => e.stopPropagation()} title="Help & Support"
             style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}>🎧</Link>
         </div>
@@ -561,7 +546,27 @@ export default function UserHomePage() {
                 Change location
               </button>
             </div>
-          ) : visibleCanteens.map(c => (
+          ) : visibleCanteens.map(c => {
+            const offline = !c.isOnline || c.status === "closed";
+            return offline ? (
+              <div key={c.id} className="canteen-card canteen-card--offline" aria-disabled="true" title="This canteen is currently offline">
+                <div className="canteen-icon">{c.emoji}</div>
+                <div className="canteen-info">
+                  <h4>{c.name}</h4>
+                  <p>{c.desc}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>Offline</span>
+                    {c.distKm !== null && (
+                      <>
+                        <span style={{ color: "var(--border)" }}>·</span>
+                        <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>📍 {formatDist(c.distKm)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <span className="canteen-badge badge-closed">Closed</span>
+              </div>
+            ) : (
             <Link key={c.id} href={`/dashboard/menu/${c.id}`} className="canteen-card">
               <div className="canteen-icon">{c.emoji}</div>
               <div className="canteen-info">
@@ -585,7 +590,8 @@ export default function UserHomePage() {
                 {c.status === "open" ? "Open" : c.status === "busy" ? "Busy" : "Closed"}
               </span>
             </Link>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -596,17 +602,14 @@ export default function UserHomePage() {
           <div style={{ fontSize: "0.72rem", color: "#b45309", marginBottom: "0.15rem" }}>With 0/- convenience fee</div>
           <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400e" }}>Try Priority Pickup, Every Time →</div>
         </div>
-        <a href="/dashboard/pro" style={{ background: "var(--orange)", color: "#fff", borderRadius: 10, padding: "0.45rem 0.8rem", fontSize: "0.75rem", fontWeight: 800, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
-          ₹49/mo →
-        </a>
       </div>
 
       {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">
-        {(["home", "orders", "rewards", "profile"] as const).map(tab => {
-          const icons: Record<string, string> = { home: "🏠", orders: "📦", rewards: "🎁", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", rewards: "Rewards", profile: "Profile" };
-          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", rewards: "/dashboard/rewards", profile: "/dashboard/profile" };
+        {(["home", "orders", "profile"] as const).map(tab => {
+          const icons: Record<string, string> = { home: "🏠", orders: "📦", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "My Orders", profile: "Profile" };
+          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}
