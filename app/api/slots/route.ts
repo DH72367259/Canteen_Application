@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase-server";
 import { generateTimeSlots, computeSlotCapacity } from "@/lib/slotCapacity";
+import { ensureSlotControl } from "@/lib/slotControlEnsure";
 
 export const dynamic = "force-dynamic";
 
@@ -45,14 +46,9 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  // Try slot_control (Phase-1 source of truth)
-  const { data: control } = await supabase
-    .from("slot_control")
-    .select(
-      "max_bins, slot_duration_mins, morning_start, morning_end, afternoon_start, afternoon_end, evening_start, evening_end"
-    )
-    .eq("canteen_id", canteenId)
-    .maybeSingle();
+  // Try slot_control (Phase-1 source of truth). Lazy-create defaults for
+  // older canteens so students never see "no slots" on a live canteen.
+  const control = await ensureSlotControl(supabase, canteenId);
 
   type Slot = {
     id: string;

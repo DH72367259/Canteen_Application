@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase-server";
 import { getRequestContext } from "@/lib/authServer";
 import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
+import { ensureSlotControl } from "@/lib/slotControlEnsure";
 
 export const dynamic = "force-dynamic";
 
@@ -50,14 +51,11 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
-  // 1. Load slot_control for this canteen (caps + per-bin limits)
-  const { data: sc, error: scErr } = await supabase
-    .from("slot_control")
-    .select("max_bins, meals_per_bin, snacks_per_bin, extra_bin_fee_paise")
-    .eq("canteen_id", canteen_id)
-    .maybeSingle();
-  if (scErr) return Response.json({ error: scErr.message }, { status: 500 });
-  if (!sc)   return Response.json({ error: "Slot control not configured for this canteen" }, { status: 404 });
+  // 1. Load slot_control for this canteen (caps + per-bin limits).
+  // Lazily provisions defaults for older canteens that pre-date Phase-1 — without
+  // this, students hit "Slot control not configured" 404 on the live cart flow.
+  const sc = await ensureSlotControl(supabase, canteen_id);
+  if (!sc) return Response.json({ error: "Slot control not configured for this canteen" }, { status: 500 });
 
   const capacity = computeSlotCapacity(Number(sc.max_bins));
 

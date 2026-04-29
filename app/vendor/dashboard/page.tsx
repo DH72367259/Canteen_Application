@@ -125,9 +125,10 @@ export default function VendorDashboard() {
     // Optimistic update
     setCanteenOpen(next);
     try {
-      // user.canteenId is the canteen this vendor belongs to.
-      // Falls back to a placeholder if not yet wired to Supabase.
-      const canteenId = (user as { canteenId?: string })?.canteenId || "demo";
+      // user.canteenId is the canteen this vendor belongs to (populated by
+      // fetchProfile -> AuthUser). Falls back to "demo" only when the auth
+      // context hasn't hydrated yet — never for real vendors.
+      const canteenId = user?.canteenId || "demo";
       // PRODUCTION-CRITICAL: read the access token from useAuth()'s `session`,
       // not `localStorage.getItem("supabase.auth.token")` which is the obsolete
       // Supabase v1 storage key. Under Supabase v2 that key is always empty,
@@ -158,7 +159,7 @@ export default function VendorDashboard() {
   // Sync toggle state from the canteen row on mount so the vendor never sees
   // a stale "OFF" banner when their canteen is actually live (or vice versa).
   useEffect(() => {
-    const canteenId = (user as { canteenId?: string })?.canteenId;
+    const canteenId = user?.canteenId;
     if (!canteenId || canteenId === "demo") return;
     let cancelled = false;
     fetch(`/api/canteens/${canteenId}`)

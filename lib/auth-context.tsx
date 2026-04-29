@@ -80,6 +80,10 @@ export interface AuthUser {
   walletBalance: number
   mustChangePassword?: boolean
   hasPassword?: boolean
+  /** Set for vendor / canteen_admin / worker; null for students. Without this,
+   * the vendor dashboard treats the user as "demo" and skips every PATCH/POST,
+   * which manifests as "can't toggle / can't add menu items / can't view bins". */
+  canteenId?: string | null
 }
 
 interface AuthContextValue {
@@ -119,7 +123,7 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Profile fetch timed out')), 3000)
     )
-    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username').eq('id', userId).single()
+    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
     return {
       displayName: data?.name ?? null,
@@ -127,6 +131,7 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
       walletBalance: data?.wallet_balance ?? 0,
       phone: data?.phone ?? null,
       username: data?.username ?? null,
+      canteenId: data?.canteen_id ?? null,
     }
   } catch {
     return { role: 'user', walletBalance: 0 }
@@ -148,6 +153,7 @@ function buildAuthUser(
     walletBalance: profile.walletBalance ?? 0,
     mustChangePassword: profile.mustChangePassword ?? false,
     hasPassword: profile.hasPassword ?? false,
+    canteenId: profile.canteenId ?? null,
   }
 }
 
