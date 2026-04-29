@@ -306,7 +306,11 @@ export default function UserHomePage() {
     : "Set location";
 
   return (
-    <div className="app-shell">
+    // Force column layout: the global .app-shell becomes flex-direction:row
+    // on desktop (for sidebar layouts), which would lay out every top-level
+    // section of the user dashboard side-by-side and reflow whenever the
+    // search input width changed. Inline override keeps everything stacked.
+    <div className="app-shell" style={{ flexDirection: "column" }}>
       {/* ── Location picker bottom-sheet ── */}
       {showLocationPicker && (
         <div
