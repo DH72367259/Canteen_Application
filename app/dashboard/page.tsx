@@ -474,22 +474,18 @@ export default function UserHomePage() {
           </button>
           <Link href="/dashboard/support" onClick={e => e.stopPropagation()} title="Help & Support"
             style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}>🎧</Link>
-        </div>
-      </div>
-
-      {/* ── Greeting row ── */}
-      <div style={{ padding: "0.75rem 1rem 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{greeting} 👋</div>
-          <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--ink)" }}>
-            {user?.displayName || user?.email?.split("@")[0] || "Guest"}
+          <div style={{ textAlign: "right", lineHeight: 1.15, marginLeft: "0.4rem" }}>
+            <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 500 }}>{greeting} 👋</div>
+            <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.displayName || user?.email?.split("@")[0] || "Guest"}
+            </div>
           </div>
         </div>
       </div>
 
       {/* ── Inline canteen search (PDF requirement) ── */}
-      <div style={{ padding: "0.6rem 1rem 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#f3f4f6", border: "1px solid var(--border)", borderRadius: 12, padding: "0.55rem 0.85rem" }}>
+      <div style={{ padding: "1rem 1rem 0", display: "flex", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#f3f4f6", border: "1px solid var(--border)", borderRadius: 12, padding: "0.55rem 0.85rem", width: "100%", maxWidth: 520 }}>
           <span style={{ color: "var(--ink-3)", fontSize: "0.95rem" }} aria-hidden>🔍</span>
           <input
             ref={searchRef}
