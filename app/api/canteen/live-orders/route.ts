@@ -107,7 +107,7 @@ export async function GET(request: Request) {
       const r = await q.order("created_at", { ascending: false }).limit(200);
       if (!r.error) {
         orders = (r.data ?? []).map(row => {
-          const obj = row as Record<string, unknown>;
+          const obj = row as unknown as Record<string, unknown>;
           if (sc === "slot_label" && "slot_label" in obj) obj.pickup_slot = obj.slot_label;
           return obj;
         });
