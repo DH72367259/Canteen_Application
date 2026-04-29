@@ -11,7 +11,7 @@ jest.mock("@/lib/authServer", () => ({
 }));
 
 interface QB {
-  select: jest.Mock; insert: jest.Mock; update: jest.Mock; delete: jest.Mock;
+  select: jest.Mock; insert: jest.Mock; update: jest.Mock; upsert: jest.Mock; delete: jest.Mock;
   eq: jest.Mock; in: jest.Mock; order: jest.Mock; limit: jest.Mock;
   single: jest.Mock; maybeSingle: jest.Mock;
 }
@@ -20,6 +20,7 @@ function makeQB(): QB {
   qb.select = jest.fn(() => qb as QB);
   qb.insert = jest.fn(() => qb as QB);
   qb.update = jest.fn(() => qb as QB);
+  qb.upsert = jest.fn(() => qb as QB);
   qb.delete = jest.fn(() => qb as QB);
   qb.eq = jest.fn(() => qb as QB);
   qb.in = jest.fn(() => qb as QB);
@@ -115,8 +116,8 @@ describe("PATCH /api/canteen/slot-control", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.capacity.maxOrdersPerSlot).toBe(75);
-    expect(scQB.update).toHaveBeenCalled();
-    const updateArg = (scQB.update as jest.Mock).mock.calls[0][0];
+    expect(scQB.upsert).toHaveBeenCalled();
+    const updateArg = (scQB.upsert as jest.Mock).mock.calls[0][0];
     expect(updateArg.max_bins).toBe(100);
   });
 

@@ -156,10 +156,25 @@ describe("POST /api/cart/check", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 404 when slot_control is missing for the canteen", async () => {
+  it("auto-creates default slot_control when missing (self-healing for legacy canteens)", async () => {
+    // Older canteens lacked a slot_control row; cart/check now lazily inserts
+    // sane defaults via lib/slotControlEnsure rather than 404'ing.
     scQB.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    scQB.single.mockResolvedValueOnce({
+      data: { canteen_id: "c1", max_bins: 60, slot_duration_mins: 15, meals_per_bin: 1, snacks_per_bin: 4, extra_bin_fee_paise: 0 },
+      error: null,
+    });
+    // Cart item lookup returns one item that matches the canteen so the rest
+    // of the handler can complete successfully.
+    menuQB.in = jest.fn().mockResolvedValueOnce({
+      data: [{ id: "m1", name: "Thali", is_meal: true, canteen_id: "c1" }], error: null,
+    });
+    ordersQB.not.mockResolvedValueOnce({ data: [], error: null });
+
     const res = await cartCheckPOST(reqBody({ canteen_id: "c1", slot: "12:30 PM", items: [{ id: "m1", quantity: 1 }] }));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    // The lazy insert was attempted on the slot_control table.
+    expect(scQB.insert).toHaveBeenCalled();
   });
 
   it("rejects items not belonging to the canteen", async () => {
