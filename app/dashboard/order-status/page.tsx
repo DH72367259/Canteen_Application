@@ -350,6 +350,34 @@ export default function OrderStatusPage() {
           ⚠️ Order confirmed. Cancellation is not available because the canteen will prepare based on your selected slot.
         </div>
 
+        {/* Cancel button — only enabled before the prep batch starts
+            (slot_start - slot_duration). Backend re-validates the cutoff. */}
+        <button
+          onClick={async () => {
+            if (!order || !session?.access_token) return;
+            if (!confirm("Cancel this order? This is only possible before the canteen starts preparing your slot.")) return;
+            try {
+              const res = await fetch(`/api/orders/${order.id}/status`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({ status: "cancelled" }),
+              });
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                alert(j.error || "Could not cancel order.");
+                return;
+              }
+              localStorage.removeItem("canteen_active_order");
+              router.replace("/dashboard");
+            } catch {
+              alert("Network error. Try again.");
+            }
+          }}
+          style={{ background: "#fff", border: "1.5px solid #ef4444", color: "#ef4444", borderRadius: 12, padding: "0.7rem 1rem", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}
+        >
+          Cancel order
+        </button>
+
       </div>
 
       {/* Bottom nav */}

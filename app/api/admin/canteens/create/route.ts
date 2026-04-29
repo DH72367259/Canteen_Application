@@ -1,5 +1,6 @@
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { ensureBinsForCanteen } from "@/lib/binProvisioning";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +153,11 @@ export async function POST(request: Request) {
   }).then(({ error: e }) => {
     if (e) console.warn("[admin/canteens/create] slot_control init failed (non-fatal):", e.message);
   });
+
+  // 5. Auto-provision physical bins (60 default, distributed across 6 colors).
+  //    Vendor can later raise/lower this via slot-control PATCH; ensureBins is
+  //    idempotent so it's safe to re-run.
+  await ensureBinsForCanteen(supabase, canteen.id, 60);
 
   return Response.json({
     success: true,

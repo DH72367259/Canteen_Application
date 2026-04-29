@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { computeSlotCapacity, generateTimeSlots } from "@/lib/slotCapacity";
+import { ensureBinsForCanteen } from "@/lib/binProvisioning";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,11 @@ export async function GET(request: Request) {
       .single();
     data = ins.data;
     error = ins.error;
+    // Provision the physical bins for this new canteen so the order
+    // assignment flow can find a free bin straight away.
+    if (data) {
+      await ensureBinsForCanteen(supabase, canteenId, defaults.max_bins);
+    }
   }
 
   if (error || !data) {
@@ -149,6 +155,17 @@ export async function PATCH(request: Request) {
     .upsert({ canteen_id: canteenId, ...updates }, { onConflict: "canteen_id" })
     .select("*")
     .single();
+
+  if (error || !data) {
+    return NextResponse.json({ error: "Failed to update slot control." }, { status: 500 });
+  }
+
+  // If max_bins changed, top-up the physical bins table so the order
+  // assignment flow has rows to pick from. Idempotent — only inserts
+  // bins that don't already exist for this canteen.
+  if ("max_bins" in updates) {
+    await ensureBinsForCanteen(supabase, canteenId, Number(updates.max_bins));
+  }
 
   if (error || !data) {
     return NextResponse.json({ error: "Failed to update slot control." }, { status: 500 });

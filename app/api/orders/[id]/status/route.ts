@@ -15,7 +15,7 @@ const STAFF_STATUSES = [
 //   grace_bin -> late pickup; cancel + audit + free bin
 const WORKER_PSEUDO = ["skip", "grace_bin"] as const;
 
-const STUDENT_STATUSES = ["collected"];
+const STUDENT_STATUSES = ["collected", "cancelled"];
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +56,51 @@ export async function PATCH(
     const { data: order } = await supabase.from("orders").select("user_id").eq("id", orderId).single();
     if (!order || order.user_id !== auth.uid) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    }
+  }
+
+  // Student-initiated cancel: only allowed up to (slot_start - slot_duration).
+  // Per revised workflow Step 7: "can cancel 15 mins before slot, after that
+  // canteen starts preparing". Once the prep batch starts, the kitchen is
+  // committed; cancellation would waste food.
+  if (!isStaff && status === "cancelled") {
+    const { data: o } = await supabase
+      .from("orders")
+      .select("status, canteen_id, bin_id, slot_id, time_slots(start_time)")
+      .eq("id", orderId)
+      .single<{ status: string; canteen_id: string; bin_id: string | null; slot_id: string | null; time_slots: { start_time: string } | { start_time: string }[] | null }>();
+    if (!o) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+    if (["placed_in_bin", "ready_for_pickup", "collected", "cancelled", "completed"].includes(o.status)) {
+      return NextResponse.json({ error: "Order can no longer be cancelled." }, { status: 400 });
+    }
+    const ts = Array.isArray(o.time_slots) ? o.time_slots[0] : o.time_slots;
+    const startTime: string | undefined = ts?.start_time;
+    if (startTime) {
+      const { data: sc } = await supabase
+        .from("slot_control")
+        .select("slot_duration_mins")
+        .eq("canteen_id", o.canteen_id)
+        .maybeSingle();
+      const durMins = Number(sc?.slot_duration_mins) || 15;
+      const [sh, sm] = startTime.split(":").map(Number);
+      const slotStartMin = sh * 60 + sm;
+      const cutoffMin = slotStartMin - durMins;
+      const nowUtc = new Date();
+      const istMin = (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() + 330) % 1440;
+      if (istMin >= cutoffMin) {
+        return NextResponse.json({
+          error: "Cancellation window closed. The canteen has started preparing your order.",
+        }, { status: 400 });
+      }
+    }
+    // Free the bin so it can be reused for another order in the same slot.
+    if (o.bin_id) {
+      await supabase.from("bins").update({
+        is_occupied: false,
+        current_order_id: null,
+        status: "empty",
+        updated_at: new Date().toISOString(),
+      }).eq("id", o.bin_id);
     }
   }
 
