@@ -102,7 +102,11 @@ export async function POST(request: Request) {
       type: "admin",
       recipient_type,
       recipient_id: recipient_id ?? null,
-      target_role: target_role ?? "all",
+      // Prod DB check_constraint on `target_role` does NOT permit 'all' (only
+      // 'all_staff'/'user'/'worker'/'canteen_admin'). For broadcasts we fall
+      // back to 'all_staff'; visibility is still universal because the GET
+      // filter OR's `recipient_type.eq.all` so every role still sees the row.
+      target_role: !target_role || target_role === "all" ? "all_staff" : target_role,
       created_by: auth.uid,
     })
     .select("id")
