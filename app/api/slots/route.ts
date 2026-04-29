@@ -83,22 +83,29 @@ export async function GET(request: Request) {
     // prod schema drift: prod may have `slot_label` (new) or `pickup_slot`
     // (legacy) — try the new name first and fall back. Without the fallback
     // a single missing column would throw and bubble up as a 500, leaving
-    // the user with "Loading slots…" forever.
+    // the user with "Loading slots…" forever. Wrapped in try/catch because
+    // PostgREST will surface unknown columns as a thrown error inside the
+    // supabase-js client in some build modes.
     type OrderRow = { slot?: string | null; status: string };
     let orderRows: OrderRow[] = [];
     for (const slotCol of ["slot_label", "pickup_slot"] as const) {
-      const q = await supabase
-        .from("orders")
-        .select(`${slotCol}, status`)
-        .eq("canteen_id", canteenId)
-        .gte("created_at", `${dateStr}T00:00:00.000Z`)
-        .lte("created_at", `${dateStr}T23:59:59.999Z`);
-      if (!q.error) {
-        orderRows = (q.data || []).map((r) => {
-          const obj = r as Record<string, unknown>;
-          return { slot: (obj[slotCol] as string | null) ?? null, status: String(obj.status ?? "") };
-        });
-        break;
+      try {
+        const q = await supabase
+          .from("orders")
+          .select(`${slotCol}, status`)
+          .eq("canteen_id", canteenId)
+          .gte("created_at", `${dateStr}T00:00:00.000Z`)
+          .lte("created_at", `${dateStr}T23:59:59.999Z`);
+        if (!q.error) {
+          orderRows = (q.data || []).map((r) => {
+            const obj = r as Record<string, unknown>;
+            return { slot: (obj[slotCol] as string | null) ?? null, status: String(obj.status ?? "") };
+          });
+          break;
+        }
+      } catch (innerE) {
+        // Try the next column name; ignore individual probe failures.
+        console.warn("[/api/slots] orders probe failed for", slotCol, innerE);
       }
     }
 
