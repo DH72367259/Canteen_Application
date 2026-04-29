@@ -471,6 +471,81 @@ body {
 .bin-card.completed .bin-status-dot { background: var(--green); }
 .bin-card.delayed   .bin-status-dot { background: var(--red); }
 
+/* ─── Bin Zone Grid (Vendor → Bin Management) ─── */
+.bin-zone {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.85rem 1rem 1rem;
+}
+.bin-zone-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+.bin-zone-header h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+}
+.bin-zone-count {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-3);
+  background: var(--bg);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+.bin-zone-swatch {
+  width: 14px; height: 14px; border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.bin-zone-swatch-red    { background: #ef4444; }
+.bin-zone-swatch-yellow { background: #f59e0b; }
+.bin-zone-swatch-green  { background: #22c55e; }
+.bin-zone-swatch-blue   { background: #3b82f6; }
+.bin-zone-swatch-purple { background: #a855f7; }
+.bin-zone-swatch-orange { background: #f97316; }
+
+.bin-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.5rem;
+}
+.bin-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+  text-align: left;
+  background: #fff;
+}
+.bin-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.bin-tile-code { font-weight: 800; font-size: 0.85rem; letter-spacing: -0.3px; }
+.bin-tile-status { font-size: 0.7rem; font-weight: 600; opacity: 0.75; }
+
+/* Zone background tints (used for Free tiles) */
+.bin-tile-red    { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.bin-tile-yellow { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.bin-tile-green  { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.bin-tile-blue   { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.bin-tile-purple { background: #faf5ff; border-color: #e9d5ff; color: #6b21a8; }
+.bin-tile-orange { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+
+/* Occupied states overlay status colors on the zone tint */
+.bin-tile-placed    { box-shadow: inset 0 0 0 2px #3b82f6; }
+.bin-tile-preparing { box-shadow: inset 0 0 0 2px #f59e0b; }
+.bin-tile-ready     { box-shadow: inset 0 0 0 2px #22c55e; }
+.bin-tile-free      { opacity: 0.7; }
+
 /* ─── Slot Tabs ─── */
 .slot-tabs {
   display: flex;

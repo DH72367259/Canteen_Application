@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import type { CanteenOrder } from "@/types/canteen";
+import type { Session } from "@supabase/supabase-js";
 
 type BinStatus = "placed" | "preparing" | "completed" | "delayed" | "empty";
 
@@ -524,7 +525,7 @@ export default function VendorDashboard() {
         {activeNav === "slots" && <VendorSlotsView />}
         {activeNav === "sales" && <VendorSalesView />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
-        {activeNav === "bins" && <VendorBinsView bins={bins} setBins={setBins} />}
+        {activeNav === "bins" && <VendorBinsView session={session} canteenId={user?.canteenId ?? null} />}
         {activeNav === "logs" && <VendorLogsView />}
         {activeNav === "settings" && <VendorSettingsView canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
         {activeNav === "support" && <VendorSupportView />}
@@ -1042,81 +1043,210 @@ function VendorSalesView() {
   );
 }
 
-function VendorBinsView({ bins, setBins }: { bins: Bin[]; setBins: React.Dispatch<React.SetStateAction<Bin[]>> }) {
-  const [adding, setAdding] = useState(false);
-  const [newBinNum, setNewBinNum] = useState("");
-
-  const addBin = () => {
-    const num = parseInt(newBinNum);
-    if (!num || bins.some(b => b.number === num)) return;
-    setBins(prev => [...prev, { id: `b${Date.now()}`, number: num, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null }]);
-    setAdding(false);
-    setNewBinNum("");
+function VendorBinsView({ session, canteenId }: { session: Session | null; canteenId: string | null }) {
+  // Physical bins are server-managed: provisioned by lib/binProvisioning when
+  // slot_control.max_bins changes. This view is a *visualization* of the rack
+  // grouped into the six color zones from the PDF (red / yellow / green /
+  // blue / purple / orange) — not a CRUD form. To resize the rack the vendor
+  // edits Max Bins in Slot Control, which auto-provisions/balances zones.
+  type ApiBin = {
+    id: string;
+    bin_code: string;
+    color: string | null;
+    status: string | null;
+    is_occupied: boolean;
+    current_order_id: string | null;
+    updated_at?: string;
+  };
+  type ApiOrder = {
+    id: string;
+    status: string;
+    bin_id: string | null;
+    pickup_slot?: string | null;
+    profiles?: { name: string | null } | null;
+    order_items?: Array<{ quantity: number; menu_items: { name: string; is_meal: boolean } | null }>;
   };
 
-  const clearBin = (id: string) => setBins(prev => prev.map(b => b.id === id ? { ...b, status: "empty", orderId: null, customerName: null, slot: null, items: null, otp: null } : b));
-  const removeBin = (id: string) => setBins(prev => prev.filter(b => b.id !== id));
+  const [bins, setBins] = useState<ApiBin[]>([]);
+  const [orders, setOrders] = useState<ApiOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<{ bin: ApiBin; order: ApiOrder | null } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const statusColor: Record<BinStatus, string> = { placed: "var(--blue)", preparing: "var(--yellow)", completed: "var(--green)", delayed: "var(--red)", empty: "var(--border)" };
+  const ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
+  const ZONE_LABEL: Record<string, string> = {
+    red: "Red Zone", yellow: "Yellow Zone", green: "Green Zone",
+    blue: "Blue Zone", purple: "Purple Zone", orange: "Orange Zone",
+  };
+
+  const refresh = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || !canteenId) return;
+    try {
+      const res = await fetch("/api/canteen/live-orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setError(j.error || `Failed to load bins (${res.status})`);
+        return;
+      }
+      const j = await res.json();
+      setBins(Array.isArray(j.bins) ? j.bins : []);
+      setOrders(Array.isArray(j.orders) ? j.orders : []);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.access_token, canteenId]);
+
+  useEffect(() => {
+    void refresh();
+    const t = setInterval(refresh, 15_000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  const orderByBinId = useMemo(() => {
+    const m = new Map<string, ApiOrder>();
+    for (const o of orders) if (o.bin_id) m.set(o.bin_id, o);
+    return m;
+  }, [orders]);
+
+  // Group bins by color zone, preserving numeric order within each zone.
+  const grouped = useMemo(() => {
+    const g: Record<string, ApiBin[]> = {};
+    for (const z of ZONES) g[z] = [];
+    for (const b of bins) {
+      const z = (b.color ?? "").toLowerCase();
+      if (g[z]) g[z].push(b);
+    }
+    const num = (code: string) => parseInt(code.split("-")[1] ?? "0", 10) || 0;
+    for (const z of ZONES) g[z].sort((a, b) => num(a.bin_code) - num(b.bin_code));
+    return g;
+  }, [bins]);
+
+  const stats = useMemo(() => {
+    const occupied = bins.filter(b => b.is_occupied).length;
+    return { total: bins.length, occupied, free: bins.length - occupied };
+  }, [bins]);
+
+  const tileStatus = (bin: ApiBin): "free" | "placed" | "preparing" | "ready" => {
+    if (!bin.is_occupied) return "free";
+    const o = orderByBinId.get(bin.id);
+    if (!o) return "placed";
+    if (o.status === "ready_for_pickup" || o.status === "placed_in_bin") return "ready";
+    if (o.status === "preparing" || o.status === "ready_for_placement") return "preparing";
+    return "placed";
+  };
+
+  if (!canteenId) {
+    return (
+      <div className="page-content">
+        <div className="page-header"><h2>Bin Management</h2></div>
+        <div className="card"><p style={{ color: "var(--ink-3)" }}>Loading canteen…</p></div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-content">
       <div className="page-header">
         <h2>Bin Management</h2>
-        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={() => setAdding(true)}>+ Add Bin</button>
+        <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
+          Adjust rack size via <strong>Slot Control → Max Bins</strong>
+        </div>
       </div>
 
-      <div className="stats-row" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "1rem" }}>
-        {(["empty", "placed", "preparing", "completed", "delayed"] as BinStatus[]).map(s => (
-          <div key={s} className="stat-card">
-            <div className="stat-num" style={{ color: statusColor[s] }}>{bins.filter(b => b.status === s).length}</div>
-            <div className="stat-label" style={{ textTransform: "capitalize" }}>{s}</div>
-          </div>
-        ))}
+      <div className="stats-row" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1rem" }}>
+        <div className="stat-card"><div className="stat-num">{stats.total}</div><div className="stat-label">Total Bins</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--orange)" }}>{stats.occupied}</div><div className="stat-label">Occupied</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>{stats.free}</div><div className="stat-label">Free</div></div>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>BIN #</th><th>STATUS</th><th>ORDER</th><th>CUSTOMER</th><th>SLOT</th><th>ITEMS</th><th>ACTIONS</th></tr></thead>
-          <tbody>
-            {bins.sort((a, b) => a.number - b.number).map(bin => (
-              <tr key={bin.id}>
-                <td style={{ fontWeight: 700, fontSize: "1rem" }}>#{bin.number}</td>
-                <td>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", fontSize: "0.82rem", fontWeight: 600 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor[bin.status], display: "inline-block" }} />
-                    <span style={{ textTransform: "capitalize" }}>{bin.status}</span>
-                  </span>
-                </td>
-                <td style={{ fontSize: "0.82rem", fontFamily: "monospace" }}>{bin.orderId || "—"}</td>
-                <td style={{ fontSize: "0.82rem" }}>{bin.customerName || "—"}</td>
-                <td style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>{bin.slot || "—"}</td>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bin.items || "—"}</td>
-                <td style={{ display: "flex", gap: "0.25rem" }}>
-                  {bin.status !== "empty" && (
-                    <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--orange)" }} onClick={() => clearBin(bin.id)}>Clear</button>
-                  )}
-                  <button className="btn btn-ghost" style={{ fontSize: "0.72rem", padding: "0.2rem 0.4rem", color: "var(--red)" }} onClick={() => removeBin(bin.id)}>Remove</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {error && (
+        <div className="card" style={{ borderColor: "var(--red)", color: "var(--red)", marginBottom: "1rem" }}>
+          {error}
+        </div>
+      )}
 
-      {adding && (
-        <div className="modal-overlay" onClick={() => setAdding(false)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 300 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <h3>Add New Bin</h3>
-              <button onClick={() => setAdding(false)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+      {loading ? (
+        <div className="card"><p style={{ color: "var(--ink-3)" }}>Loading bins…</p></div>
+      ) : bins.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
+          <p style={{ fontWeight: 600, marginBottom: "0.4rem" }}>No bins provisioned yet.</p>
+          <p style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Open Slot Control and save Max Bins to provision the rack.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+          {ZONES.map(zone => {
+            const zoneBins = grouped[zone];
+            if (!zoneBins.length) return null;
+            const zoneOccupied = zoneBins.filter(b => b.is_occupied).length;
+            return (
+              <section key={zone} className={`bin-zone bin-zone-${zone}`}>
+                <header className="bin-zone-header">
+                  <span className={`bin-zone-swatch bin-zone-swatch-${zone}`} aria-hidden />
+                  <h3>{ZONE_LABEL[zone]}</h3>
+                  <span className="bin-zone-count">{zoneOccupied}/{zoneBins.length}</span>
+                </header>
+                <div className="bin-tile-grid">
+                  {zoneBins.map(b => {
+                    const st = tileStatus(b);
+                    const order = orderByBinId.get(b.id) ?? null;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        className={`bin-tile bin-tile-${zone} bin-tile-${st}`}
+                        onClick={() => setSelected({ bin: b, order })}
+                        title={`${b.bin_code} — ${st}`}
+                      >
+                        <span className="bin-tile-code">{b.bin_code}</span>
+                        <span className="bin-tile-status">{st === "free" ? "Free" : st === "placed" ? "Placed" : st === "preparing" ? "Preparing" : "Ready"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {selected && (
+        <div className="modal-overlay" onClick={() => setSelected(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.8rem" }}>
+              <h3>Bin {selected.bin.bin_code}</h3>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div>
-                <label className="form-label">Bin Number</label>
-                <input className="form-input" type="number" value={newBinNum} onChange={e => setNewBinNum(e.target.value)} placeholder="e.g. 9" autoFocus />
-              </div>
-              <button className="btn btn-primary btn-full" onClick={addBin}>Add Bin</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem" }}>
+              <div><strong>Status:</strong> {selected.bin.is_occupied ? "Occupied" : "Free"}</div>
+              <div><strong>Zone:</strong> {selected.bin.color ?? "—"}</div>
+              {selected.order ? (
+                <>
+                  <div><strong>Order:</strong> {selected.order.id.substring(0, 8).toUpperCase()}</div>
+                  <div><strong>Customer:</strong> {selected.order.profiles?.name ?? "—"}</div>
+                  <div><strong>Slot:</strong> {selected.order.pickup_slot ?? "—"}</div>
+                  <div><strong>Stage:</strong> {selected.order.status}</div>
+                  {selected.order.order_items && selected.order.order_items.length > 0 && (
+                    <div>
+                      <strong>Items:</strong>
+                      <ul style={{ margin: "0.25rem 0 0 1rem", padding: 0 }}>
+                        {selected.order.order_items.map((it, i) => (
+                          <li key={i}>{it.menu_items?.name ?? "Item"} × {it.quantity}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : selected.bin.is_occupied ? (
+                <p style={{ color: "var(--ink-3)" }}>Bin marked occupied but no active order is linked. It will free automatically when collected.</p>
+              ) : (
+                <p style={{ color: "var(--ink-3)" }}>This bin is free and available for the next order.</p>
+              )}
             </div>
           </div>
         </div>
