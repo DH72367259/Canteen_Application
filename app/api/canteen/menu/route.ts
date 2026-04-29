@@ -33,15 +33,21 @@ export async function GET(request: Request) {
   // PostgREST 400) and surface as "Failed to load menu" in the vendor UI.
   // Try the full set first; on missing-column error, retry with the base set.
   const fullCols = "id, canteen_id, name, description, price, category, image_url, is_available, availability_type, quantity_per_slot, total_per_day, is_meal, is_hidden, is_sold_out, created_at, updated_at";
-  const baseCols = "id, canteen_id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out, created_at, updated_at";
+  const midCols  = "id, canteen_id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out, created_at";
+  const baseCols = "id, canteen_id, name, description, price, category, image_url, is_available";
   let data: unknown[] | null = null;
   let lastError: string | null = null;
-  for (const cols of [fullCols, baseCols]) {
-    const r = await supabase
+  for (const cols of [fullCols, midCols, baseCols]) {
+    const q = supabase
       .from("menu_items")
       .select(cols)
-      .eq("canteen_id", canteenId)
-      .order("created_at", { ascending: false });
+      .eq("canteen_id", canteenId);
+    // created_at ordering only when the column is in the projection (it
+    // exists in prod alongside the base set); otherwise sort by name as a
+    // stable deterministic fallback.
+    const r = await (cols.includes("created_at")
+      ? q.order("created_at", { ascending: false })
+      : q.order("name", { ascending: true }));
     if (!r.error) { data = r.data ?? []; break; }
     lastError = r.error.message;
     if (!/column .* does not exist/i.test(r.error.message)) break;

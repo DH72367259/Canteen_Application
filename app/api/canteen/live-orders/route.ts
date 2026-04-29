@@ -27,14 +27,46 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  const { data: bins, error: binErr } = await supabase
-    .from("bins")
-    .select("id, bin_code, color, status, is_occupied, current_order_id, updated_at")
-    .eq("canteen_id", canteenId)
-    .order("bin_code");
-
-  if (binErr) {
-    return NextResponse.json({ error: "Failed to load bins." }, { status: 500 });
+  // Resilient against prod schema drift: try the full Phase-1 column set,
+  // fall back to a minimal projection if any column is missing. Without the
+  // fallback a single missing column (color/status/is_occupied/current_order_id/updated_at)
+  // would 500 the whole endpoint and leave Bin Management with "Failed to load bins."
+  type BinRow = {
+    id: string;
+    bin_code: string;
+    color: string | null;
+    status: string | null;
+    is_occupied: boolean;
+    current_order_id: string | null;
+    updated_at?: string;
+  };
+  let bins: BinRow[] | null = null;
+  {
+    const full = await supabase
+      .from("bins")
+      .select("id, bin_code, color, status, is_occupied, current_order_id, updated_at")
+      .eq("canteen_id", canteenId)
+      .order("bin_code");
+    if (!full.error) {
+      bins = (full.data ?? []) as BinRow[];
+    } else {
+      const minimal = await supabase
+        .from("bins")
+        .select("id, bin_code")
+        .eq("canteen_id", canteenId)
+        .order("bin_code");
+      if (minimal.error) {
+        return NextResponse.json({ error: `Failed to load bins: ${minimal.error.message}` }, { status: 500 });
+      }
+      bins = ((minimal.data ?? []) as Array<{ id: string; bin_code: string }>).map(b => ({
+        id: b.id,
+        bin_code: b.bin_code,
+        color: null,
+        status: null,
+        is_occupied: false,
+        current_order_id: null,
+      }));
+    }
   }
 
   // Resilient: prod renamed `pickup_slot` -> `slot_label`. Try the new name
