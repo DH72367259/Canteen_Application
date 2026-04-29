@@ -31,22 +31,61 @@ export async function GET(
   //   - slots_ready: a slot_control row exists with usable capacity
   // Without this, a fresh browser session would silently lock every canteen
   // OFF even when the DB has full menu + slots configured.
-  const [{ count: menuCount }, { data: slotRow }] = await Promise.all([
-    supabase
+  // Resilient against prod schema drift — try the strict Phase-1 query first,
+  // then progressively widen if any expected column is missing. Without the
+  // fallback a single missing column (is_hidden / is_sold_out / slot_duration_mins)
+  // would silently force readiness=false and lock the vendor toggle.
+  let menuCount = 0;
+  {
+    const strict = await supabase
       .from("menu_items")
       .select("id", { count: "exact", head: true })
       .eq("canteen_id", id)
       .eq("is_available", true)
       .eq("is_hidden", false)
-      .eq("is_sold_out", false),
-    supabase
+      .eq("is_sold_out", false);
+    if (!strict.error) {
+      menuCount = strict.count ?? 0;
+    } else {
+      const loose = await supabase
+        .from("menu_items")
+        .select("id", { count: "exact", head: true })
+        .eq("canteen_id", id)
+        .eq("is_available", true);
+      menuCount = loose.count ?? 0;
+    }
+  }
+
+  let slotsReady = false;
+  {
+    // Try with slot_duration_mins, fall back to slot_duration_minutes, finally
+    // fall back to "any row with max_bins > 0".
+    const tryFull = await supabase
       .from("slot_control")
       .select("max_bins, slot_duration_mins")
       .eq("canteen_id", id)
-      .maybeSingle(),
-  ]);
-  const menuReady  = (menuCount ?? 0) > 0;
-  const slotsReady = !!slotRow && (slotRow.max_bins ?? 0) > 0 && (slotRow.slot_duration_mins ?? 0) > 0;
+      .maybeSingle();
+    if (!tryFull.error && tryFull.data) {
+      slotsReady = (tryFull.data.max_bins ?? 0) > 0 && (tryFull.data.slot_duration_mins ?? 0) > 0;
+    } else {
+      const tryAlt = await supabase
+        .from("slot_control")
+        .select("max_bins, slot_duration_minutes")
+        .eq("canteen_id", id)
+        .maybeSingle();
+      if (!tryAlt.error && tryAlt.data) {
+        slotsReady = (tryAlt.data.max_bins ?? 0) > 0 && ((tryAlt.data as { slot_duration_minutes?: number }).slot_duration_minutes ?? 0) > 0;
+      } else {
+        const justBins = await supabase
+          .from("slot_control")
+          .select("max_bins")
+          .eq("canteen_id", id)
+          .maybeSingle();
+        slotsReady = !!justBins.data && (justBins.data.max_bins ?? 0) > 0;
+      }
+    }
+  }
+  const menuReady = menuCount > 0;
 
   return Response.json({ canteen: data, menuReady, slotsReady });
 }

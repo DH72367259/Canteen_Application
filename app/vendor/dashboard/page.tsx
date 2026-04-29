@@ -108,19 +108,39 @@ export default function VendorDashboard() {
 
   const handleToggleCanteen = async () => {
     if (toggleBusy) return;
-    // Gate: cannot turn ON unless BOTH slots and menu have been configured (check localStorage fresh)
     const next = !canteenOpen;
-    const slotsOk = typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true";
-    const menuOk  = typeof window !== "undefined" && localStorage.getItem("vendor_menu_configured") === "true";
-    if (next && (!slotsOk || !menuOk)) {
-      const missing: string[] = [];
-      if (!menuOk)  missing.push("add at least one menu item (Menu & Items)");
-      if (!slotsOk) missing.push("save your time slots (Time Slots → Save Configuration)");
-      setToggleError(`Before going online, please ${missing.join(" and ")}.`);
-      return;
+    // Gate: cannot turn ON unless BOTH menu and slot_control are configured.
+    // Source of truth = server (/api/canteens/[id] returns menuReady +
+    // slotsReady). Fall back to React state / localStorage if the readiness
+    // probe fails so a transient network error never bricks the toggle.
+    if (next) {
+      let menuOk = menuConfigured;
+      let slotsOk = slotsConfigured;
+      const canteenId = user?.canteenId;
+      if (canteenId && canteenId !== "demo") {
+        try {
+          const r = await fetch(`/api/canteens/${canteenId}`, { cache: "no-store" });
+          if (r.ok) {
+            const j = await r.json();
+            if (typeof j?.menuReady  === "boolean") menuOk  = j.menuReady;
+            if (typeof j?.slotsReady === "boolean") slotsOk = j.slotsReady;
+            if (typeof window !== "undefined") {
+              if (menuOk)  localStorage.setItem("vendor_menu_configured",  "true");
+              if (slotsOk) localStorage.setItem("vendor_slots_configured", "true");
+            }
+            setMenuConfigured(menuOk);
+            setSlotsConfigured(slotsOk);
+          }
+        } catch { /* fall through to cached values */ }
+      }
+      if (!slotsOk || !menuOk) {
+        const missing: string[] = [];
+        if (!menuOk)  missing.push("add at least one menu item (Menu & Items)");
+        if (!slotsOk) missing.push("save your slot control (Slot Control → Save)");
+        setToggleError(`Before going online, please ${missing.join(" and ")}.`);
+        return;
+      }
     }
-    setSlotsConfigured(slotsOk);
-    setMenuConfigured(menuOk);
     setToggleBusy(true);
     setToggleError(null);
     // Optimistic update
@@ -375,23 +395,19 @@ export default function VendorDashboard() {
               <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600 }}>Canteen</span>
               {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 220 }}>{toggleError}</span>}
               {(() => {
-                const prereqsMet = slotsConfigured && menuConfigured;
-                const lockedOff = !prereqsMet && !canteenOpen;
-                const tip = lockedOff
-                  ? `Save your menu items and time slots first. ${!menuConfigured ? "Menu not saved. " : ""}${!slotsConfigured ? "Slots not saved." : ""}`.trim()
-                  : canteenOpen
-                    ? "Canteen is OPEN – click to close"
-                    : "Canteen is CLOSED – click to open";
+                const tip = canteenOpen
+                  ? "Canteen is OPEN – click to close"
+                  : "Canteen is CLOSED – click to open";
                 return (
                   <label
                     className="toggle-switch"
                     title={tip}
-                    style={{ opacity: toggleBusy || lockedOff ? 0.45 : 1, cursor: lockedOff ? "not-allowed" : "pointer" }}
+                    style={{ opacity: toggleBusy ? 0.45 : 1, cursor: toggleBusy ? "not-allowed" : "pointer" }}
                   >
                     <input
                       type="checkbox"
                       checked={canteenOpen}
-                      disabled={toggleBusy || lockedOff}
+                      disabled={toggleBusy}
                       onChange={handleToggleCanteen}
                     />
                     <span className="toggle-track" />
