@@ -684,9 +684,13 @@ function VendorMenuView({ session }: { session: { access_token: string } | null 
     let cancelled = false;
     setLoading(true); setError(null);
     fetch("/api/canteen/menu", { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : r.json().then((j: { error?: string }) => Promise.reject(j.error || "Load failed")))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const j = await r.json().catch(() => ({}));
+        return Promise.reject(j?.error || `HTTP ${r.status}`);
+      })
       .then((j: { items: DbItem[] }) => { if (!cancelled) setItems((j.items ?? []).map(fromDb)); })
-      .catch(e => { if (!cancelled) setError(typeof e === "string" ? e : "Failed to load menu."); })
+      .catch(e => { if (!cancelled) setError(typeof e === "string" ? `Failed to load menu: ${e}` : "Failed to load menu."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

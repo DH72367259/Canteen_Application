@@ -8,6 +8,7 @@ interface OrderRow {
   id: string;
   status: string;
   pickup_slot?: string | null;
+  slot_label?: string | null;
   time_slots?: { slot_name?: string | null; start_time?: string | null; end_time?: string | null } | null;
   order_items?: Array<{
     quantity: number;
@@ -51,31 +52,33 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
 
   // Pull active (not yet collected/cancelled) orders with line items.
-  // Resilient: if the production DB hasn't yet had the phase-1 migration that
-  // adds menu_items.availability_type / is_meal, fall back to the base columns
-  // so the page still renders (everything will default to batched_prepared).
-  const fullSelect = `
-      id, status, pickup_slot,
-      time_slots(slot_name, start_time, end_time),
-      order_items(quantity, menu_items(name, availability_type, is_meal))
-    `;
-  const baseSelect = `
-      id, status, pickup_slot,
-      time_slots(slot_name, start_time, end_time),
-      order_items(quantity, menu_items(name))
-    `;
+  // Resilient on TWO axes:
+  //  - slot column: prod renamed `pickup_slot` -> `slot_label`. Try the new
+  //    name first; on missing-column error, retry with the old name. Either
+  //    one is mapped to `slotKey` below so downstream code is identical.
+  //  - menu_items columns: phase-1 added `availability_type` / `is_meal`.
+  //    If those are missing, fall back to the base column set (everything
+  //    defaults to batched_prepared).
+  const slotCols = ["slot_label", "pickup_slot"] as const;
+  const itemCols = [
+    "order_items(quantity, menu_items(name, availability_type, is_meal))",
+    "order_items(quantity, menu_items(name))",
+  ] as const;
   let orders: unknown[] | null = null;
   let lastError: string | null = null;
-  for (const sel of [fullSelect, baseSelect]) {
-    const { data, error } = await supabase
-      .from("orders")
-      .select(sel)
-      .eq("canteen_id", canteenId)
-      .in("status", ["placed", "confirmed", "preparing", "ready_for_placement"])
-      .limit(500);
-    if (!error) { orders = data ?? []; break; }
-    lastError = error.message;
-    if (!/column .* does not exist/i.test(error.message)) break;
+  outer: for (const sc of slotCols) {
+    for (const ic of itemCols) {
+      const sel = `id, status, ${sc}, time_slots(slot_name, start_time, end_time), ${ic}`;
+      const { data, error } = await supabase
+        .from("orders")
+        .select(sel)
+        .eq("canteen_id", canteenId)
+        .in("status", ["placed", "confirmed", "preparing", "ready_for_placement"])
+        .limit(500);
+      if (!error) { orders = data ?? []; break outer; }
+      lastError = error.message;
+      if (!/column .* does not exist/i.test(error.message)) break outer;
+    }
   }
   if (orders === null) {
     return NextResponse.json({ error: lastError ?? "Failed to load prep summary." }, { status: 500 });
@@ -85,7 +88,7 @@ export async function GET(request: Request) {
   const slotMap: Record<string, { batched: Map<string, PrepRow>; madeToOrder: Map<string, PrepRow> }> = {};
 
   for (const o of (orders ?? []) as unknown as OrderRow[]) {
-    const slot = o.time_slots?.slot_name ?? o.pickup_slot ?? "Unknown";
+    const slot = o.time_slots?.slot_name ?? o.slot_label ?? o.pickup_slot ?? "Unknown";
     if (!slotMap[slot]) slotMap[slot] = { batched: new Map(), madeToOrder: new Map() };
     for (const li of o.order_items ?? []) {
       const m = li.menu_items;

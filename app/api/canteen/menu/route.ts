@@ -28,21 +28,28 @@ export async function GET(request: Request) {
   if (!canteenId) return NextResponse.json({ error: "canteenId required." }, { status: 400 });
 
   const supabase = createAdminClient();
-  // NOTE: `production_type` was deliberately dropped from the select list.
-  // The Phase-1 migration didn't add that column to `menu_items`; the column
-  // we actually have is `availability_type` (slot_based | batched_prepared).
-  // Selecting a non-existent column made PostgREST reject the whole query and
-  // surface as "Failed to load items" / "Failed to update items" in the vendor
-  // Menu & Items tab — even though the user-facing menu API (which selects a
-  // different shorter set of columns) worked fine.
-  const { data, error } = await supabase
-    .from("menu_items")
-    .select("id, canteen_id, name, description, price, category, image_url, is_available, availability_type, quantity_per_slot, total_per_day, is_meal, is_hidden, is_sold_out, created_at, updated_at")
-    .eq("canteen_id", canteenId)
-    .order("created_at", { ascending: false });
-
-  if (error) return NextResponse.json({ error: "Failed to load menu." }, { status: 500 });
-  return NextResponse.json({ items: data ?? [] });
+  // Resilient select: prod databases that haven't yet had every Phase-1
+  // column applied would fail the whole query (single missing column =
+  // PostgREST 400) and surface as "Failed to load menu" in the vendor UI.
+  // Try the full set first; on missing-column error, retry with the base set.
+  const fullCols = "id, canteen_id, name, description, price, category, image_url, is_available, availability_type, quantity_per_slot, total_per_day, is_meal, is_hidden, is_sold_out, created_at, updated_at";
+  const baseCols = "id, canteen_id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out, created_at, updated_at";
+  let data: unknown[] | null = null;
+  let lastError: string | null = null;
+  for (const cols of [fullCols, baseCols]) {
+    const r = await supabase
+      .from("menu_items")
+      .select(cols)
+      .eq("canteen_id", canteenId)
+      .order("created_at", { ascending: false });
+    if (!r.error) { data = r.data ?? []; break; }
+    lastError = r.error.message;
+    if (!/column .* does not exist/i.test(r.error.message)) break;
+  }
+  if (data === null) {
+    return NextResponse.json({ error: lastError ?? "Failed to load menu." }, { status: 500 });
+  }
+  return NextResponse.json({ items: data });
 }
 
 // POST /api/canteen/menu — create item with Phase 1 fields
@@ -69,7 +76,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "availability_type must be slot_based or batched_prepared." }, { status: 400 });
   }
 
-  const insertRow = {
+  const insertRow: Record<string, unknown> = {
     canteen_id: canteenId,
     name,
     description: typeof body.description === "string" ? body.description : null,
@@ -86,11 +93,21 @@ export async function POST(request: Request) {
   };
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("menu_items")
-    .insert(insertRow)
-    .select("*")
-    .single();
-  if (error || !data) return NextResponse.json({ error: "Failed to create item." }, { status: 500 });
-  return NextResponse.json({ item: data }, { status: 201 });
+  // Resilient insert: if the prod DB hasn't yet had every Phase-1 column
+  // (availability_type / quantity_per_slot / total_per_day / is_meal),
+  // strip them and retry. Otherwise the vendor's Save would silently fail
+  // and the saved item would never appear in the list.
+  const phase1Cols = ["availability_type", "quantity_per_slot", "total_per_day", "is_meal"];
+  const tryInsert = async (row: Record<string, unknown>) =>
+    supabase.from("menu_items").insert(row).select("*").single();
+  let inserted = await tryInsert(insertRow);
+  if (inserted.error && /column .* does not exist/i.test(inserted.error.message)) {
+    const fallback = { ...insertRow };
+    for (const c of phase1Cols) delete fallback[c];
+    inserted = await tryInsert(fallback);
+  }
+  if (inserted.error || !inserted.data) {
+    return NextResponse.json({ error: inserted.error?.message ?? "Failed to create item." }, { status: 500 });
+  }
+  return NextResponse.json({ item: inserted.data }, { status: 201 });
 }

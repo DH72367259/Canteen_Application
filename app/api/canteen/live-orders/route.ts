@@ -37,19 +37,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Failed to load bins." }, { status: 500 });
   }
 
-  const { data: orders, error: orderErr } = await supabase
-    .from("orders")
-    .select(`
-      id, status, bin_id, pickup_slot, total_amount, created_at, skipped_at,
-      profiles(name),
-      bins(bin_code, color),
-      order_items(quantity, menu_items(name, is_meal))
-    `)
-    .eq("canteen_id", canteenId)
-    .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
-    .order("skipped_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: false })
-    .limit(200);
+  // Resilient: prod renamed `pickup_slot` -> `slot_label`. Try the new name
+  // first; on missing-column error retry with the old name. Either gets
+  // surfaced to the client as `pickup_slot` for backward compat.
+  const slotCols = ["slot_label", "pickup_slot"] as const;
+  let orders: unknown[] | null = null;
+  let orderErr: { message: string } | null = null;
+  for (const sc of slotCols) {
+    const r = await supabase
+      .from("orders")
+      .select(`
+        id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
+        profiles(name),
+        bins(bin_code, color),
+        order_items(quantity, menu_items(name, is_meal))
+      `)
+      .eq("canteen_id", canteenId)
+      .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
+      .order("skipped_at", { ascending: true, nullsFirst: true })
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (!r.error) {
+      // Normalize the slot column to `pickup_slot` so downstream code is identical.
+      orders = (r.data ?? []).map(row => {
+        const obj = row as Record<string, unknown>;
+        if (sc === "slot_label" && "slot_label" in obj) obj.pickup_slot = obj.slot_label;
+        return obj;
+      });
+      orderErr = null;
+      break;
+    }
+    orderErr = r.error;
+    if (!/column .* does not exist/i.test(r.error.message)) break;
+  }
 
   if (orderErr) {
     return NextResponse.json({ error: "Failed to load orders." }, { status: 500 });
@@ -65,8 +85,8 @@ export async function GET(request: Request) {
     ready_for_placement: 5,
   };
   const sorted = (orders ?? []).slice().sort((a, b) => {
-    const ra = STATUS_RANK[a.status as string] ?? 99;
-    const rb = STATUS_RANK[b.status as string] ?? 99;
+    const ra = STATUS_RANK[(a as { status: string }).status] ?? 99;
+    const rb = STATUS_RANK[(b as { status: string }).status] ?? 99;
     return ra - rb;
   });
 
