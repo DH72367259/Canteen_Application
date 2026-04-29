@@ -38,13 +38,14 @@ function nowISTMinutes(): { minutes: number; dateStr: string } {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const canteenId = url.searchParams.get("canteenId");
-  if (!canteenId) {
-    return Response.json({ error: "canteenId required" }, { status: 400 });
-  }
+  try {
+    const url = new URL(request.url);
+    const canteenId = url.searchParams.get("canteenId");
+    if (!canteenId) {
+      return Response.json({ error: "canteenId required" }, { status: 400 });
+    }
 
-  const supabase = createAdminClient();
+    const supabase = createAdminClient();
 
   // Try slot_control (Phase-1 source of truth). Lazy-create defaults for
   // older canteens so students never see "no slots" on a live canteen.
@@ -78,19 +79,34 @@ export async function GET(request: Request) {
     // "order before 12:45 for 1:00 slot" rule on the Vendor flow doc.
     const cutoff = nowMin + duration;
 
-    // Fetch today's order counts grouped by slot label
-    const { data: todaysOrders } = await supabase
-      .from("orders")
-      .select("slot_label, status")
-      .eq("canteen_id", canteenId)
-      .gte("created_at", `${dateStr}T00:00:00.000Z`)
-      .lte("created_at", `${dateStr}T23:59:59.999Z`);
+    // Fetch today's order counts grouped by slot label. Resilient against
+    // prod schema drift: prod may have `slot_label` (new) or `pickup_slot`
+    // (legacy) — try the new name first and fall back. Without the fallback
+    // a single missing column would throw and bubble up as a 500, leaving
+    // the user with "Loading slots…" forever.
+    type OrderRow = { slot?: string | null; status: string };
+    let orderRows: OrderRow[] = [];
+    for (const slotCol of ["slot_label", "pickup_slot"] as const) {
+      const q = await supabase
+        .from("orders")
+        .select(`${slotCol}, status`)
+        .eq("canteen_id", canteenId)
+        .gte("created_at", `${dateStr}T00:00:00.000Z`)
+        .lte("created_at", `${dateStr}T23:59:59.999Z`);
+      if (!q.error) {
+        orderRows = (q.data || []).map((r) => {
+          const obj = r as Record<string, unknown>;
+          return { slot: (obj[slotCol] as string | null) ?? null, status: String(obj.status ?? "") };
+        });
+        break;
+      }
+    }
 
     const counts = new Map<string, number>();
-    for (const o of todaysOrders || []) {
-      if (!o.slot_label) continue;
+    for (const o of orderRows) {
+      if (!o.slot) continue;
       if (o.status === "cancelled" || o.status === "refunded") continue;
-      counts.set(o.slot_label, (counts.get(o.slot_label) || 0) + 1);
+      counts.set(o.slot, (counts.get(o.slot) || 0) + 1);
     }
 
     for (const [winStart, winEnd] of windows) {
@@ -136,4 +152,9 @@ export async function GET(request: Request) {
   }
 
   return Response.json({ slots: result });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Internal error";
+    console.error("[/api/slots] failed:", msg, e);
+    return Response.json({ error: msg, slots: [] }, { status: 500 });
+  }
 }
