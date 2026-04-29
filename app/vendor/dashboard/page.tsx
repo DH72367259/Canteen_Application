@@ -128,13 +128,17 @@ export default function VendorDashboard() {
       // user.canteenId is the canteen this vendor belongs to.
       // Falls back to a placeholder if not yet wired to Supabase.
       const canteenId = (user as { canteenId?: string })?.canteenId || "demo";
-      const session = typeof window !== "undefined"
-        ? JSON.parse(localStorage.getItem("supabase.auth.token") || "{}")?.currentSession?.access_token
-        : null;
-      if (canteenId !== "demo" && session) {
+      // PRODUCTION-CRITICAL: read the access token from useAuth()'s `session`,
+      // not `localStorage.getItem("supabase.auth.token")` which is the obsolete
+      // Supabase v1 storage key. Under Supabase v2 that key is always empty,
+      // so the toggle PATCH was silently skipped — the vendor saw their UI flip
+      // but `canteens.is_active` in the DB never changed, leaving every canteen
+      // card stuck on "Open" in the user app even when the vendor toggled OFF.
+      const token = session?.access_token;
+      if (canteenId !== "demo" && token) {
         const res = await fetch(`/api/canteens/${canteenId}/toggle`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ is_active: next }),
         });
         if (!res.ok) {

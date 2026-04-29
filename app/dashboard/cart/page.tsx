@@ -55,8 +55,8 @@ function CartContent() {
   const [slot,        setSlot]        = useState<string | null>(null);
   const [slots,       setSlots]       = useState<SlotOption[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
-  const [walletBal]                   = useState(12);
-  const [useWallet,   setUseWallet]   = useState(false);
+  // Wallet / Canteen-cash payments removed from the user app per revised
+  // workflow. State hooks deleted to avoid unused-variable lint errors.
   const [isPro,       setIsPro]       = useState(false);
   // "go_pro" = user selected the ₹69/mo upsell; "skip" = continue without (pay ₹4)
   const [proChoice,   setProChoice]   = useState<"go_pro" | "skip">("skip");
@@ -123,10 +123,18 @@ function CartContent() {
     return () => { cancelled = true; };
   }, [canteenId, slot, slots, cart, session?.access_token]);
 
-  const convFee    = isPro ? 0 : 4;
-  const proAddon   = (!isPro && proChoice === "go_pro") ? 69 : 0;
+  // Convenience fee waiver: existing Pro members AND students who are
+  // bundling a Pro subscription with this checkout (proChoice === "go_pro")
+  // both get ₹0 convenience fee. Per revised workflow: "When selected
+  // 69/month convenience fee must be zero (must only pay Items price + Pro price)".
+  const proSelectedNow = !isPro && proChoice === "go_pro";
+  const convFee    = (isPro || proSelectedNow) ? 0 : 4;
+  const proAddon   = proSelectedNow ? 69 : 0;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const walletDisc = useWallet ? Math.min(walletBal, subtotal) : 0;
+  // Wallet / Canteen-cash payments were removed from the user app per the
+  // revised workflow. Keep the state hook + computed value harmless (always 0)
+  // so existing references compile, but never apply a discount.
+  const walletDisc = 0;
   const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
   const payable    = Math.max(0, subtotal + convFee + extraBinFee + proAddon - walletDisc);
 
@@ -379,21 +387,7 @@ function CartContent() {
           </div>
         )}
 
-        {walletBal > 0 && (
-          <section className="card" style={{ padding: "0.85rem" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>🎁 Use Canteen Cash</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>₹{walletBal} available</div>
-              </div>
-              <button onClick={() => setUseWallet(w => !w)}
-                style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: useWallet ? "var(--orange)" : "var(--border)", position: "relative", transition: "background 0.2s" }}>
-                <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.2s", left: useWallet ? 22 : 2 }} />
-              </button>
-            </div>
-            {useWallet && <div style={{ fontSize: "0.8rem", color: "var(--green)", marginTop: "0.5rem" }}>−₹{walletDisc} deducted from your wallet</div>}
-          </section>
-        )}
+        {/* "Use Canteen Cash" tile removed per revised workflow. */}
 
         {/* ── NoQx Pro upsell (radio choice, non-Pro users only) ── */}
         {!isPro && (
@@ -488,11 +482,7 @@ function CartContent() {
               </div>
             )}
           </div>
-          {useWallet && walletDisc > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "var(--green)", marginBottom: "0.4rem" }}>
-              <span>Canteen Cash</span><span>−₹{walletDisc}</span>
-            </div>
-          )}
+          {/* Canteen Cash bill row removed per revised workflow. */}
           {proAddon > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#f97316" }}>
               <span>💎 NoQx Pro (1 month)</span><span>+₹{proAddon}</span>

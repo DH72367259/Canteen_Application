@@ -454,12 +454,8 @@ export default function UserHomePage() {
           </div>
         </button>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span
-            title="Live time"
-            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", fontWeight: 700, color: "var(--ink)", background: "#f3f4f6", border: "1px solid var(--border)", borderRadius: 6, padding: "0.2rem 0.45rem", letterSpacing: "0.02em" }}
-          >
-            {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}
-          </span>
+          {/* Live time clock removed from the user app per revised workflow.
+              Vendor / admin / worker dashboards still show their own clock. */}
           <button
             onClick={e => { e.stopPropagation(); handleOpenNotifs(); }}
             title="Notifications"

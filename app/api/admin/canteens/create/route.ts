@@ -133,6 +133,26 @@ export async function POST(request: Request) {
     return Response.json({ error: `Failed to create user profile: ${profileError.message}` }, { status: 500 });
   }
 
+  // 4. Auto-provision a default slot_control row so the vendor can immediately
+  //    configure slots and turn the canteen ON without first hitting the
+  //    "slot_control row not found for canteen." error reported by QA.
+  //    Failure here is non-fatal — the slot_control GET endpoint also lazily
+  //    creates the row on first read as a safety net.
+  await supabase.from("slot_control").insert({
+    canteen_id: canteen.id,
+    max_bins: 60,
+    slot_duration_mins: 15,
+    grace_period_mins: 10,
+    morning_start: "07:00", morning_end: "11:00",
+    afternoon_start: "11:30", afternoon_end: "17:00",
+    evening_start: "18:00", evening_end: "21:30",
+    extra_bin_fee_paise: 0,
+    meals_per_bin: 1,
+    snacks_per_bin: 4,
+  }).then(({ error: e }) => {
+    if (e) console.warn("[admin/canteens/create] slot_control init failed (non-fatal):", e.message);
+  });
+
   return Response.json({
     success: true,
     canteen: { id: canteen.id, name: canteen.name },

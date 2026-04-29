@@ -343,6 +343,13 @@ export default function OrderStatusPage() {
           🔔 We&apos;ll notify you when your order is ready to collect. You can navigate freely — the tracking button will appear on home.
         </div>
 
+        {/* Cancellation policy notice — per revised workflow:
+            once payment is successful the canteen prepares strictly per
+            slot, so cancellation is disabled to avoid food waste. */}
+        <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#9a3412" }}>
+          ⚠️ Order confirmed. Cancellation is not available because the canteen will prepare based on your selected slot.
+        </div>
+
       </div>
 
       {/* Bottom nav */}

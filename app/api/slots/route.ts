@@ -75,7 +75,12 @@ export async function GET(request: Request) {
     ];
 
     const { minutes: nowMin, dateStr } = nowISTMinutes();
-    const cutoff = nowMin + 5;
+    // Per revised workflow Step 7: a slot disappears from the user-facing
+    // selector once the prep batch starts (slot_start - slot_duration). Using
+    // `duration` here means a 15-min slot (1:00–1:15) is removed at 12:45 —
+    // exactly when the canteen begins preparing it. This also matches the
+    // "order before 12:45 for 1:00 slot" rule on the Vendor flow doc.
+    const cutoff = nowMin + duration;
 
     // Fetch today's order counts grouped by slot label
     const { data: todaysOrders } = await supabase

@@ -46,11 +46,37 @@ export async function GET(request: Request) {
   if (!canteenId) return NextResponse.json({ error: "canteenId required." }, { status: 400 });
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("slot_control")
     .select("*")
     .eq("canteen_id", canteenId)
-    .single();
+    .maybeSingle();
+
+  // Auto-provision a default slot_control row on first read. New canteens
+  // (created after the Phase-1 backfill) don't have a row, which used to
+  // surface as "slot_control row not found for canteen." and blocked the
+  // vendor from configuring slots / turning the canteen ON.
+  if (!data && !error) {
+    const defaults = {
+      canteen_id: canteenId,
+      max_bins: 60,
+      slot_duration_mins: 15,
+      grace_period_mins: 10,
+      morning_start: "07:00", morning_end: "11:00",
+      afternoon_start: "11:30", afternoon_end: "17:00",
+      evening_start: "18:00", evening_end: "21:30",
+      extra_bin_fee_paise: 0,
+      meals_per_bin: 1,
+      snacks_per_bin: 4,
+    };
+    const ins = await supabase
+      .from("slot_control")
+      .insert(defaults)
+      .select("*")
+      .single();
+    data = ins.data;
+    error = ins.error;
+  }
 
   if (error || !data) {
     return NextResponse.json({ error: "slot_control row not found for canteen." }, { status: 404 });
@@ -115,10 +141,12 @@ export async function PATCH(request: Request) {
   updates.updated_at = new Date().toISOString();
 
   const supabase = createAdminClient();
+  // Upsert: ensures vendors of newly-created canteens (no row yet) can save
+  // their slot configuration on first attempt instead of seeing
+  // "Failed to update slot control."
   const { data, error } = await supabase
     .from("slot_control")
-    .update(updates)
-    .eq("canteen_id", canteenId)
+    .upsert({ canteen_id: canteenId, ...updates }, { onConflict: "canteen_id" })
     .select("*")
     .single();
 
