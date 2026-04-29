@@ -1,63 +1,138 @@
 import { createAdminClient } from "@/lib/supabase-server";
+import { generateTimeSlots, computeSlotCapacity } from "@/lib/slotCapacity";
 
 export const dynamic = "force-dynamic";
 
-function formatLabel(start_time: string): string {
-  const [h, m] = start_time.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hour}:${(m || 0).toString().padStart(2, "0")} ${ampm}`;
+function pad(n: number) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+function formatLabel(hhmm: string): string {
+  const [hStr, mStr] = hhmm.split(":");
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${pad(m)} ${period}`;
+}
+
+function rangeLabel(start: string, end: string) {
+  return `${formatLabel(start)} - ${formatLabel(end)}`;
+}
+
+function hhmmToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((v) => parseInt(v, 10));
+  return h * 60 + m;
+}
+
+function nowISTMinutes(): { minutes: number; dateStr: string } {
+  const now = new Date();
+  // IST = UTC + 5:30
+  const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
+  const ist = new Date(istMs);
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const dateStr = `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())}`;
+  return { minutes, dateStr };
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const canteenId = searchParams.get("canteenId");
-  if (!canteenId) return Response.json({ error: "canteenId is required" }, { status: 400 });
+  const url = new URL(request.url);
+  const canteenId = url.searchParams.get("canteenId");
+  if (!canteenId) {
+    return Response.json({ error: "canteenId required" }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
-  // Fetch active slots for the canteen
-  const { data: slots, error } = await supabase
-    .from("time_slots")
-    .select("id, label, start_time, capacity, is_active")
+  // Try slot_control (Phase-1 source of truth)
+  const { data: control } = await supabase
+    .from("slot_control")
+    .select(
+      "max_bins, slot_duration_mins, morning_start, morning_end, afternoon_start, afternoon_end, evening_start, evening_end"
+    )
     .eq("canteen_id", canteenId)
-    .eq("is_active", true)
-    .order("start_time");
+    .maybeSingle();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  if (!slots?.length) return Response.json({ slots: [] });
+  type Slot = {
+    id: string;
+    label: string;
+    available: boolean;
+    is_full: boolean;
+    capacity: number;
+  };
 
-  // Current time in IST (UTC+5:30) as minutes since midnight
-  const utcNow = new Date();
-  const istMins = (utcNow.getUTCHours() * 60 + utcNow.getUTCMinutes() + 330) % 1440;
-  // A slot is bookable only if it starts >= 5 minutes from now
-  const cutoff = istMins + 5;
+  const result: Slot[] = [];
 
-  // Count today's non-cancelled orders per slot label to detect full slots
-  const todayIST = new Date(utcNow.getTime() + 330 * 60000).toISOString().slice(0, 10);
-  const { data: orderRows } = await supabase
-    .from("orders")
-    .select("slot")
-    .eq("canteen_id", canteenId)
-    .gte("created_at", `${todayIST}T00:00:00+05:30`)
-    .not("status", "in", '("cancelled","refunded")');
+  if (control) {
+    const duration = control.slot_duration_mins || 15;
+    const cap = computeSlotCapacity(control.max_bins || 60).maxOrdersPerSlot;
 
-  const countMap: Record<string, number> = {};
-  for (const o of orderRows ?? []) {
-    if (o.slot) countMap[o.slot] = (countMap[o.slot] ?? 0) + 1;
+    const windows: Array<[string | null, string | null]> = [
+      [control.morning_start, control.morning_end],
+      [control.afternoon_start, control.afternoon_end],
+      [control.evening_start, control.evening_end],
+    ];
+
+    const { minutes: nowMin, dateStr } = nowISTMinutes();
+    const cutoff = nowMin + 5;
+
+    // Fetch today's order counts grouped by slot label
+    const { data: todaysOrders } = await supabase
+      .from("orders")
+      .select("slot_label, status")
+      .eq("canteen_id", canteenId)
+      .gte("created_at", `${dateStr}T00:00:00.000Z`)
+      .lte("created_at", `${dateStr}T23:59:59.999Z`);
+
+    const counts = new Map<string, number>();
+    for (const o of todaysOrders || []) {
+      if (!o.slot_label) continue;
+      if (o.status === "cancelled" || o.status === "refunded") continue;
+      counts.set(o.slot_label, (counts.get(o.slot_label) || 0) + 1);
+    }
+
+    for (const [winStart, winEnd] of windows) {
+      if (!winStart || !winEnd) continue;
+      const pieces = generateTimeSlots(winStart, winEnd, duration);
+      for (const p of pieces) {
+        const startMin = hhmmToMinutes(p.start);
+        if (startMin < cutoff) continue;
+        const label = rangeLabel(p.start, p.end);
+        const id = `${winStart}-${p.start}`;
+        const booked = counts.get(label) || 0;
+        const isFull = booked >= cap;
+        result.push({
+          id,
+          label,
+          available: !isFull,
+          is_full: isFull,
+          capacity: cap,
+        });
+      }
+    }
+
+    if (result.length > 0) {
+      return Response.json({ slots: result });
+    }
   }
 
-  const result = slots
-    .map(s => {
-      const [h, m] = (s.start_time as string).split(":").map(Number);
-      const slotMins = h * 60 + (m || 0);
-      const isPast = slotMins < cutoff;
-      const label: string = (s.label as string) || formatLabel(s.start_time as string);
-      const booked = countMap[label] ?? 0;
-      const isFull = Number(s.capacity) > 0 && booked >= Number(s.capacity);
-      return { id: s.id as string, label, start_time: s.start_time, available: !isPast && !isFull, is_full: isFull, capacity: s.capacity };
-    })
-    .filter(s => !((s.start_time as string).split(":").map(Number)[0] * 60 + ((s.start_time as string).split(":").map(Number)[1] || 0) < cutoff));
+  // Legacy fallback
+  const { data: legacy } = await supabase
+    .from("time_slots")
+    .select("id, label, is_full")
+    .eq("canteen_id", canteenId)
+    .order("label", { ascending: true });
+
+  for (const s of legacy || []) {
+    result.push({
+      id: String(s.id),
+      label: s.label,
+      available: !s.is_full,
+      is_full: !!s.is_full,
+      capacity: 0,
+    });
+  }
 
   return Response.json({ slots: result });
 }
