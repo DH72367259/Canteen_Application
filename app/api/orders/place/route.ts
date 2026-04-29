@@ -211,5 +211,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return Response.json({ orderId: order.id, otp, binLabel, binColor, total: serverTotal });
+  return Response.json({ orderId: order.id, otp, binLabel, binCode: binLabel, binColor, total: serverTotal });
 }

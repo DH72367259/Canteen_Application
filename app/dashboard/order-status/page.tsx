@@ -29,7 +29,8 @@ function toPhase(rawStatus: string): Phase {
 }
 
 const BIN_COLORS: Record<string, string> = {
-  RED: "#ef4444", BLU: "#3b82f6", GRN: "#22c55e", YEL: "#f59e0b",
+  RED: "#ef4444", YEL: "#f59e0b", GRE: "#22c55e",
+  BLU: "#3b82f6", PUR: "#a855f7", ORA: "#f97316",
 };
 
 function getBinColor(binCode?: string) {

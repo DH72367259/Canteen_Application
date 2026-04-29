@@ -181,8 +181,11 @@ function CartContent() {
       }
       orderId = json.orderId;
       otp = json.otp;
+      // PDF page 10: bin codes are canonical "#RED001" / "#GRE004" — the API
+      // returns the row's bin_code as `binLabel`, so we use it as-is for both
+      // the friendly bin display and the monospace bin code chip.
       bin = `Bin ${json.binLabel}`;
-      binCode = `#${json.binColor?.toUpperCase?.().substring(0, 3) ?? "ORG"}${json.binLabel}`;
+      binCode = json.binCode ?? json.binLabel ?? "";
     } catch (err) {
       console.error("Place order network error:", err);
       setError("Network error placing order. Please try again.");

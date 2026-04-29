@@ -260,13 +260,19 @@ function SlotBanner({ label, color = "#f97316", bg = "#fff7ed" }: { label: strin
 }
 
 function OrderCard({ order, binColor, binCode, footer }: { order: WorkerOrder; binColor: string; binCode: string | number; footer: React.ReactNode }) {
+  // PDF page 4 mock: big tile shows just the bin number (e.g. "2"), with the
+  // canonical code "#RED002" underneath in monospace. Parse the canonical
+  // bin_code (`#RED001`, `#YEL012`, …) to extract the trailing number.
+  const fullCode = String(binCode);
+  const numMatch = fullCode.match(/(\d+)\s*$/);
+  const bigNum = numMatch ? Number(numMatch[1]) : fullCode;
   return (
     <div style={{ background: "#fff", borderRadius: 18, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", overflow: "hidden", marginBottom: "1rem" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem 1rem 0.75rem" }}>
         <div style={{ width: 80, height: 80, borderRadius: 18, background: binColor, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900, fontSize: "2.5rem", boxShadow: `0 6px 20px ${binColor}50` }}>
-          {binCode}
+          {bigNum}
         </div>
-        {(order.binLabel ?? order.bin_code) && <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.3rem", letterSpacing: "0.08em" }}>#{String(order.binLabel ?? order.bin_code ?? "").toUpperCase()}</div>}
+        {fullCode && fullCode !== "?" && <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.3rem", letterSpacing: "0.08em", fontFamily: "monospace" }}>{fullCode.startsWith("#") ? fullCode : `#${fullCode}`}</div>}
       </div>
       <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
         {order.items.map((item, i) => (

@@ -8,9 +8,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const BIN_ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
 export type BinZone = (typeof BIN_ZONES)[number];
 
-/** Format used by the PDF: `RED-1`, `GREEN-12`, etc. (matches existing `bins.bin_code`). */
+/** 3-letter zone abbreviation used in the canonical bin code prefix. */
+export const ZONE_ABBR: Record<BinZone, string> = {
+  red: "RED", yellow: "YEL", green: "GRE",
+  blue: "BLU", purple: "PUR", orange: "ORA",
+};
+
+/**
+ * Canonical bin_code format per the revised workflow PDF (page 10):
+ *   `#RED001`, `#YEL012`, `#GRE004`, etc. — `#` + 3-letter zone abbrev +
+ *   3-digit zero-padded number. We use this everywhere a bin is shown to
+ *   the user, worker, or vendor so "Bin 4" never collides across zones.
+ */
 export function binCode(zone: BinZone, n: number): string {
-  return `${zone.toUpperCase()}-${n}`;
+  return `#${ZONE_ABBR[zone]}${String(n).padStart(3, "0")}`;
 }
 
 /**
@@ -31,22 +42,37 @@ export async function ensureBinsForCanteen(
   const base = Math.floor(total / zones);
   const extra = total % zones;
 
-  const targetCodes: { bin_code: string; color: BinZone }[] = [];
+  const targetCodes: { bin_code: string; color: BinZone; bin_number: number }[] = [];
   BIN_ZONES.forEach((zone, idx) => {
     const count = base + (idx < extra ? 1 : 0);
     for (let n = 1; n <= count; n++) {
-      targetCodes.push({ bin_code: binCode(zone, n), color: zone });
+      targetCodes.push({ bin_code: binCode(zone, n), color: zone, bin_number: n });
     }
   });
 
   if (targetCodes.length === 0) return 0;
 
-  // Find which already exist
+  // Find which already exist (by canonical bin_code).
   const { data: existing } = await supabase
     .from("bins")
     .select("bin_code")
     .eq("canteen_id", canteenId);
   const have = new Set((existing ?? []).map(r => String(r.bin_code)));
+
+  // Migration helper: if a bin exists in the legacy "RED-1" format, rename it
+  // to "#RED001" in-place so the new format becomes canonical without losing
+  // any state (orders, occupancy, etc).
+  for (const t of targetCodes) {
+    const legacy = `${ZONE_ABBR[t.color]}-${t.bin_number}`;          // e.g. RED-1
+    const legacyFull = `${t.color.toUpperCase()}-${t.bin_number}`;   // e.g. RED-1 (same here)
+    if (!have.has(t.bin_code) && (have.has(legacy) || have.has(legacyFull))) {
+      await supabase.from("bins")
+        .update({ bin_code: t.bin_code })
+        .eq("canteen_id", canteenId)
+        .in("bin_code", [legacy, legacyFull]);
+      have.add(t.bin_code);
+    }
+  }
 
   const toInsert = targetCodes
     .filter(t => !have.has(t.bin_code))
@@ -60,3 +86,4 @@ export async function ensureBinsForCanteen(
   }
   return toInsert.length;
 }
+

@@ -49,8 +49,8 @@ export default function VendorDashboard() {
   const { user, logout, session, loading } = useAuth();
   const [activeNav, setActiveNav] = useState("live");
   const [activeSlot, setActiveSlot] = useState("all");
-  // Live Orders status filter (PDF requirement: Placed-in-Bin / Preparing / All)
-  const [statusFilter, setStatusFilter] = useState<"all" | "placed" | "preparing">("all");
+  // Live Orders status filter — PDF page 14 vocabulary: Reserved / Occupied / Late Pickup
+  const [statusFilter, setStatusFilter] = useState<"all" | "reserved" | "occupied" | "late">("all");
   // Live wall clock shown in the toolbar (updates every second)
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -282,7 +282,16 @@ export default function VendorDashboard() {
   const STATUS_ORDER: Record<BinStatus, number> = { placed: 0, preparing: 1, completed: 2, delayed: 3, empty: 99 };
   const visibleSlotBins = [...slotBins]
     .filter(b => b.status !== "empty" && !!b.orderId)
-    .filter(b => statusFilter === "all" ? true : b.status === statusFilter)
+    .filter(b => {
+      if (statusFilter === "all") return true;
+      // PDF vocabulary mapping: just-placed / preparing → Reserved (kitchen has
+      // it, food not in bin yet); completed (in bin, awaiting pickup) → Occupied;
+      // delayed (past grace period) → Late Pickup.
+      if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
+      if (statusFilter === "occupied") return b.status === "completed";
+      if (statusFilter === "late")     return b.status === "delayed";
+      return true;
+    })
     .sort((a, b) => {
       const sa = STATUS_ORDER[a.status]; const sb = STATUS_ORDER[b.status];
       if (sa !== sb) return sa - sb;
@@ -434,16 +443,18 @@ export default function VendorDashboard() {
                   <option key={s} value={s}>{s} ▾</option>
                 ))}
               </select>
-              {/* Status sorter (PDF: Placed-in-Bin / Preparing / All) */}
-              <div style={{ display: "flex", gap: "0.3rem", marginLeft: "auto" }}>
+              {/* Status sorter — PDF page 14: Reserved / Occupied / Late Pickup
+                  (Empty bins live in the Bin Management tab; Live Orders only
+                  shows bins that currently have an order). */}
+              <div style={{ display: "flex", gap: "0.3rem", marginLeft: "auto", flexWrap: "wrap" }}>
                 {([
-                  { id: "placed",     label: "Placed-in-Bin", color: "var(--blue)" },
-                  { id: "preparing",  label: "Preparing",     color: "var(--yellow)" },
-                  { id: "all",        label: "All",           color: "var(--ink-3)" },
+                  { id: "reserved", label: "Reserved",     color: "var(--blue)" },
+                  { id: "occupied", label: "Occupied",     color: "var(--green)" },
+                  { id: "late",     label: "Late Pickup",  color: "var(--red)" },
                 ] as const).map(opt => (
                   <button
                     key={opt.id}
-                    onClick={() => setStatusFilter(opt.id)}
+                    onClick={() => setStatusFilter(prev => prev === opt.id ? "all" : opt.id)}
                     style={{
                       padding: "0.35rem 0.7rem",
                       borderRadius: 8,
@@ -461,12 +472,11 @@ export default function VendorDashboard() {
               </div>
             </div>
 
-            {/* Legend */}
+            {/* Legend — PDF page 14 vocabulary */}
             <div style={{ padding: "0.5rem 1rem 0", display: "flex", gap: "1rem", fontSize: "0.75rem", color: "var(--ink-3)", flexWrap: "wrap" }}>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--blue)", marginRight: 4 }} />Placed</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--yellow)", marginRight: 4 }} />Preparing</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--green)", marginRight: 4 }} />Completed</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--red)", marginRight: 4 }} />Delayed</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--blue)", marginRight: 4 }} />Reserved</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--green)", marginRight: 4 }} />Occupied</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--red)", marginRight: 4 }} />Late Pickup</span>
             </div>
 
             {/* Bin grid */}
@@ -1115,6 +1125,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
   }, [orders]);
 
   // Group bins by color zone, preserving numeric order within each zone.
+  // ZONES is a module-level constant so it does not need to be in deps.
   const grouped = useMemo(() => {
     const g: Record<string, ApiBin[]> = {};
     for (const z of ZONES) g[z] = [];
@@ -1122,23 +1133,36 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
       const z = (b.color ?? "").toLowerCase();
       if (g[z]) g[z].push(b);
     }
-    const num = (code: string) => parseInt(code.split("-")[1] ?? "0", 10) || 0;
+    // Sort bins inside each zone by trailing number. Supports both new
+    // canonical codes ("#RED001") and legacy codes ("RED-1").
+    const num = (code: string) => {
+      const m = code.match(/(\d+)\s*$/);
+      return m ? Number(m[1]) : 0;
+    };
     for (const z of ZONES) g[z].sort((a, b) => num(a.bin_code) - num(b.bin_code));
     return g;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bins]);
+
+
 
   const stats = useMemo(() => {
     const occupied = bins.filter(b => b.is_occupied).length;
     return { total: bins.length, occupied, free: bins.length - occupied };
   }, [bins]);
 
-  const tileStatus = (bin: ApiBin): "free" | "placed" | "preparing" | "ready" => {
-    if (!bin.is_occupied) return "free";
+  // PDF page 14 bin states: Empty / Reserved / Occupied / Late Pickup.
+  // - Empty:     bin has no order assigned
+  // - Reserved:  order assigned, food still being prepared (worker hasn't placed)
+  // - Occupied:  food is in the bin, awaiting customer pickup
+  // - Late:      bin entered grace_bin / late_pickup state
+  const tileStatus = (bin: ApiBin): "empty" | "reserved" | "occupied" | "late" => {
+    if (bin.status === "late_pickup" || bin.status === "grace_bin") return "late";
+    if (!bin.is_occupied) return "empty";
     const o = orderByBinId.get(bin.id);
-    if (!o) return "placed";
-    if (o.status === "ready_for_pickup" || o.status === "placed_in_bin") return "ready";
-    if (o.status === "preparing" || o.status === "ready_for_placement") return "preparing";
-    return "placed";
+    if (!o) return "reserved";
+    if (o.status === "ready_for_pickup" || o.status === "placed_in_bin") return "occupied";
+    return "reserved";
   };
 
   if (!canteenId) {
@@ -1204,7 +1228,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
                         title={`${b.bin_code} — ${st}`}
                       >
                         <span className="bin-tile-code">{b.bin_code}</span>
-                        <span className="bin-tile-status">{st === "free" ? "Free" : st === "placed" ? "Placed" : st === "preparing" ? "Preparing" : "Ready"}</span>
+                        <span className="bin-tile-status">{st === "empty" ? "Empty" : st === "reserved" ? "Reserved" : st === "occupied" ? "Occupied" : "Late Pickup"}</span>
                       </button>
                     );
                   })}
@@ -1223,7 +1247,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
               <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem" }}>
-              <div><strong>Status:</strong> {selected.bin.is_occupied ? "Occupied" : "Free"}</div>
+              <div><strong>Status:</strong> {selected.bin.is_occupied ? "Occupied" : "Empty"}</div>
               <div><strong>Zone:</strong> {selected.bin.color ?? "—"}</div>
               {selected.order ? (
                 <>
