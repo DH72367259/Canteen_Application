@@ -515,7 +515,7 @@ export default function VendorDashboard() {
 
         {activeNav === "slot-control" && <VendorSlotControlView session={session} />}
         {activeNav === "prep-summary" && <VendorPrepSummaryView session={session} />}
-        {activeNav === "menu" && <VendorMenuView />}
+        {activeNav === "menu" && <VendorMenuView session={session} />}
         {activeNav === "slots" && <VendorSlotsView />}
         {activeNav === "sales" && <VendorSalesView />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
@@ -582,7 +582,7 @@ export default function VendorDashboard() {
 
 /* ─── Sub-views ─── */
 
-function VendorMenuView() {
+function VendorMenuView({ session }: { session: { access_token: string } | null }) {
   type MealType = "breakfast" | "lunch" | "dinner" | "packed_snacks";
   type ProductionType = "batch" | "made_to_order";
   type ServeType = "meals" | "snacks";
@@ -605,42 +605,100 @@ function VendorMenuView() {
     breakfast: "🌅 Breakfast", lunch: "☀️ Lunch", dinner: "🌙 Dinner", packed_snacks: "🥡 Packed snacks",
   };
 
-  const [tab, setTab] = useState<MealType>("lunch");
-  const [items, setItems] = useState<Item[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { return JSON.parse(localStorage.getItem("vendor_menu_items") || "[]") as Item[]; }
-    catch { return []; }
+  const CATEGORY_LABEL: Record<MealType, string> = {
+    breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", packed_snacks: "Packed snacks",
+  };
+  const labelToMealType = (label?: string | null): MealType => {
+    const norm = (label ?? "").toLowerCase();
+    if (norm.startsWith("breakfast")) return "breakfast";
+    if (norm.startsWith("dinner"))    return "dinner";
+    if (norm.startsWith("snack") || norm.startsWith("packed")) return "packed_snacks";
+    return "lunch";
+  };
+
+  // DB row shape returned by /api/canteen/menu
+  type DbItem = {
+    id: string; name: string; price: number; category: string | null;
+    availability_type: string | null; quantity_per_slot: number | null;
+    total_per_day: number | null; is_meal: boolean | null; is_available: boolean | null;
+  };
+  const fromDb = (r: DbItem): Item => {
+    const productionType: ProductionType = r.availability_type === "slot_based" ? "made_to_order" : "batch";
+    const capacity = productionType === "batch" ? (r.total_per_day ?? 0) : (r.quantity_per_slot ?? 0);
+    return {
+      id: r.id, name: r.name, price: Number(r.price ?? 0),
+      mealType: labelToMealType(r.category),
+      productionType, capacity,
+      serveType: r.is_meal ? "meals" : "snacks",
+      enabled: r.is_available !== false,
+    };
+  };
+  const toDbBody = (it: Omit<Item, "id">) => ({
+    name: it.name,
+    price: it.price,
+    category: CATEGORY_LABEL[it.mealType],
+    availability_type: it.productionType === "made_to_order" ? "slot_based" : "batched_prepared",
+    quantity_per_slot: it.productionType === "made_to_order" ? it.capacity : null,
+    total_per_day:     it.productionType === "batch"          ? it.capacity : null,
+    is_meal: it.serveType === "meals",
+    is_available: it.enabled,
   });
+
+  const [tab, setTab] = useState<MealType>("lunch");
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const authHeaders = useCallback((): Record<string, string> => {
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) h.Authorization = `Bearer ${session.access_token}`;
+    return h;
+  }, [session]);
+
+  // Load items from DB on mount + whenever session arrives
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    setLoading(true); setError(null);
+    fetch("/api/canteen/menu", { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : r.json().then((j: { error?: string }) => Promise.reject(j.error || "Load failed")))
+      .then((j: { items: DbItem[] }) => { if (!cancelled) setItems((j.items ?? []).map(fromDb)); })
+      .catch(e => { if (!cancelled) setError(typeof e === "string" ? e : "Failed to load menu."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.access_token]);
 
   const [modal, setModal] = useState<{ item: Item | null } | null>(null);
   const emptyForm: FormState = { name: "", price: "", mealType: "lunch", productionType: "batch", capacity: "", serveType: "meals" };
   const [form, setForm] = useState<FormState>(emptyForm);
-
-  // Persist menu items to localStorage but DO NOT auto-mark the menu as
-  // "configured". Per client spec, the canteen ON toggle may only be enabled
-  // after an explicit Save action — see handleSaveMenu below.
-  const persist = (next: Item[]) => {
-    setItems(next);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("vendor_menu_items", JSON.stringify(next));
-      // Any edit invalidates the previously-saved configuration so the vendor
-      // is forced to re-save (matches the PDF "new or unchanged" rule).
-      localStorage.removeItem("vendor_menu_configured");
-      setSavedFlash(false);
-    }
-  };
-
   const [savedFlash, setSavedFlash] = useState(false);
+
+  // Mark menu as "configured" so the canteen ON toggle gate unlocks. The DB
+  // is the source of truth; we additionally mirror to localStorage so the
+  // topbar gate (which reads localStorage synchronously on mount) sees it.
   const handleSaveMenu = () => {
     if (typeof window === "undefined") return;
-    if (items.length === 0) return; // nothing to save
+    if (items.length === 0) return;
     localStorage.setItem("vendor_menu_configured", "true");
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const toggleItem = (id: string) => {
-    persist(items.map(item => item.id === id ? { ...item, enabled: !item.enabled } : item));
+  const toggleItem = async (id: string) => {
+    const target = items.find(i => i.id === id);
+    if (!target) return;
+    const next = !target.enabled;
+    // optimistic
+    setItems(prev => prev.map(i => i.id === id ? { ...i, enabled: next } : i));
+    try {
+      const res = await fetch(`/api/canteen/menu/${id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ is_available: next }) });
+      if (!res.ok) throw new Error("toggle failed");
+    } catch {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, enabled: !next } : i));
+      setError("Could not update item availability.");
+    }
   };
 
   const openEdit = (item: Item) => {
@@ -656,10 +714,11 @@ function VendorMenuView() {
     setForm({ ...emptyForm, mealType: tab });
   };
 
-  const saveModal = () => {
+  const saveModal = async () => {
     if (!form.name.trim()) return;
-    const newItem: Item = {
-      id: modal?.item?.id ?? `i${Date.now()}`,
+    if (busy) return;
+    setBusy(true); setError(null);
+    const draft: Omit<Item, "id"> = {
       name: form.name.trim(),
       price: Number(form.price) || 0,
       mealType: form.mealType,
@@ -668,16 +727,48 @@ function VendorMenuView() {
       serveType: form.serveType,
       enabled: modal?.item?.enabled ?? true,
     };
-    if (modal?.item) {
-      persist(items.map(i => i.id === newItem.id ? newItem : i));
-    } else {
-      persist([...items, newItem]);
+    try {
+      if (modal?.item) {
+        const res = await fetch(`/api/canteen/menu/${modal.item.id}`, {
+          method: "PATCH", headers: authHeaders(), body: JSON.stringify(toDbBody(draft)),
+        });
+        const j = await res.json();
+        if (!res.ok || !j.item) throw new Error(j.error || "Update failed");
+        const updated = fromDb(j.item as DbItem);
+        setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+      } else {
+        const res = await fetch("/api/canteen/menu", {
+          method: "POST", headers: authHeaders(), body: JSON.stringify(toDbBody(draft)),
+        });
+        const j = await res.json();
+        if (!res.ok || !j.item) throw new Error(j.error || "Create failed");
+        const created = fromDb(j.item as DbItem);
+        setItems(prev => [...prev, created]);
+      }
+      // Any change invalidates the saved flag — vendor must click Save Menu again.
+      if (typeof window !== "undefined") localStorage.removeItem("vendor_menu_configured");
+      setSavedFlash(false);
+      setModal(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setBusy(false);
     }
-    setModal(null);
   };
 
-  const removeItem = (id: string) => {
-    persist(items.filter(i => i.id !== id));
+  const removeItem = async (id: string) => {
+    if (!confirm("Delete this item?")) return;
+    const prev = items;
+    setItems(p => p.filter(i => i.id !== id));
+    try {
+      const res = await fetch(`/api/canteen/menu/${id}`, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error("delete failed");
+      if (typeof window !== "undefined") localStorage.removeItem("vendor_menu_configured");
+      setSavedFlash(false);
+    } catch {
+      setItems(prev);
+      setError("Could not delete item.");
+    }
   };
 
   const visibleItems = items.filter(i => i.mealType === tab);
@@ -688,11 +779,13 @@ function VendorMenuView() {
         <h2>Menu & Items</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           {savedFlash && <span style={{ fontSize: "0.78rem", color: "var(--green)", fontWeight: 600 }}>✅ Menu saved!</span>}
-          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Item</button>
+          {loading && <span style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>Loading…</span>}
+          {error && <span style={{ fontSize: "0.75rem", color: "var(--red)", maxWidth: 240 }}>{error}</span>}
+          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd} disabled={busy}>+ Add Item</button>
           <button
             className="btn btn-primary"
-            style={{ fontSize: "0.85rem", padding: "0.5rem 1rem", opacity: items.length === 0 ? 0.5 : 1 }}
-            disabled={items.length === 0}
+            style={{ fontSize: "0.85rem", padding: "0.5rem 1rem", opacity: items.length === 0 || busy ? 0.5 : 1 }}
+            disabled={items.length === 0 || busy}
             onClick={handleSaveMenu}
             title={items.length === 0 ? "Add at least one item before saving" : "Save the menu so the canteen can be turned ON"}
           >
@@ -796,8 +889,8 @@ function VendorMenuView() {
                   ))}
                 </div>
               </div>
-              <button className="btn btn-primary btn-full" onClick={saveModal} style={{ marginTop: "0.5rem" }}>
-                {modal.item ? "Save Changes" : "Add Item"}
+              <button className="btn btn-primary btn-full" onClick={saveModal} style={{ marginTop: "0.5rem" }} disabled={busy}>
+                {busy ? "Saving…" : (modal.item ? "Save Changes" : "Add Item")}
               </button>
             </div>
           </div>
