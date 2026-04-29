@@ -73,8 +73,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ orders, role: context.role });
-  } catch {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to load orders.";
+    return NextResponse.json({ error: msg, orders: [] }, { status: 500 });
   }
 }
 

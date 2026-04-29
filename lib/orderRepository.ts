@@ -48,30 +48,44 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
 
 export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name)")
-    .eq("user_id", uid)
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) throw error;
-  return (data ?? []).map((row) => toCanteenOrder(row as Record<string, unknown>));
+  const projections = [
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
+    "*, order_items(*, menu_items(name))",
+  ];
+  for (let i = 0; i < projections.length; i++) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(projections[i])
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (!error) return (data ?? []).map((row) => toCanteenOrder(row as unknown as Record<string, unknown>));
+    if (!/column .* does not exist/i.test(error.message)) throw error;
+  }
+  return [];
 }
 
 export async function listRecentOrders(limitCount = 100, canteenId?: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
-  let query = supabase
-    .from("orders")
-    .select("*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time)")
-    // Skipped orders go to the back of the queue (NULLS FIRST = un-skipped first when ASC),
-    // then newest first within each bucket.
-    .order("skipped_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: false })
-    .limit(limitCount);
-  if (canteenId) query = query.eq("canteen_id", canteenId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []).map((row) => toCanteenOrder(row as Record<string, unknown>));
+  // Resilient against prod schema drift: try rich projection (with skipped_at,
+  // bins, time_slots), then fall back to progressively simpler queries.
+  const projections = [
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
+    "*, order_items(*, menu_items(name))",
+  ];
+  for (let i = 0; i < projections.length; i++) {
+    let query = supabase.from("orders").select(projections[i]).limit(limitCount);
+    if (i === 0) {
+      query = query.order("skipped_at", { ascending: true, nullsFirst: true });
+    }
+    query = query.order("created_at", { ascending: false });
+    if (canteenId) query = query.eq("canteen_id", canteenId);
+    const { data, error } = await query;
+    if (!error) return (data ?? []).map((row) => toCanteenOrder(row as unknown as Record<string, unknown>));
+    if (!/column .* does not exist/i.test(error.message)) throw error;
+  }
+  return [];
 }
 
 export async function createOrder(
