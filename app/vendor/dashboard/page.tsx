@@ -159,6 +159,8 @@ export default function VendorDashboard() {
 
   // Sync toggle state from the canteen row on mount so the vendor never sees
   // a stale "OFF" banner when their canteen is actually live (or vice versa).
+  // Also pulls authoritative menuReady/slotsReady so the toggle gate doesn't
+  // depend on per-browser localStorage flags (those break in fresh sessions).
   useEffect(() => {
     const canteenId = user?.canteenId;
     if (!canteenId || canteenId === "demo") return;
@@ -168,6 +170,10 @@ export default function VendorDashboard() {
       .then(j => {
         if (cancelled || !j?.canteen) return;
         setCanteenOpen(!!j.canteen.is_active);
+        if (typeof window !== "undefined") {
+          if (j.menuReady)  { localStorage.setItem("vendor_menu_configured",  "true"); setMenuConfigured(true); }
+          if (j.slotsReady) { localStorage.setItem("vendor_slots_configured", "true"); setSlotsConfigured(true); }
+        }
       })
       .catch(() => { /* keep optimistic default */ });
     return () => { cancelled = true; };

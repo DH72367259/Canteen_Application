@@ -310,10 +310,10 @@ export default function UserHomePage() {
       {/* ── Location picker bottom-sheet ── */}
       {showLocationPicker && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
           onClick={(e) => { if (e.target === e.currentTarget && selectedLocation) setShowLocationPicker(false); }}
         >
-          <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", padding: "1rem 1.25rem 2.5rem", width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", padding: "1.25rem 1.25rem 1.5rem", width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
             {/* Drag handle */}
             <div style={{ width: 40, height: 4, background: "#e5e7eb", borderRadius: 99, margin: "0 auto 1rem" }} />
 

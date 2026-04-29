@@ -73,14 +73,20 @@ export default function CanteenMenuPage() {
     let cancelled = false;
     setMenuLoading(true);
     fetch(`/api/canteens/${canteenId}/menu`)
-      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(async r => {
+        if (r.ok) return r.json();
+        // Surface the actual server reason so we can debug "Failed to load
+        // menu items" complaints without needing server logs.
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error || `HTTP ${r.status}`);
+      })
       .then((j: { items: MenuItem[]; categories: string[] }) => {
         if (cancelled) return;
         setItems(j.items ?? []);
         setCategories(["All", ...(j.categories ?? [])]);
         setMenuError(null);
       })
-      .catch(() => { if (!cancelled) setMenuError("Could not load menu items."); })
+      .catch((err: Error) => { if (!cancelled) setMenuError(`Could not load menu items: ${err.message}`); })
       .finally(() => { if (!cancelled) setMenuLoading(false); });
     return () => { cancelled = true; };
   }, [canteenId]);
