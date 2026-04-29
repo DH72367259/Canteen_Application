@@ -69,42 +69,59 @@ export async function GET(request: Request) {
     }
   }
 
-  // Resilient: prod renamed `pickup_slot` -> `slot_label`. Try the new name
-  // first; on missing-column error retry with the old name. Either gets
-  // surfaced to the client as `pickup_slot` for backward compat.
+  // Resilient: prod renamed `pickup_slot` -> `slot_label` AND may not have
+  // every Phase-1 column (skipped_at, total_amount). Try the rich projection
+  // for each slot column, then progressively strip optional columns. Without
+  // this any single missing column 500s the whole endpoint and Bin
+  // Management / Live Orders show "Failed to load orders."
   const slotCols = ["slot_label", "pickup_slot"] as const;
+  type ProjBuilder = (sc: string) => string;
+  const richProj: ProjBuilder = (sc) => `
+    id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
+    profiles(name),
+    bins(bin_code, color),
+    order_items(quantity, menu_items(name, is_meal))
+  `;
+  const baseProj: ProjBuilder = (sc) => `
+    id, status, bin_id, ${sc}, total_amount, created_at,
+    profiles(name),
+    bins(bin_code, color),
+    order_items(quantity, menu_items(name, is_meal))
+  `;
+  const minimalProj: ProjBuilder = (sc) => `
+    id, status, bin_id, ${sc}, created_at,
+    order_items(quantity, menu_items(name, is_meal))
+  `;
   let orders: unknown[] | null = null;
   let orderErr: { message: string } | null = null;
-  for (const sc of slotCols) {
-    const r = await supabase
-      .from("orders")
-      .select(`
-        id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
-        profiles(name),
-        bins(bin_code, color),
-        order_items(quantity, menu_items(name, is_meal))
-      `)
-      .eq("canteen_id", canteenId)
-      .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
-      .order("skipped_at", { ascending: true, nullsFirst: true })
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (!r.error) {
-      // Normalize the slot column to `pickup_slot` so downstream code is identical.
-      orders = (r.data ?? []).map(row => {
-        const obj = row as Record<string, unknown>;
-        if (sc === "slot_label" && "slot_label" in obj) obj.pickup_slot = obj.slot_label;
-        return obj;
-      });
-      orderErr = null;
-      break;
+  outer: for (const sc of slotCols) {
+    for (const proj of [richProj, baseProj, minimalProj]) {
+      let q = supabase
+        .from("orders")
+        .select(proj(sc))
+        .eq("canteen_id", canteenId)
+        .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"]);
+      if (proj === richProj) {
+        q = q.order("skipped_at", { ascending: true, nullsFirst: true });
+      }
+      const r = await q.order("created_at", { ascending: false }).limit(200);
+      if (!r.error) {
+        orders = (r.data ?? []).map(row => {
+          const obj = row as Record<string, unknown>;
+          if (sc === "slot_label" && "slot_label" in obj) obj.pickup_slot = obj.slot_label;
+          return obj;
+        });
+        orderErr = null;
+        break outer;
+      }
+      orderErr = r.error;
+      // Only retry on schema-shape errors; bail out on RLS/auth/etc.
+      if (!/column .* does not exist/i.test(r.error.message)) break outer;
     }
-    orderErr = r.error;
-    if (!/column .* does not exist/i.test(r.error.message)) break;
   }
 
   if (orderErr) {
-    return NextResponse.json({ error: "Failed to load orders." }, { status: 500 });
+    return NextResponse.json({ error: `Failed to load orders: ${orderErr.message}` }, { status: 500 });
   }
 
   // Sort order: Placed (oldest first) -> Preparing -> ready_for_placement
