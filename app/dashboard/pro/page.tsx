@@ -5,24 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Razorpay: new (opts: any) => { open(): void };
-  }
-}
-
-function loadRazorpay(): Promise<boolean> {
-  return new Promise(resolve => {
-    if (typeof window !== "undefined" && window.Razorpay) { resolve(true); return; }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload  = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-}
-
 const FEATURES = [
   { icon: "⚡", title: "Priority Pickup",    desc: "Your orders are prepped sooner." },
   { icon: "₹0", title: "Zero Convenience Fee", desc: "No ₹4 fee, ever. Every single order." },
@@ -32,14 +14,12 @@ const FEATURES = [
 
 export default function ProPage() {
   const router = useRouter();
-  const { user, session } = useAuth();
+  const { session } = useAuth();
   const [isPro, setIsPro] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [daysLeft, setDaysLeft] = useState<number>(0);
   const [savingsPaise, setSavingsPaise] = useState<number>(0);
   const [ordersSincePro, setOrdersSincePro] = useState<number>(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Fast-path from localStorage so the UI never flashes "Get Pro" for an
@@ -76,82 +56,6 @@ export default function ProPage() {
       .catch(() => { /* keep localStorage fast-path */ });
     return () => { cancelled = true; };
   }, [session]);
-
-  // Test-mode Razorpay subscribe path — kept available so the team can run
-  // end-to-end QA against Razorpay test credentials before the prod keys are
-  // approved. Hidden behind a secondary "Test mode" button so real users
-  // default to the order-checkout flow on the primary CTA.
-  async function handleSubscribeTest() {
-    if (!user) { router.push("/login"); return; }
-    setBusy(true); setError(null);
-    const loaded = await loadRazorpay();
-    if (!loaded) {
-      setError("Test gateway script could not load. Check your internet connection.");
-      setBusy(false);
-      return;
-    }
-    try {
-      const res = await fetch("/api/payments/razorpay-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 69, canteenId: "pro", userId: user.uid, slotId: "pro" }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.orderId) {
-        setError(json.error || "Could not initiate test payment.");
-        setBusy(false);
-        return;
-      }
-      const rzp = new window.Razorpay({
-        key:         json.keyId,
-        amount:      json.amount,
-        currency:    json.currency,
-        name:        "NoQx Pro (Test)",
-        description: "Monthly subscription — ₹69/month",
-        order_id:    json.orderId,
-        prefill:     { name: user.displayName || "", email: user.email || "" },
-        theme:       { color: "#f97316" },
-        modal: { ondismiss: () => { setBusy(false); } },
-        handler: async (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
-          try {
-            const verifyRes = await fetch("/api/payments/razorpay-verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id:     resp.razorpay_order_id,
-                razorpay_payment_id:   resp.razorpay_payment_id,
-                razorpay_signature:    resp.razorpay_signature,
-              }),
-            });
-            const vd = await verifyRes.json();
-            if (!verifyRes.ok || !vd.success) {
-              setError("Test payment could not be verified.");
-              setBusy(false);
-              return;
-            }
-            if (session?.access_token) {
-              await fetch("/api/subscriptions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-                body: JSON.stringify({ paymentId: resp.razorpay_payment_id, amount: 69 }),
-              });
-            }
-            const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-            localStorage.setItem("noqx_pro_active", "true");
-            localStorage.setItem("noqx_pro_expires", expiry);
-            setIsPro(true); setExpiresAt(expiry); setBusy(false);
-          } catch {
-            setError("Verification error. If money was debited (test mode = no debit), it would auto-refund.");
-            setBusy(false);
-          }
-        },
-      });
-      rzp.open();
-    } catch {
-      setError("Network error. Please try again.");
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="app-shell">
@@ -232,38 +136,15 @@ export default function ProPage() {
           </div>
         </div>
 
-        {/* Error banner (only shown when test-mode subscribe fails). */}
-        {error && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "0.6rem 0.85rem", fontSize: "0.8rem", color: "#dc2626" }}>
-            {error}
-          </div>
-        )}
-
-
-
         {/* CTA */}
         {!isPro ? (
-          <>
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="btn btn-primary btn-full"
-              style={{ padding: "0.95rem", fontSize: "1.05rem", fontWeight: 800 }}
-            >
-              Order Now avail Benefits →
-            </button>
-            {/* Secondary CTA — fires Razorpay test-mode checkout for E2E QA.
-                Will be removed (or repointed at live keys) once Razorpay
-                production credentials are approved. */}
-            <button
-              onClick={handleSubscribeTest}
-              disabled={busy}
-              className="btn btn-ghost btn-full"
-              style={{ padding: "0.7rem", fontSize: "0.85rem", fontWeight: 700, border: "1.5px dashed var(--orange)", color: "var(--orange-dark)", background: "#fff7ed", opacity: busy ? 0.6 : 1 }}
-              title="Razorpay test-mode checkout for end-to-end QA"
-            >
-              {busy ? "Opening test checkout…" : "🧪 Subscribe via Razorpay (Test mode · ₹69)"}
-            </button>
-          </>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="btn btn-primary btn-full"
+            style={{ padding: "0.95rem", fontSize: "1.05rem", fontWeight: 800 }}
+          >
+            Order Now &amp; Add Pro at Checkout →
+          </button>
         ) : (
           <div style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--ink-3)", padding: "0.5rem" }}>
             Renewal is manual. Come back before expiry to continue.

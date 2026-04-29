@@ -124,10 +124,11 @@ function CartContent() {
   }, [canteenId, slot, slots, cart, session?.access_token]);
 
   const convFee    = isPro ? 0 : 4;
+  const proAddon   = (!isPro && proChoice === "go_pro") ? 69 : 0;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const walletDisc = useWallet ? Math.min(walletBal, subtotal) : 0;
   const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
-  const payable    = Math.max(0, subtotal + convFee + extraBinFee - walletDisc);
+  const payable    = Math.max(0, subtotal + convFee + extraBinFee + proAddon - walletDisc);
 
   function updateQty(id: string, delta: number) {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
@@ -209,12 +210,6 @@ function CartContent() {
     if (cart.length === 0) { setError("Your cart is empty."); return; }
     if (cartCheck?.slot_full) { setError("This slot just filled up. Please pick another."); return; }
 
-    // If user chose go_pro, redirect to pro page first
-    if (!isPro && proChoice === "go_pro") {
-      router.push("/dashboard/pro");
-      return;
-    }
-
     setBusy(true);
     setError(null);
 
@@ -283,6 +278,21 @@ function CartContent() {
             setError("Payment received but could not be confirmed. A full refund has been initiated automatically and will reach you within 5-7 business days.");
             setBusy(false);
             return;
+          }
+          // If user opted into Pro at checkout, activate the subscription
+          // server-side BEFORE finalising the order so the conv-fee waiver
+          // and Pro badge apply immediately to subsequent orders.
+          if (proAddon > 0 && session?.access_token) {
+            try {
+              await fetch("/api/subscriptions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({ paymentId: resp.razorpay_payment_id, amount: 69 }),
+              });
+              const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              localStorage.setItem("noqx_pro_active", "true");
+              localStorage.setItem("noqx_pro_expires", expiry);
+            } catch { /* non-fatal: webhook will reconcile */ }
           }
           await finaliseOrder(resp.razorpay_payment_id, resp.razorpay_order_id, resp.razorpay_signature);
         } catch {
@@ -481,6 +491,11 @@ function CartContent() {
           {useWallet && walletDisc > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "var(--green)", marginBottom: "0.4rem" }}>
               <span>Canteen Cash</span><span>−₹{walletDisc}</span>
+            </div>
+          )}
+          {proAddon > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#f97316" }}>
+              <span>💎 NoQx Pro (1 month)</span><span>+₹{proAddon}</span>
             </div>
           )}
           <div style={{ height: 1, background: "var(--border)", margin: "0.5rem 0" }} />
