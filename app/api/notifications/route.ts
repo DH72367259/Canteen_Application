@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       type: "admin",
       recipient_type,
       recipient_id: recipient_id ?? null,
-      target_role: target_role ?? null,
+      target_role: target_role ?? "all",
       created_by: auth.uid,
     })
     .select("id")
