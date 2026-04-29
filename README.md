@@ -11,7 +11,26 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
-## Latest Round (Revised Workflow PDF)
+## Latest Round (Client Bug-fix Sweep)
+
+Fixes shipped on top of the editable-slot-windows + Pro-polish round (`c02f259`):
+
+- **User app menu loads on every canteen** — [app/api/canteens/[id]/menu/route.ts](app/api/canteens/%5Bid%5D/menu/route.ts) now retries with the base column set if `availability_type` / `is_meal` aren't yet present in production (resilient to migration lag). Eliminates the *"Could not load menu items"* banner on canteens like KNS.
+- **Live Orders → slot dropdown replaces "All Bins"** — vendor dashboard ([app/vendor/dashboard/page.tsx](app/vendor/dashboard/page.tsx#L382)) now shows a single slot selector ("All slots ▾" + each configured slot, e.g. *1:00pm to 1:15pm ▾*) plus the existing Placed-in-Bin / Preparing / All sorter. Matches the revised PDF mock exactly.
+- **Pro CTA can never trigger a payment-gateway error again** — removed the dead `loadRazorpay()`, `handleSubscribe()`, error/busy state, and the inline error banner from [app/dashboard/pro/page.tsx](app/dashboard/pro/page.tsx). The "Order Now avail Benefits →" button is now a pure `router.push("/dashboard")`, so the *"Payment gateway failed to load"* message has no code path left.
+
+All 142 tests across 12 suites still pass; production build is clean.
+
+---
+
+## Previous Round (Revised Workflow PDF — `c02f259`)
+
+- **Editable slot windows** — Slot Control now exposes Morning / Afternoon / Evening start+end `<input type="time">` fields wired into PATCH `/api/canteen/slot-control`.
+- **Profile → inline Pro status card** — days-left + total-saved widget reads from `GET /api/subscriptions`.
+- **Pro page polish** — button text + routing aligned with PDF.
+
+## Earlier Rounds
+
 
 **Client-reported bug fixes**
 - Login double-bounce on first canteen-staff login fixed — vendor dashboard auth guard now waits when a Supabase session token is present in `localStorage` instead of redirecting to `/login`.

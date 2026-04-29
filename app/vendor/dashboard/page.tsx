@@ -378,31 +378,25 @@ export default function VendorDashboard() {
               </div>
             </div>
 
-            {/* Slot tabs + slot changer dropdown (per spec: Live Orders → navigate between slots) */}
+            {/* Slot selector + status sorter (per PDF: Live Orders → pick a slot, sort by status) */}
             <div className="slot-tabs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
-              <button
-                className={`slot-tab ${activeSlot === "all" ? "active" : ""}`}
-                onClick={() => setActiveSlot("all")}
+              {/* Slot dropdown — replaces the old "All Bins" pill so manager can
+                  jump straight into a specific time-slot's bin view (PDF spec). */}
+              <select
+                value={activeSlot}
+                onChange={e => setActiveSlot(e.target.value)}
+                style={{
+                  padding: "0.45rem 0.8rem", border: "1.5px solid var(--orange)", borderRadius: 8,
+                  fontSize: "0.85rem", fontWeight: 700, background: "#fff7ed", color: "var(--orange-dark)",
+                  cursor: "pointer", minWidth: 180,
+                }}
+                title="Select a slot to view its bins"
               >
-                All Bins
-              </button>
-              {uniqueSlots.length > 0 && (
-                <select
-                  value={activeSlot}
-                  onChange={e => setActiveSlot(e.target.value)}
-                  style={{
-                    padding: "0.4rem 0.7rem", border: "1.5px solid var(--orange)", borderRadius: 8,
-                    fontSize: "0.82rem", fontWeight: 700, background: "#fff7ed", color: "var(--orange-dark)",
-                    cursor: "pointer",
-                  }}
-                  title="Navigate between slots"
-                >
-                  <option value="all">– Pick a slot –</option>
-                  {uniqueSlots.map(s => (
-                    <option key={s} value={s}>{s} ▾</option>
-                  ))}
-                </select>
-              )}
+                <option value="all">All slots ▾</option>
+                {uniqueSlots.map(s => (
+                  <option key={s} value={s}>{s} ▾</option>
+                ))}
+              </select>
               {/* Status sorter (PDF: Placed-in-Bin / Preparing / All) */}
               <div style={{ display: "flex", gap: "0.3rem", marginLeft: "auto" }}>
                 {([

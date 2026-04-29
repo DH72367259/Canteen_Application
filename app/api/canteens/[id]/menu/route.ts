@@ -22,19 +22,38 @@ export async function GET(
   }
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("menu_items")
-    .select("id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out, availability_type, is_meal")
-    .eq("canteen_id", id)
-    .eq("is_available", true)
-    .eq("is_hidden",    false)
-    .eq("is_sold_out",  false)
-    .order("category", { ascending: true })
-    .order("name",     { ascending: true });
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  // Resilient select: try with the new phase-1 columns first; if production DB
+  // has not yet had the migration applied, fall back to the base column set so
+  // the menu still loads (degraded → all items default to "slot_based").
+  type MenuRow = {
+    id: string; name: string; description: string | null; price: number | string;
+    category: string | null; image_url: string | null;
+    is_available: boolean; is_hidden: boolean; is_sold_out: boolean;
+    availability_type?: string | null; is_meal?: boolean | null;
+  };
+  const baseCols = "id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out";
+  const fullCols = `${baseCols}, availability_type, is_meal`;
+  let rows: MenuRow[] | null = null;
+  let lastError: string | null = null;
+  for (const cols of [fullCols, baseCols]) {
+    const { data, error } = await supabase
+      .from("menu_items")
+      .select(cols)
+      .eq("canteen_id", id)
+      .eq("is_available", true)
+      .eq("is_hidden",    false)
+      .eq("is_sold_out",  false)
+      .order("category", { ascending: true })
+      .order("name",     { ascending: true });
+    if (!error) { rows = (data ?? []) as unknown as MenuRow[]; break; }
+    lastError = error.message;
+    // Only retry with reduced columns if it's a missing-column error
+    if (!/column .* does not exist/i.test(error.message)) break;
+  }
+  if (rows === null) return Response.json({ error: lastError ?? "menu query failed" }, { status: 500 });
 
-  const items = (data ?? []).map(r => ({
+  const items = rows.map(r => ({
     id:                r.id,
     name:              r.name,
     description:       r.description ?? "",

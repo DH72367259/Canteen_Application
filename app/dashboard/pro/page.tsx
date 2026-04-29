@@ -5,24 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Razorpay: new (opts: any) => { open(): void };
-  }
-}
-
-function loadRazorpay(): Promise<boolean> {
-  return new Promise(resolve => {
-    if (typeof window !== "undefined" && window.Razorpay) { resolve(true); return; }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload  = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-}
-
 const FEATURES = [
   { icon: "⚡", title: "Priority Pickup",    desc: "Your orders are prepped sooner." },
   { icon: "₹0", title: "Zero Convenience Fee", desc: "No ₹4 fee, ever. Every single order." },
@@ -32,15 +14,12 @@ const FEATURES = [
 
 export default function ProPage() {
   const router = useRouter();
-  const { user, session } = useAuth();
+  const { session } = useAuth();
   const [isPro, setIsPro] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [daysLeft, setDaysLeft] = useState<number>(0);
   const [savingsPaise, setSavingsPaise] = useState<number>(0);
   const [ordersSincePro, setOrdersSincePro] = useState<number>(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     // Fast-path from localStorage so the UI never flashes "Get Pro" for an
@@ -77,96 +56,6 @@ export default function ProPage() {
       .catch(() => { /* keep localStorage fast-path */ });
     return () => { cancelled = true; };
   }, [session]);
-
-  async function handleSubscribe() {
-    if (!user) { router.push("/login"); return; }
-    setBusy(true); setError(null);
-
-    const loaded = await loadRazorpay();
-    if (!loaded) {
-      setError("Payment gateway failed to load. Check your internet connection.");
-      setBusy(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/payments/razorpay-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 69, canteenId: "pro", userId: user.uid, slotId: "pro" }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.orderId) {
-        setError(json.error || "Could not initiate payment. Please try again.");
-        setBusy(false);
-        return;
-      }
-
-      const rzp = new window.Razorpay({
-        key:         json.keyId,
-        amount:      json.amount,
-        currency:    json.currency,
-        name:        "NoQx Pro",
-        description: "Monthly subscription — ₹69/month",
-        order_id:    json.orderId,
-        prefill:     { name: user.displayName || "", email: user.email || "" },
-        theme:       { color: "#f97316" },
-        modal: {
-          ondismiss: () => { setBusy(false); },
-        },
-        handler: async (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
-          try {
-            const verifyRes = await fetch("/api/payments/razorpay-verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature }),
-            });
-            const vd = await verifyRes.json();
-            if (!verifyRes.ok || !vd.success) {
-              setError("Payment could not be verified. Please contact support.");
-              setBusy(false);
-              return;
-            }
-            // Record subscription in Supabase via API if user has a session
-            if (session?.access_token) {
-              await fetch("/api/subscriptions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-                body: JSON.stringify({ paymentId: resp.razorpay_payment_id, amount: 69 }),
-              });
-            }
-            // Save to localStorage as fast-path
-            const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-            localStorage.setItem("noqx_pro_active", "true");
-            localStorage.setItem("noqx_pro_expires", expiry);
-            setIsPro(true); setExpiresAt(expiry); setSuccess(true); setBusy(false);
-          } catch {
-            setError("Verification error. If money was debited, it will be auto-refunded within 5–7 business days.");
-            setBusy(false);
-          }
-        },
-      });
-      rzp.open();
-    } catch {
-      setError("Network error. Please try again.");
-      setBusy(false);
-    }
-  }
-
-  if (success) {
-    return (
-      <div className="app-shell" style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: "2rem 1rem" }}>
-        <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🎉</div>
-        <h2 style={{ fontWeight: 900, fontSize: "1.3rem", marginBottom: "0.5rem" }}>Welcome to NoQx Pro!</h2>
-        <p style={{ color: "var(--ink-3)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-          You now enjoy ₹0 convenience fee on every order this month.
-        </p>
-        <button className="btn btn-primary btn-full" style={{ maxWidth: 320 }} onClick={() => router.push("/dashboard")}>
-          Start ordering →
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="app-shell">
@@ -247,11 +136,9 @@ export default function ProPage() {
           </div>
         </div>
 
-        {error && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "0.6rem 0.85rem", fontSize: "0.8rem", color: "#dc2626" }}>
-            {error}
-          </div>
-        )}
+        {/* Error banner removed: Pro CTA no longer triggers payment, so no error path can reach here. */}
+
+
 
         {/* CTA */}
         {!isPro ? (
