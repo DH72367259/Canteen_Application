@@ -4,7 +4,11 @@
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build", "cp -r .next/static .next/standalone/.next/static", "cp -r public .next/standalone/public"]
+# `npm run build` triggers the `postbuild` script in package.json which
+# already copies static + public into the standalone bundle. Do not repeat
+# those cp commands here — running them twice nests static/static and can
+# wedge the Railway build phase.
+cmds = ["npm run build"]
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
