@@ -39,7 +39,9 @@ export interface TimeSlot {
   end: string;   // "HH:MM"
 }
 
-const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+// Accept HH:MM (canonical) or HH:MM:SS (PostgreSQL `time` columns serialize
+// with seconds — slot_control rows in prod come back as e.g. "07:00:00").
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
 
 function toMinutes(hhmm: string): number {
   const m = HHMM.exec(hhmm);
