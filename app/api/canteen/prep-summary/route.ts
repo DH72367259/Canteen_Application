@@ -50,20 +50,35 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  // Pull active (not yet collected/cancelled) orders with line items
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select(`
+  // Pull active (not yet collected/cancelled) orders with line items.
+  // Resilient: if the production DB hasn't yet had the phase-1 migration that
+  // adds menu_items.availability_type / is_meal, fall back to the base columns
+  // so the page still renders (everything will default to batched_prepared).
+  const fullSelect = `
       id, status, pickup_slot,
       time_slots(slot_name, start_time, end_time),
       order_items(quantity, menu_items(name, availability_type, is_meal))
-    `)
-    .eq("canteen_id", canteenId)
-    .in("status", ["placed", "confirmed", "preparing", "ready_for_placement"])
-    .limit(500);
-
-  if (error) {
-    return NextResponse.json({ error: "Failed to load prep summary." }, { status: 500 });
+    `;
+  const baseSelect = `
+      id, status, pickup_slot,
+      time_slots(slot_name, start_time, end_time),
+      order_items(quantity, menu_items(name))
+    `;
+  let orders: unknown[] | null = null;
+  let lastError: string | null = null;
+  for (const sel of [fullSelect, baseSelect]) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(sel)
+      .eq("canteen_id", canteenId)
+      .in("status", ["placed", "confirmed", "preparing", "ready_for_placement"])
+      .limit(500);
+    if (!error) { orders = data ?? []; break; }
+    lastError = error.message;
+    if (!/column .* does not exist/i.test(error.message)) break;
+  }
+  if (orders === null) {
+    return NextResponse.json({ error: lastError ?? "Failed to load prep summary." }, { status: 500 });
   }
 
   // Aggregate per slot, split by availability_type

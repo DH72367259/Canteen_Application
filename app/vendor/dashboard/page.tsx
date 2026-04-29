@@ -62,6 +62,16 @@ export default function VendorDashboard() {
   const [slotsConfigured, setSlotsConfigured] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true"
   );
+  const [menuConfigured, setMenuConfigured] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("vendor_menu_configured") === "true"
+  );
+  // Re-read the configured flags whenever the user navigates between sidebar
+  // tabs so the topbar toggle reflects the latest Save action without a reload.
+  const refreshConfigFlags = useCallback(() => {
+    if (typeof window === "undefined") return;
+    setSlotsConfigured(localStorage.getItem("vendor_slots_configured") === "true");
+    setMenuConfigured(localStorage.getItem("vendor_menu_configured") === "true");
+  }, []);
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
@@ -109,6 +119,7 @@ export default function VendorDashboard() {
       return;
     }
     setSlotsConfigured(slotsOk);
+    setMenuConfigured(menuOk);
     setToggleBusy(true);
     setToggleError(null);
     // Optimistic update
@@ -295,7 +306,7 @@ export default function VendorDashboard() {
             <button
               key={item.id}
               className={`sidebar-link ${activeNav === item.id ? "active" : ""}`}
-              onClick={() => setActiveNav(item.id)}
+              onClick={() => { setActiveNav(item.id); refreshConfigFlags(); }}
             >
               <span className="icon">{item.icon}</span>
               {item.label}
@@ -341,11 +352,31 @@ export default function VendorDashboard() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600 }}>Canteen</span>
-              {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 180 }}>{toggleError}</span>}
-              <label className="toggle-switch" title={!slotsConfigured && !canteenOpen ? "Save slot configuration first before turning ON" : canteenOpen ? "Canteen is OPEN – click to close" : "Canteen is CLOSED – click to open"} style={{ opacity: toggleBusy ? 0.6 : 1 }}>
-                <input type="checkbox" checked={canteenOpen} disabled={toggleBusy} onChange={handleToggleCanteen} />
-                <span className="toggle-track" />
-              </label>
+              {toggleError && <span style={{ fontSize: "0.72rem", color: "var(--red)", maxWidth: 220 }}>{toggleError}</span>}
+              {(() => {
+                const prereqsMet = slotsConfigured && menuConfigured;
+                const lockedOff = !prereqsMet && !canteenOpen;
+                const tip = lockedOff
+                  ? `Save your menu items and time slots first. ${!menuConfigured ? "Menu not saved. " : ""}${!slotsConfigured ? "Slots not saved." : ""}`.trim()
+                  : canteenOpen
+                    ? "Canteen is OPEN – click to close"
+                    : "Canteen is CLOSED – click to open";
+                return (
+                  <label
+                    className="toggle-switch"
+                    title={tip}
+                    style={{ opacity: toggleBusy || lockedOff ? 0.45 : 1, cursor: lockedOff ? "not-allowed" : "pointer" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={canteenOpen}
+                      disabled={toggleBusy || lockedOff}
+                      onChange={handleToggleCanteen}
+                    />
+                    <span className="toggle-track" />
+                  </label>
+                );
+              })()}
               <span style={{ fontSize: "0.78rem", fontWeight: 700, color: canteenOpen ? "var(--green)" : "var(--red)" }}>
                 {canteenOpen ? "Open" : "Closed"}
               </span>
@@ -585,14 +616,27 @@ function VendorMenuView() {
   const emptyForm: FormState = { name: "", price: "", mealType: "lunch", productionType: "batch", capacity: "", serveType: "meals" };
   const [form, setForm] = useState<FormState>(emptyForm);
 
-  // Persist menu items + mark menu configured for the canteen ON gate
+  // Persist menu items to localStorage but DO NOT auto-mark the menu as
+  // "configured". Per client spec, the canteen ON toggle may only be enabled
+  // after an explicit Save action — see handleSaveMenu below.
   const persist = (next: Item[]) => {
     setItems(next);
     if (typeof window !== "undefined") {
       localStorage.setItem("vendor_menu_items", JSON.stringify(next));
-      if (next.length > 0) localStorage.setItem("vendor_menu_configured", "true");
-      else localStorage.removeItem("vendor_menu_configured");
+      // Any edit invalidates the previously-saved configuration so the vendor
+      // is forced to re-save (matches the PDF "new or unchanged" rule).
+      localStorage.removeItem("vendor_menu_configured");
+      setSavedFlash(false);
     }
+  };
+
+  const [savedFlash, setSavedFlash] = useState(false);
+  const handleSaveMenu = () => {
+    if (typeof window === "undefined") return;
+    if (items.length === 0) return; // nothing to save
+    localStorage.setItem("vendor_menu_configured", "true");
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 3000);
   };
 
   const toggleItem = (id: string) => {
@@ -642,7 +686,19 @@ function VendorMenuView() {
     <div className="page-content">
       <div className="page-header">
         <h2>Menu & Items</h2>
-        <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Item</button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {savedFlash && <span style={{ fontSize: "0.78rem", color: "var(--green)", fontWeight: 600 }}>✅ Menu saved!</span>}
+          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Item</button>
+          <button
+            className="btn btn-primary"
+            style={{ fontSize: "0.85rem", padding: "0.5rem 1rem", opacity: items.length === 0 ? 0.5 : 1 }}
+            disabled={items.length === 0}
+            onClick={handleSaveMenu}
+            title={items.length === 0 ? "Add at least one item before saving" : "Save the menu so the canteen can be turned ON"}
+          >
+            Save Menu
+          </button>
+        </div>
       </div>
 
       <div className="meal-tabs" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", marginBottom: "1rem", display: "flex" }}>
@@ -1733,7 +1789,25 @@ function VendorPrepSummaryView({ session }: { session: { access_token: string } 
   if (loading) return <div className="page-content"><p>Loading prep summary…</p></div>;
   if (error)   return <div className="page-content"><p style={{ color: "#dc2626" }}>{error}</p></div>;
   if (!data || data.slots.length === 0) {
-    return <div className="page-content"><div className="page-header"><h2>Prep Summary</h2></div><p>No active orders to summarize.</p></div>;
+    // Empty state still shows the slot selector pill per the revised PDF mock
+    // ("1:00pm to 1:15pm ▼") so the manager can navigate slots even before any
+    // orders arrive in this slot. The dropdown is populated from the time_slots
+    // table via the prep-summary endpoint once orders exist.
+    return (
+      <div className="page-content">
+        <div className="page-header">
+          <h2>Prep Summary</h2>
+          <button onClick={load} className="tag tag-blue" style={{ cursor: "pointer", border: "none" }}>↻ Refresh</button>
+        </div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.55rem 1rem", border: "1.5px solid var(--orange)", borderRadius: 999, background: "#fff7ed", color: "var(--orange-dark)", fontWeight: 700, fontSize: "0.9rem" }}>
+          <span>No active slot</span>
+          <span>▾</span>
+        </div>
+        <p style={{ marginTop: "1rem", fontSize: "0.85rem", color: "var(--ink-3)" }}>
+          No orders yet for any active slot. Once students place orders, this view will list what to prepare per slot.
+        </p>
+      </div>
+    );
   }
 
   return (

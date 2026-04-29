@@ -11,7 +11,19 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
-## Latest Round (Client Bug-fix Sweep)
+## Latest Round (Toggle Gating + Prep Summary Fix)
+
+Shipped on top of `ad4e8c0`:
+
+- **Prep Summary now loads** — [app/api/canteen/prep-summary/route.ts](app/api/canteen/prep-summary/route.ts) retries with the base column set if `availability_type` / `is_meal` aren't yet present in the production DB. Eliminates the *"Failed to load prep summary."* banner. The vendor view also shows a slot-selector pill in the empty state per the revised PDF mock.
+- **Canteen ON toggle is now visually gated** — the topbar switch in [app/vendor/dashboard/page.tsx](app/vendor/dashboard/page.tsx) is greyed out + `cursor: not-allowed` until **both** Menu Items and Time Slots have been explicitly saved. Tooltip explains exactly which step is missing. Flags refresh on every sidebar tab change so the gate updates without a reload.
+- **Menu & Items has an explicit Save button** — adding/editing items only persists to localStorage; the canteen-configured flag is set only when the vendor clicks **Save Menu**. Any subsequent edit invalidates the saved configuration and forces a re-save (matches PDF *"new or unchanged"* rule).
+
+All 142 tests across 12 suites pass; production build is clean.
+
+---
+
+## Previous Round (Client Bug-fix Sweep — `ad4e8c0`)
 
 Fixes shipped on top of the editable-slot-windows + Pro-polish round (`c02f259`):
 
