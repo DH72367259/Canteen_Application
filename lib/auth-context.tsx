@@ -236,10 +236,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             roleRef.current = builtUser.role
             setUser(builtUser)
             setLoading(false)
-            // Silently refresh profile in background so stale data doesn't persist
+            // Silently refresh profile in background so stale data doesn't persist.
+            // Guard: a transient fetchProfile error returns role='user'; never downgrade an
+            // already-resolved privileged role here — it would bounce admins/vendors to /login
+            // and trigger a redirect-loop flicker between dashboards.
             fetchProfile(session.user.id).then(fresh => {
-              setCachedProfile(session.user.id, fresh)
-              const updated = buildAuthUser(session.user.id, session.user.email, { ...fresh, mustChangePassword, hasPassword })
+              const prevRole = roleRef.current
+              const safeRole: UserRole = (
+                fresh.role === 'user' && prevRole !== null && prevRole !== 'user'
+              ) ? prevRole : (fresh.role ?? 'user')
+              const safeFresh = { ...fresh, role: safeRole }
+              setCachedProfile(session.user.id, safeFresh)
+              const updated = buildAuthUser(session.user.id, session.user.email, { ...safeFresh, mustChangePassword, hasPassword })
+              if (updated.role === prevRole) return // no-op: avoid an unnecessary re-render
               roleRef.current = updated.role
               setUser(updated)
             }).catch(() => {})
@@ -267,6 +276,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) recordActivity()
       setSession(session)
+      // Dedupe: INITIAL_SESSION fires after getSession() already populated the user.
+      // Re-fetching the profile here can race with the bg refresh above and briefly
+      // downgrade roles, causing a redirect-loop flicker between dashboards.
+      if (event === 'INITIAL_SESSION' && session?.user && roleRef.current !== null) {
+        setLoading(false)
+        return
+      }
       if (session?.user) {
         // Snapshot existing role BEFORE the async profile fetch.
         // If fetchProfile times out or errors and returns the 'user' fallback, we use this
