@@ -7,13 +7,33 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, session } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [proInfo, setProInfo] = useState<{ isActive: boolean; daysLeft: number; savingsPaise: number; ordersSincePro: number } | null>(null);
 
   // Auth guard
   useEffect(() => {
     if (!loading && !user) router.replace("/login?role=user");
   }, [user, loading, router]);
+
+  // Pull Pro subscription status so the profile card can show days left + savings
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    fetch("/api/subscriptions", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j) return;
+        setProInfo({
+          isActive: !!j.isActive,
+          daysLeft: Number(j.daysLeft) || 0,
+          savingsPaise: Number(j.savingsPaise) || 0,
+          ordersSincePro: Number(j.ordersSincePro) || 0,
+        });
+      })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -129,6 +149,49 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+
+        {/* NoQx Pro inline status card — PDF requirement: show days left + total saved */}
+        <Link href="/dashboard/pro" style={{ textDecoration: "none" }}>
+          <div style={{
+            background: proInfo?.isActive
+              ? "linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)"
+              : "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+            border: proInfo?.isActive ? "1.5px solid #fb923c" : "1.5px solid #e5e7eb",
+            borderRadius: 16,
+            padding: "1rem 1.15rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+            cursor: "pointer",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: proInfo?.isActive ? "#9a3412" : "#475569", marginBottom: "0.2rem" }}>
+                💎 NoQx Pro {proInfo?.isActive ? "· Active" : ""}
+              </div>
+              {proInfo?.isActive ? (
+                <>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#9a3412", marginBottom: "0.15rem" }}>
+                    {proInfo.daysLeft} day{proInfo.daysLeft === 1 ? "" : "s"} remaining
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#b45309" }}>
+                    You&apos;ve saved <strong>₹{(proInfo.savingsPaise / 100).toFixed(0)}</strong> across {proInfo.ordersSincePro} order{proInfo.ordersSincePro === 1 ? "" : "s"}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#0f172a", marginBottom: "0.1rem" }}>
+                    Skip queues every day · ₹69/month
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
+                    Tap to see benefits and order →
+                  </div>
+                </>
+              )}
+            </div>
+            <span style={{ color: proInfo?.isActive ? "#9a3412" : "#9b9b94", fontSize: "1.1rem" }}>›</span>
+          </div>
+        </Link>
 
         {/* Quick links */}
         <div style={{

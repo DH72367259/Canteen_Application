@@ -1554,6 +1554,12 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   const [maxBinsInput, setMaxBinsInput] = useState<string>("");
   const [duration, setDuration] = useState<string>("15");
   const [saving, setSaving] = useState(false);
+  const [morningStart, setMorningStart]     = useState("07:00");
+  const [morningEnd, setMorningEnd]         = useState("11:00");
+  const [afternoonStart, setAfternoonStart] = useState("11:30");
+  const [afternoonEnd, setAfternoonEnd]     = useState("17:00");
+  const [eveningStart, setEveningStart]     = useState("18:00");
+  const [eveningEnd, setEveningEnd]         = useState("21:30");
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -1564,6 +1570,12 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
       if (!res.ok) throw new Error(j.error || "Failed");
       setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
       setDuration(String(j.slot_control.slot_duration_mins));
+      setMorningStart(j.slot_control.morning_start.slice(0,5));
+      setMorningEnd(j.slot_control.morning_end.slice(0,5));
+      setAfternoonStart(j.slot_control.afternoon_start.slice(0,5));
+      setAfternoonEnd(j.slot_control.afternoon_end.slice(0,5));
+      setEveningStart(j.slot_control.evening_start.slice(0,5));
+      setEveningEnd(j.slot_control.evening_end.slice(0,5));
     } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
     finally { setLoading(false); }
   }, [session]);
@@ -1577,7 +1589,16 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
       const res = await fetch("/api/canteen/slot-control", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ max_bins: Number(maxBinsInput), slot_duration_mins: Number(duration) }),
+        body: JSON.stringify({
+          max_bins: Number(maxBinsInput),
+          slot_duration_mins: Number(duration),
+          morning_start:   morningStart   + ":00",
+          morning_end:     morningEnd     + ":00",
+          afternoon_start: afternoonStart + ":00",
+          afternoon_end:   afternoonEnd   + ":00",
+          evening_start:   eveningStart   + ":00",
+          evening_end:     eveningEnd     + ":00",
+        }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Save failed");
@@ -1636,6 +1657,29 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           Caps update automatically: <strong>{previewMaxOrders}</strong> orders/slot,{" "}
           <strong>{previewBatched}</strong> batched, <strong>{previewMadeToOrd}</strong> made-to-order.
         </p>
+
+        <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>
+          <h4 style={{ marginTop: 0, marginBottom: "0.6rem", fontSize: "0.92rem" }}>Service windows</h4>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.85rem" }}>
+            {[
+              { label: "Morning",   from: morningStart,   setFrom: setMorningStart,   to: morningEnd,   setTo: setMorningEnd },
+              { label: "Afternoon", from: afternoonStart, setFrom: setAfternoonStart, to: afternoonEnd, setTo: setAfternoonEnd },
+              { label: "Evening",   from: eveningStart,   setFrom: setEveningStart,   to: eveningEnd,   setTo: setEveningEnd },
+            ].map(w => (
+              <div key={w.label} style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "0.6rem 0.75rem" }}>
+                <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: "0.4rem", color: "#0f172a" }}>{w.label} slot</div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input type="time" value={w.from} onChange={e => w.setFrom(e.target.value)} style={{ padding: "0.4rem 0.5rem", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.85rem", flex: 1 }} />
+                  <span style={{ color: "#64748b", fontSize: "0.8rem" }}>to</span>
+                  <input type="time" value={w.to} onChange={e => w.setTo(e.target.value)} style={{ padding: "0.4rem 0.5rem", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.85rem", flex: 1 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "0.74rem", color: "#64748b", marginTop: "0.6rem", marginBottom: 0 }}>
+            💡 Time slots are auto-generated from these windows + slot duration. Click <strong>Save</strong> to apply.
+          </p>
+        </div>
       </div>
 
       <div className="panel">

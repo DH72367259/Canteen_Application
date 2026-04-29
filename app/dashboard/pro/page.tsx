@@ -256,12 +256,11 @@ export default function ProPage() {
         {/* CTA */}
         {!isPro ? (
           <button
-            onClick={handleSubscribe}
-            disabled={busy}
+            onClick={() => router.push("/dashboard")}
             className="btn btn-primary btn-full"
             style={{ padding: "0.95rem", fontSize: "1.05rem", fontWeight: 800 }}
           >
-            {busy ? "Processing…" : "Order Now — Avail Benefits →"}
+            Order Now avail Benefits →
           </button>
         ) : (
           <div style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--ink-3)", padding: "0.5rem" }}>
@@ -270,7 +269,7 @@ export default function ProPage() {
         )}
 
         <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", textAlign: "center" }}>
-          Cancel anytime · No auto-renewal · Secured by Razorpay
+          Pro is added to your next order at checkout · No auto-renewal
         </div>
       </div>
 

@@ -127,5 +127,10 @@ export async function PATCH(request: Request) {
   }
 
   const row = data as SlotControlRow;
-  return NextResponse.json({ slot_control: row, capacity: computeSlotCapacity(row.max_bins) });
+  const windows = {
+    morning:   generateTimeSlots(row.morning_start.slice(0, 5),   row.morning_end.slice(0, 5),   row.slot_duration_mins),
+    afternoon: generateTimeSlots(row.afternoon_start.slice(0, 5), row.afternoon_end.slice(0, 5), row.slot_duration_mins),
+    evening:   generateTimeSlots(row.evening_start.slice(0, 5),   row.evening_end.slice(0, 5),   row.slot_duration_mins),
+  };
+  return NextResponse.json({ slot_control: row, capacity: computeSlotCapacity(row.max_bins), windows });
 }
