@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   }
 
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: "Failed to fetch notifications." }, { status: 500 });
+  if (error) return NextResponse.json({ error: `Failed to fetch notifications: ${error.message}` }, { status: 500 });
 
   // Fetch read status for this user
   const ids = (data ?? []).map(n => n.id);
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
-  if (error) return NextResponse.json({ error: "Failed to send notification." }, { status: 500 });
+  if (error) return NextResponse.json({ error: `Failed to send notification: ${error.message}` }, { status: 500 });
 
   return NextResponse.json({ success: true, id: data.id });
 }
