@@ -1117,7 +1117,12 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
 
   const refresh = useCallback(async () => {
     const token = session?.access_token;
-    if (!token || !canteenId) return;
+    // canteenId is intentionally NOT required here — /api/canteen/live-orders
+    // resolves the vendor's canteen server-side via authServer.ts (which
+    // backfills profile.canteen_id when missing). Blocking on a possibly
+    // stale client-side canteenId would leave the page stuck on "Loading
+    // canteen…" indefinitely.
+    if (!token) return;
     try {
       const res = await fetch("/api/canteen/live-orders", {
         headers: { Authorization: `Bearer ${token}` },
@@ -1136,7 +1141,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     } finally {
       setLoading(false);
     }
-  }, [session?.access_token, canteenId]);
+  }, [session?.access_token]);
 
   useEffect(() => {
     void refresh();
@@ -1190,15 +1195,6 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     if (o.status === "ready_for_pickup" || o.status === "placed_in_bin") return "occupied";
     return "reserved";
   };
-
-  if (!canteenId) {
-    return (
-      <div className="page-content">
-        <div className="page-header"><h2>Bin Management</h2></div>
-        <div className="card"><p style={{ color: "var(--ink-3)" }}>Loading canteen…</p></div>
-      </div>
-    );
-  }
 
   return (
     <div className="page-content">

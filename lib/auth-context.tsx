@@ -125,13 +125,34 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     )
     const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
+    let canteenId: string | null = data?.canteen_id ?? null
+    const role = (data?.role as UserRole) ?? 'user'
+    // Mirror the server-side self-heal in lib/authServer.ts: vendor / canteen_admin /
+    // worker accounts created without a canteen assignment would otherwise leave the
+    // client with canteenId=null forever, breaking views (e.g. Bin Management) that
+    // gate on it. Resolve the first available canteen and backfill the profile.
+    if (!canteenId && (role === 'vendor' || role === 'canteen_admin' || role === 'worker')) {
+      try {
+        const { data: firstCanteen } = await supabase
+          .from('canteens')
+          .select('id')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (firstCanteen?.id) {
+          canteenId = firstCanteen.id
+          await supabase.from('profiles').update({ canteen_id: canteenId }).eq('id', userId)
+            .then(() => undefined, () => undefined)
+        }
+      } catch { /* best-effort */ }
+    }
     return {
       displayName: data?.name ?? null,
-      role: (data?.role as UserRole) ?? 'user',
+      role,
       walletBalance: data?.wallet_balance ?? 0,
       phone: data?.phone ?? null,
       username: data?.username ?? null,
-      canteenId: data?.canteen_id ?? null,
+      canteenId,
     }
   } catch {
     return { role: 'user', walletBalance: 0 }
