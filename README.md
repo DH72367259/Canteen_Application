@@ -11,7 +11,33 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
-## Latest Round (Toggle Gating + Prep Summary Fix)
+## Latest Round (Full PDF Compliance — `9659022`)
+
+Final pass against the client's 15-page *Revised Work Flow* PDF. Shipped on top of `1884095`:
+
+- **Canonical bin code `#RED001`** — [lib/binProvisioning.ts](lib/binProvisioning.ts) now mints bin codes as `#` + 3-letter zone abbreviation (RED/YEL/GRE/BLU/PUR/ORA) + 3-digit zero-padded number. Legacy `RED-1` style codes are renamed in place on next provisioning so order/occupancy state is preserved.
+- **Bin status vocabulary aligned with PDF page 14** — vendor [Bin Management](app/vendor/dashboard/page.tsx) tiles and Live Orders sorter now use **Empty / Reserved / Occupied / Late Pickup** instead of the old free/placed/preparing/ready labels. Filter mapping: `placed`+`preparing` → Reserved, `completed` → Occupied, `delayed` → Late Pickup.
+- **Six-zone color map everywhere** — [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx) now keys colors on the new abbreviations so all six zones (red/yellow/green/blue/purple/orange) render correctly on the user-side bin chip.
+- **Worker tile shows big number + canonical code** — [OrderCard](app/worker/dashboard/page.tsx) extracts trailing digits for the giant tile number and shows the full `#RED002` in monospace below.
+- **API returns canonical code** — [app/api/orders/place/route.ts](app/api/orders/place/route.ts) now includes `binCode` in its response so the cart can display it directly without any client-side transform (which previously produced bugs like `##RED001`).
+- **CSS** — added `.bin-tile-empty / .bin-tile-reserved / .bin-tile-occupied / .bin-tile-late` rules in [app/globals.css](app/globals.css); late-pickup tiles pulse to draw attention.
+
+Verified-in-place from earlier rounds (PDF re-audit confirmed):
+
+- ✅ Canteen card greys out when toggle is off (`canteen-card--offline` style + filter).
+- ✅ Cancel cutoff = `slot_start − slot_duration` ([app/api/orders/[id]/status/route.ts](app/api/orders/%5Bid%5D/status/route.ts)).
+- ✅ Floating active-order banner on user home ([app/dashboard/page.tsx](app/dashboard/page.tsx)).
+- ✅ Worker prep header *"Now Prepare X:XX–Y:YY"* via `SlotBanner`.
+- ✅ Worker double-verify *Mark Placed* dialog and *Removed (bin → grace bin)* late-pickup screen.
+- ✅ Pro = ₹0 convenience fee, no canteen-cash, no time clock on user app.
+- ✅ Order-confirmed copy: *"Order confirmed. Cancellation is not available because the canteen will prepare based on your selected slot."*
+- ✅ Vendor menu *Failed to load/update items* fixed (resilient column-set retry shipped earlier).
+
+Tests: **142 / 142** pass across 12 suites. Production build clean.
+
+---
+
+## Previous Round (Toggle Gating + Prep Summary Fix)
 
 Shipped on top of `ad4e8c0`:
 
