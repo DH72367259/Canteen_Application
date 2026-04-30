@@ -14,10 +14,11 @@
 export type MealPeriod = "breakfast" | "lunch" | "snacks" | "dinner";
 
 export function getCurrentMealPeriod(date: Date = new Date()): MealPeriod | null {
-  // Convert to IST regardless of server tz.
-  const istMs = date.getTime() + (5 * 60 + 30 - date.getTimezoneOffset()) * 60_000;
-  const ist   = new Date(istMs);
-  const h     = ist.getUTCHours();
+  // Convert to IST (UTC+5:30) regardless of the runtime timezone. We start
+  // from absolute UTC ms (date.getTime()) and shift by +330 minutes, then
+  // read the hour with getUTCHours so the local tz never enters the math.
+  const istMs = date.getTime() + 330 * 60_000;
+  const h     = new Date(istMs).getUTCHours();
   if (h >= 7  && h < 11) return "breakfast";
   if (h >= 11 && h < 15) return "lunch";
   if (h >= 15 && h < 18) return "snacks";
