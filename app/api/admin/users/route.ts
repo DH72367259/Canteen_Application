@@ -193,8 +193,38 @@ export async function DELETE(request: Request) {
   if (uid === context.uid) return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
 
   const supabase = createAdminClient();
+
+  // Cascade-delete dependents that reference profiles with ON DELETE RESTRICT
+  // (orders.user_id, campaigns.created_by). Other deps cascade or set null.
+  // Order matters: order_items / payments / cart rows must go before orders.
+  // Service role bypasses RLS so this runs cleanly.
+  try {
+    // 1. Delete order_items rows whose order belongs to this user
+    const { data: orderRows } = await supabase
+      .from("orders").select("id").eq("user_id", uid);
+    const orderIds = (orderRows ?? []).map(r => r.id as string);
+    if (orderIds.length > 0) {
+      await supabase.from("order_items").delete().in("order_id", orderIds);
+      await supabase.from("payments").delete().in("order_id", orderIds);
+    }
+    // 2. Delete user's orders
+    await supabase.from("orders").delete().eq("user_id", uid);
+    // 3. Delete user's cart items
+    await supabase.from("cart_items").delete().eq("user_id", uid);
+    // 4. Delete campaigns created by this user (super-admin actions)
+    await supabase.from("campaigns").delete().eq("created_by", uid);
+    // 5. Delete support tickets created by this user (best-effort; safe if table absent)
+    await supabase.from("support_tickets").delete().eq("created_by", uid);
+  } catch (e) {
+    console.warn("[admin/users DELETE] dependent cleanup warning:", e);
+    // continue — auth.admin.deleteUser will surface a clear error if anything blocks
+  }
+
   const { error } = await supabase.auth.admin.deleteUser(uid);
-  if (error) return NextResponse.json({ error: "Failed to delete user." }, { status: 500 });
+  if (error) {
+    console.error("[admin/users DELETE] auth.admin.deleteUser failed:", error);
+    return NextResponse.json({ error: `Failed to delete user: ${error.message}` }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

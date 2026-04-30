@@ -22,6 +22,8 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
   const [resetStatus, setResetStatus] = useState<Record<string, "loading" | "sent" | "error">>({});
+  const [deleteStatus, setDeleteStatus] = useState<Record<string, "loading" | "deleted" | "error">>({});
+  const [deleteError, setDeleteError] = useState<Record<string, string>>({});
 
   const fetchUsers = useCallback(async () => {
     if (!session) return;
@@ -63,6 +65,28 @@ export default function AdminUsersPage() {
       setResetStatus((prev) => ({ ...prev, [uid]: "sent" }));
     } catch {
       setResetStatus((prev) => ({ ...prev, [uid]: "error" }));
+    }
+  }
+
+  async function handleDelete(uid: string, label: string) {
+    if (!session) return;
+    if (!confirm(`Permanently delete "${label}"?\n\nThis removes the auth account, profile, and all of their orders, payments, and cart items. Cannot be undone.`)) return;
+    setDeleteStatus((prev) => ({ ...prev, [uid]: "loading" }));
+    setDeleteError((prev) => { const n = { ...prev }; delete n[uid]; return n; });
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + session.access_token, "Content-Type": "application/json" },
+        body: JSON.stringify({ uid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to delete user.");
+      setDeleteStatus((prev) => ({ ...prev, [uid]: "deleted" }));
+      // Drop from list
+      setUsers((prev) => prev.filter((u) => u.uid !== uid));
+    } catch (err) {
+      setDeleteStatus((prev) => ({ ...prev, [uid]: "error" }));
+      setDeleteError((prev) => ({ ...prev, [uid]: err instanceof Error ? err.message : "Delete failed." }));
     }
   }
 
@@ -108,6 +132,28 @@ export default function AdminUsersPage() {
                   {resetStatus[u.uid] === "error" && (
                     <span style={{ fontSize: "0.78rem", color: "red", marginLeft: "8px" }}>
                       Failed — try again
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleDelete(u.uid, u.name ?? u.email ?? u.uid)}
+                    disabled={deleteStatus[u.uid] === "loading"}
+                    style={{
+                      fontSize: "0.78rem",
+                      padding: "4px 10px",
+                      marginLeft: "8px",
+                      cursor: "pointer",
+                      background: "#ef4444",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      opacity: deleteStatus[u.uid] === "loading" ? 0.6 : 1,
+                    }}
+                  >
+                    {deleteStatus[u.uid] === "loading" ? "Deleting…" : "🗑 Delete"}
+                  </button>
+                  {deleteStatus[u.uid] === "error" && (
+                    <span style={{ fontSize: "0.78rem", color: "red", marginLeft: "8px" }}>
+                      {deleteError[u.uid] ?? "Delete failed"}
                     </span>
                   )}
                 </div>
