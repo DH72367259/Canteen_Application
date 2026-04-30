@@ -658,10 +658,10 @@ export default function VendorDashboard() {
         {activeNav === "prep-summary" && <VendorPrepSummaryView session={session} />}
         {activeNav === "menu" && <VendorMenuView session={session} />}
         {activeNav === "slots" && <VendorSlotsView />}
-        {activeNav === "sales" && <VendorSalesView />}
+        {activeNav === "sales" && <VendorSalesView session={session} />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
         {activeNav === "bins" && <VendorBinsView session={session} canteenId={user?.canteenId ?? null} />}
-        {activeNav === "logs" && <VendorLogsView />}
+        {activeNav === "logs" && <VendorLogsView session={session} />}
         {activeNav === "settings" && <VendorSettingsView canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
         {activeNav === "support" && <VendorSupportView />}
       </main>
@@ -1164,19 +1164,118 @@ function VendorSlotsView() {
   );
 }
 
-function VendorSalesView() {
+type SalesGranularity = "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "hourly";
+type SalesData = {
+  totals: { today: { revenue: number; orders: number }; week: { revenue: number; orders: number }; month: { revenue: number; orders: number }; quarter: { revenue: number; orders: number }; year: { revenue: number; orders: number } };
+  hourly:  { hour: number; revenue: number; orders: number }[];
+  daily:   { date: string; revenue: number; orders: number }[];
+  monthly: { month: string; revenue: number; orders: number }[];
+};
+
+function VendorSalesView({ session }: { session: Session | null }) {
+  // Granularity selector drives which chart + summary the vendor sees. We
+  // poll /api/canteen/sales every 5s so the figures move within seconds of
+  // a new student order landing.
+  const [data, setData] = useState<SalesData | null>(null);
+  const [view, setView] = useState<SalesGranularity>("daily");
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/canteen/sales", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (!cancelled && j) setData(j); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [session?.access_token]);
+
+  const fmt = (n: number) => `₹${n.toFixed(0)}`;
+  // Build the bar series for the selected granularity. Yearly = monthly
+  // (12 buckets), quarterly = last 4 quarters derived from monthly.
+  type Bar = { label: string; value: number; orders: number };
+  let bars: Bar[] = [];
+  if (data) {
+    if (view === "hourly") {
+      bars = data.hourly.map(h => ({ label: `${h.hour.toString().padStart(2, "0")}h`, value: h.revenue, orders: h.orders }));
+    } else if (view === "daily") {
+      bars = data.daily.map(d => {
+        const dt = new Date(d.date + "T00:00:00");
+        return { label: `${dt.getDate()}/${dt.getMonth() + 1}`, value: d.revenue, orders: d.orders };
+      });
+    } else if (view === "weekly") {
+      // Group last 30 daily rows into ISO weeks
+      const weeks = new Map<string, Bar>();
+      for (const d of data.daily) {
+        const dt = new Date(d.date + "T00:00:00");
+        const day = dt.getDay() || 7; // Mon=1..Sun=7
+        const monday = new Date(dt); monday.setDate(dt.getDate() - day + 1);
+        const key = `${monday.getMonth() + 1}/${monday.getDate()}`;
+        const prev = weeks.get(key) ?? { label: `wk ${key}`, value: 0, orders: 0 };
+        prev.value += d.revenue; prev.orders += d.orders;
+        weeks.set(key, prev);
+      }
+      bars = Array.from(weeks.values());
+    } else if (view === "monthly" || view === "yearly") {
+      bars = data.monthly.map(m => ({ label: m.month, value: m.revenue, orders: m.orders }));
+    } else if (view === "quarterly") {
+      const q = new Map<string, Bar>();
+      for (const m of data.monthly) {
+        // m.month is like "Jan 26"
+        const [mon, yr] = m.month.split(" ");
+        const mIdx = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(mon);
+        const qi = Math.floor(mIdx / 3) + 1;
+        const key = `Q${qi} '${yr}`;
+        const prev = q.get(key) ?? { label: key, value: 0, orders: 0 };
+        prev.value += m.revenue; prev.orders += m.orders;
+        q.set(key, prev);
+      }
+      bars = Array.from(q.values());
+    }
+  }
+  const maxBar = Math.max(1, ...bars.map(b => b.value));
+  const totalForView = bars.reduce((s, b) => s + b.value, 0);
+  const ordersForView = bars.reduce((s, b) => s + b.orders, 0);
+
   return (
     <div className="page-content">
       <div className="page-header"><h2>Sales & Earnings</h2></div>
-      <div className="stats-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">Today</div></div>
-        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">This Week</div></div>
-        <div className="stat-card"><div className="stat-num">₹0</div><div className="stat-label">This Month</div></div>
+
+      <div className="stats-row" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+        <div className="stat-card"><div className="stat-num">{fmt(data?.totals.today.revenue ?? 0)}</div><div className="stat-label">Today · {data?.totals.today.orders ?? 0} orders</div></div>
+        <div className="stat-card"><div className="stat-num">{fmt(data?.totals.week.revenue ?? 0)}</div><div className="stat-label">This Week · {data?.totals.week.orders ?? 0}</div></div>
+        <div className="stat-card"><div className="stat-num">{fmt(data?.totals.month.revenue ?? 0)}</div><div className="stat-label">This Month · {data?.totals.month.orders ?? 0}</div></div>
+        <div className="stat-card"><div className="stat-num">{fmt(data?.totals.quarter.revenue ?? 0)}</div><div className="stat-label">This Quarter · {data?.totals.quarter.orders ?? 0}</div></div>
+        <div className="stat-card"><div className="stat-num">{fmt(data?.totals.year.revenue ?? 0)}</div><div className="stat-label">This Year · {data?.totals.year.orders ?? 0}</div></div>
       </div>
-      <div className="empty-state" style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>
-        <span className="empty-icon">📊</span>
-        <h3>No sales yet</h3>
-        <p>Sales will appear here once orders start coming in.</p>
+
+      <div style={{ display: "flex", gap: "0.4rem", margin: "1rem 0 0.75rem", flexWrap: "wrap" }}>
+        {((["hourly", "daily", "weekly", "monthly", "quarterly", "yearly"] as SalesGranularity[])).map(g => (
+          <button key={g} onClick={() => setView(g)} className={`btn ${view === g ? "btn-primary" : "btn-ghost"}`} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem", textTransform: "capitalize" }}>{g}</button>
+        ))}
+      </div>
+
+      <div className="card" style={{ padding: "1.25rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <div style={{ fontWeight: 700, fontSize: "0.95rem", textTransform: "capitalize" }}>{view} sales</div>
+          <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{fmt(totalForView)} · {ordersForView} orders</span>
+        </div>
+        {bars.length === 0 || totalForView === 0 ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No sales in this window yet.</div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "0.35rem", height: 160, overflowX: "auto", padding: "0.25rem" }}>
+            {bars.map((b, i) => (
+              <div key={i} style={{ minWidth: 28, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+                <span style={{ fontSize: "0.6rem", color: "var(--ink-3)" }}>{b.value > 0 ? `₹${b.value.toFixed(0)}` : ""}</span>
+                <div title={`${b.label}: ${fmt(b.value)} · ${b.orders} orders`} style={{ width: "100%", background: b.value > 0 ? "var(--orange)" : "#e5e7eb", height: `${(b.value / maxBar) * 110}px`, borderRadius: "4px 4px 0 0", transition: "height 0.3s" }} />
+                <span style={{ fontSize: "0.6rem", color: "var(--ink-3)", whiteSpace: "nowrap" }}>{b.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1404,16 +1503,37 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
   );
 }
 
-function VendorLogsView() {
-  const LOGS: { id: number; time: string; action: string; detail: string; actor: string; success: boolean }[] = [];
+type LogRow = { id: string; time: string; action: string; detail: string; actor: string; result: "ok" | "fail"; kind: "otp" | "menu" | "override" | "order" | "payout" };
+
+function VendorLogsView({ session }: { session: Session | null }) {
+  // Live activity feed — polled every 5s. Synthesised server-side from
+  // orders, settlement_payments and menu_items so we don't need a dedicated
+  // audit_log table.
+  const [logs, setLogs] = useState<LogRow[]>([]);
   const [filter, setFilter] = useState<"all" | "otp" | "menu" | "override">("all");
 
-  const filtered = LOGS.filter(l => {
-    if (filter === "otp") return l.action.toLowerCase().includes("otp");
-    if (filter === "menu") return l.action.toLowerCase().includes("menu") || l.action.toLowerCase().includes("item");
-    if (filter === "override") return l.action.toLowerCase().includes("override") || l.action.toLowerCase().includes("skip");
-    return true;
-  });
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/canteen/logs", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (!cancelled && j?.logs) setLogs(j.logs); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [session?.access_token]);
+
+  const filtered = logs.filter(l => filter === "all" || l.kind === (filter === "override" ? "override" : filter));
+
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    const ist = new Date(d.getTime() + 330 * 60_000);
+    return `${ist.getUTCDate().toString().padStart(2, "0")}/${(ist.getUTCMonth() + 1).toString().padStart(2, "0")} ${ist.getUTCHours().toString().padStart(2, "0")}:${ist.getUTCMinutes().toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="page-content">
@@ -1429,13 +1549,15 @@ function VendorLogsView() {
         <table>
           <thead><tr><th>TIME</th><th>ACTION</th><th>DETAIL</th><th>BY</th><th>RESULT</th></tr></thead>
           <tbody>
-            {filtered.map(l => (
+            {filtered.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No activity in the last 7 days.</td></tr>
+            ) : filtered.map(l => (
               <tr key={l.id}>
-                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)", whiteSpace: "nowrap" }}>{l.time}</td>
-                <td><span className={`tag ${l.success ? "tag-blue" : "tag-orange"}`}>{l.action}</span></td>
+                <td style={{ fontSize: "0.78rem", color: "var(--ink-3)", whiteSpace: "nowrap" }}>{fmtTime(l.time)}</td>
+                <td><span className={`tag ${l.result === "ok" ? "tag-blue" : "tag-orange"}`}>{l.action}</span></td>
                 <td style={{ fontSize: "0.82rem", color: "var(--ink-2)" }}>{l.detail}</td>
                 <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{l.actor}</td>
-                <td>{l.success ? <span style={{ color: "var(--green)", fontWeight: 700, fontSize: "0.8rem" }}>✓ OK</span> : <span style={{ color: "var(--red)", fontWeight: 700, fontSize: "0.8rem" }}>✗ Fail</span>}</td>
+                <td>{l.result === "ok" ? <span style={{ color: "var(--green)", fontWeight: 700, fontSize: "0.8rem" }}>✓ OK</span> : <span style={{ color: "var(--red)", fontWeight: 700, fontSize: "0.8rem" }}>✗ Fail</span>}</td>
               </tr>
             ))}
           </tbody>

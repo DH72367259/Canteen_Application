@@ -99,10 +99,15 @@ export async function GET(request: Request) {
     };
   });
 
-  const completed = orders.filter(o => o.is_completed);
+  // Money lands in the platform account at payment time, so any non-cancelled
+  // order contributes to gross collected. OTP verification (status=collected)
+  // is just the fulfilment receipt and does not affect what the canteen has
+  // earned. We still surface a separate "awaiting collection" count for ops.
+  const completed = orders.filter(o => o.status !== "cancelled");
   const summary = {
     total_orders:            orders.length,
     completed_orders:        completed.length,
+    awaiting_collection:     orders.filter(o => !["collected", "cancelled"].includes(o.status)).length,
     gross_collected:         r2(completed.reduce((s, o) => s + o.gross_amount, 0)),
     total_platform_charges:  r2(completed.reduce((s, o) => s + o.total_platform_charge, 0)),
     total_platform_fee:      r2(completed.reduce((s, o) => s + o.platform_fee, 0)),
