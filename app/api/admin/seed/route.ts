@@ -213,7 +213,9 @@ async function runUsers(supabase: ReturnType<typeof createAdminClient>, students
     created++;
   }
 
-  const phoneFor = (kind: string, n: number) => `+9199${kind.charCodeAt(0) % 10}${String(1000000 + n).padStart(7, "0")}`;
+  // Use a distinct prefix per role so phones never collide (M/W/S all started with 7 in old impl).
+  const kindDigit: Record<string, string> = { M: "1", W: "2", S: "3" };
+  const phoneFor = (kind: string, n: number) => `+9199${kindDigit[kind] ?? "9"}${String(1000000 + n).padStart(7, "0")}`;
 
   for (let i = 1; i <= managers; i++) {
     const c = canteens[(i - 1) % canteens.length];
