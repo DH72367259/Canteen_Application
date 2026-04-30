@@ -90,7 +90,7 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
   // Resilient against prod schema drift: try rich projection (with skipped_at,
   // bins, time_slots), then fall back to progressively simpler queries.
   const projections = [
-    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time), order_bins(bin_index, bin_code, bin_color, items)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins!orders_bin_id_fkey(id, bin_code, color), time_slots(slot_name, start_time, end_time), order_bins(bin_index, bin_code, bin_color, items)",
     "*, order_items(*, menu_items(name)), profiles(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
     "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
     "*, order_items(*, menu_items(name))",

@@ -33,7 +33,7 @@ export async function PATCH(
   const supabase = createAdminClient();
   const { data: bin, error: binErr } = await supabase
     .from("bins")
-    .select("id, canteen_id, status, assigned_order_id, current_order_id, is_occupied")
+    .select("id, canteen_id, status, assigned_order_id, is_occupied")
     .eq("id", binId)
     .single();
   if (binErr || !bin) return NextResponse.json({ error: "Bin not found." }, { status: 404 });
@@ -50,7 +50,6 @@ export async function PATCH(
   if (next === "empty") {
     updates.is_occupied = false;
     updates.assigned_order_id = null;
-    updates.current_order_id = null;
     updates.order_id = null;
   } else if (next === "occupied") {
     updates.is_occupied = true;
