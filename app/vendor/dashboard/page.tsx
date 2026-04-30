@@ -243,36 +243,56 @@ export default function VendorDashboard() {
       const active = (orders as CanteenOrder[]).filter(
         (o) => !["collected", "completed", "cancelled"].includes(o.rawStatus ?? o.status)
       );
-      const mapped: Bin[] = active.map((o, idx) => ({
-        id: o.id,
-        // Compute the rack-grid global index from the actual bin colour +
-        // parsed bin-code suffix. E.g. "#BLU002" → blue zone (4th) +
-        // localIndex 2 → globalIndex = (red+yellow+green counts) + 2. This
-        // is what the rack distribution at the bottom of this file uses to
-        // place each bin in the correct colour row. Falling back to
-        // `parseInt(binLabel)` (which is NaN for "#BLU002") was the bug
-        // that landed every order in the RED zone regardless of its real
-        // bin colour.
-        number: rackIndexFor(o.binLabel ?? null, o.binColor ?? null, maxBins) ?? (idx + 1),
-        status: o.rawStatus === "ready_for_pickup" || o.rawStatus === "placed_in_bin"
-          ? "completed"
-          : o.rawStatus === "preparing"
-            ? "preparing"
-            : (o.rawStatus === "placed" || o.rawStatus === "confirmed")
-              ? "placed"
-              : "empty",
-        orderId: o.id.substring(0, 8).toUpperCase(),
-        customerName: o.customerName || "Customer",
-        slot: o.slotLabel ?? o.slotName ?? null,
-        items: o.items.map((i) => `${i.name} ×${i.quantity}`).join(", ") || null,
-        otp: o.otp ?? null,
-        binLabel: o.binLabel ?? null,
-        binColor: o.binColor ?? null,
-        rawOrderId: o.id,
-        rawStatus: o.rawStatus,
-        placedAt: o.createdAt ?? null,
-        binCount: o.binCount ?? (o.binAssignments?.length ?? 1),
-      }));
+      // Fan out multi-bin orders into one rack tile per allocated bin so the
+      // rack visually shows EVERY reserved bin (not just the first). Without
+      // this, a 2-bin order #BLU001 + #BLU002 would only paint #BLU001 and
+      // leave #BLU002 rendered as empty — the worker had no visual cue that
+      // the second bin was reserved. We use `binAssignments` (per-bin rows
+      // from the order_bins table) when present and fall back to the legacy
+      // single-bin (binLabel/binColor) representation.
+      const status = (raw: string | undefined): BinStatus =>
+        raw === "ready_for_pickup" || raw === "placed_in_bin" ? "completed"
+        : raw === "preparing" ? "preparing"
+        : (raw === "placed" || raw === "confirmed") ? "placed"
+        : "empty";
+      const mapped: Bin[] = active.flatMap((o, idx) => {
+        const slices = (o.binAssignments && o.binAssignments.length > 0)
+          ? o.binAssignments.map((b) => ({
+              binLabel: b.binLabel,
+              binColor: b.binColor,
+              items: b.items.map((i) => `${i.name} ×${i.quantity}`).join(", ") || null,
+            }))
+          : [{
+              binLabel: o.binLabel ?? null,
+              binColor: o.binColor ?? null,
+              items: o.items.map((i) => `${i.name} ×${i.quantity}`).join(", ") || null,
+            }];
+        return slices.map((s, sliceIdx) => ({
+          // Each slice needs a unique React key — order id + bin index.
+          id: slices.length > 1 ? `${o.id}#${sliceIdx + 1}` : o.id,
+          // Compute the rack-grid global index from the actual bin colour +
+          // parsed bin-code suffix. E.g. "#BLU002" → blue zone (4th) +
+          // localIndex 2 → globalIndex = (red+yellow+green counts) + 2. This
+          // is what the rack distribution at the bottom of this file uses to
+          // place each bin in the correct colour row. Falling back to
+          // `parseInt(binLabel)` (which is NaN for "#BLU002") was the bug
+          // that landed every order in the RED zone regardless of its real
+          // bin colour.
+          number: rackIndexFor(s.binLabel, s.binColor, maxBins) ?? (idx + 1 + sliceIdx),
+          status: status(o.rawStatus),
+          orderId: o.id.substring(0, 8).toUpperCase(),
+          customerName: o.customerName || "Customer",
+          slot: o.slotLabel ?? o.slotName ?? null,
+          items: s.items,
+          otp: o.otp ?? null,
+          binLabel: s.binLabel,
+          binColor: s.binColor,
+          rawOrderId: o.id,
+          rawStatus: o.rawStatus,
+          placedAt: o.createdAt ?? null,
+          binCount: o.binCount ?? slices.length,
+        }));
+      });
       // Only show bins that have an assigned order (no empty filler bins)
       mapped.sort((a, b) => a.number - b.number);
       setBins(mapped);

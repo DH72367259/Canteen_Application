@@ -161,6 +161,18 @@ async function main() {
     else bad(`rack: ${b.binCode} -> globalIdx=${idx} -> zone=${rackZone} != expected ${expectedZone}`);
   }
 
+  // Simulate the dashboard's fan-out: each binAssignment becomes its own
+  // rack tile. Verify the worker payload gives us enough detail to render
+  // BOTH #BLU001 and #BLU002 as separate "placed" tiles in the BLUE row.
+  const tiles = (wo.binAssignments ?? []).map(b => ({
+    label: b.binLabel, color: b.binColor, idx: rackIdx(b.binLabel, b.binColor),
+  }));
+  if (tiles.length !== placeBody.binCount) bad(`fan-out expected ${placeBody.binCount} tiles, got ${tiles.length}`);
+  else ok(`fan-out: ${tiles.length} separate rack tiles (${tiles.map(t => `${t.label}@${t.idx}`).join(", ")})`);
+  const uniqueIdx = new Set(tiles.map(t => t.idx));
+  if (uniqueIdx.size !== tiles.length) bad(`fan-out tiles share rack slot — bins would overlap`);
+  else ok(`fan-out: each tile occupies a distinct rack slot`);
+
   if (!KEEP) {
     await admin.from("order_bins").delete().eq("order_id", placeBody.orderId);
     await admin.from("payments").delete().eq("order_id", placeBody.orderId);
