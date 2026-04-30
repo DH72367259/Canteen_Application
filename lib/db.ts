@@ -5,13 +5,21 @@ import { createAdminClient } from './supabase-server'
 // ============================================================
 export async function getOrder(orderId: string) {
   const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from('orders')
-    .select(
-      '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*)'
-    )
-    .eq('id', orderId)
-    .single()
+  // Try with order_bins (Phase 7) first, then progressively fall back so older
+  // dev DBs still work. Phase 7 column drift on `orders` (bin_count,
+  // extra_bin_fee_paise) is tolerated by Postgres because we SELECT *.
+  const projections = [
+    '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*), order_bins(bin_index, bin_code, bin_color, items)',
+    '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*)',
+  ]
+  let data: Record<string, unknown> | null = null
+  let error: { message: string } | null = null
+  for (const proj of projections) {
+    const r = await supabase.from('orders').select(proj).eq('id', orderId).single()
+    if (!r.error) { data = r.data as unknown as Record<string, unknown>; error = null; break }
+    error = r.error
+    if (!/relation .* does not exist|column .* does not exist/i.test(r.error.message)) break
+  }
 
   if (error) throw error
   return data

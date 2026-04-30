@@ -3,6 +3,8 @@ import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
+import { assignBins, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
+import { ensureSlotControl } from "@/lib/slotControlEnsure";
 
 export const dynamic = "force-dynamic";
 
@@ -53,12 +55,14 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // ── SERVER-SIDE PRICE CALCULATION ────────────────────────────────────────
-  // Fetch authoritative prices from the database — never trust client-supplied prices.
+  // ── SERVER-SIDE PRICE + BIN PLAN CALCULATION ─────────────────────────────
+  // Fetch authoritative prices AND `is_meal` flags from the database — we
+  // never trust client-supplied prices, and we re-run bin packing here so
+  // the extra-bin fee can't be tampered with at checkout.
   const itemIds = [...new Set(cartItems.map((i: { id: string }) => i.id))];
   const { data: menuRows, error: menuErr } = await supabase
     .from("menu_items")
-    .select("id, price, is_available, canteen_id")
+    .select("id, name, price, is_available, is_meal, canteen_id")
     .in("id", itemIds)
     .eq("canteen_id", canteenId);
 
@@ -66,11 +70,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Failed to verify menu prices" }, { status: 500 });
   }
 
-  const menuMap = new Map((menuRows ?? []).map((m: { id: string; price: number; is_available: boolean; canteen_id: string }) => [m.id, m]));
+  const menuMap = new Map(
+    (menuRows ?? []).map((m: { id: string; name: string; price: number; is_available: boolean; is_meal: boolean | null; canteen_id: string }) => [m.id, m])
+  );
 
-  // Build verified order items and compute server-authoritative total
+  // Build verified order items and compute server-authoritative subtotal
   const verifiedItems: { menu_item_id: string; quantity: number; unit_price: number }[] = [];
-  let serverTotal = 0;
+  const cartLines: CartLine[] = [];
+  let serverSubtotal = 0;
 
   for (const item of cartItems) {
     const menuItem = menuMap.get(item.id);
@@ -82,27 +89,64 @@ export async function POST(req: NextRequest) {
     }
     const qty = Number(item.qty);
     verifiedItems.push({ menu_item_id: item.id, quantity: qty, unit_price: menuItem.price });
-    serverTotal += menuItem.price * qty;
+    cartLines.push({ itemId: item.id, name: menuItem.name, quantity: qty, isMeal: !!menuItem.is_meal });
+    serverSubtotal += menuItem.price * qty;
   }
 
+  // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
+  const sc = await ensureSlotControl(supabase, canteenId);
+  const mealsPerBin    = Number(sc?.meals_per_bin)        || 2;
+  const snacksPerBin   = Number(sc?.snacks_per_bin)       || 5;
+  const extraFeePaise0 = Number(sc?.extra_bin_fee_paise)  || 200;
+  const binPlan = assignBins(cartLines, mealsPerBin, snacksPerBin, extraFeePaise0);
+
+  const extraBinFeeRupees = Math.round(binPlan.extraFeePaise) / 100;
+  let serverTotal = serverSubtotal + extraBinFeeRupees;
   // Round to 2 decimal places to avoid floating-point accumulation
   serverTotal = Math.round(serverTotal * 100) / 100;
 
   // Generate 4-digit OTP
   const otp = String(Math.floor(1000 + Math.random() * 9000));
 
-  // Pick an available bin for this canteen
-  const { data: bins } = await supabase
+  // ── Allocate N free bins (one per binPlan.bins entry) ────────────────────
+  // Prod canteens have many physical bins per slot; if the canteen is so
+  // saturated that there aren't enough free bins, fail loudly so the user
+  // can pick a different slot rather than silently losing items.
+  const binsNeeded = binPlan.bins.length;
+  const { data: freeBins } = await supabase
     .from("bins")
     .select("id, bin_code, color")
     .eq("canteen_id", canteenId)
     .eq("is_occupied", false)
     .order("bin_code")
-    .limit(1);
+    .limit(binsNeeded);
 
-  const bin = bins?.[0] ?? null;
-  const binLabel = bin?.bin_code ?? String(Math.floor(Math.random() * 8) + 1);
-  const binColor = bin?.color ?? ["red", "blue", "green", "yellow"][Math.floor(Math.random() * 4)];
+  const allocated = (freeBins ?? []) as Array<{ id: string; bin_code: string; color: string | null }>;
+  if (allocated.length < binsNeeded) {
+    // Fall back gracefully when only one or zero bins exist (typical for a
+    // freshly-seeded test canteen). Pad with synthetic placeholders so the
+    // order still places — workers will physically use whatever bins are
+    // available. Never error out single-bin orders for missing seed data.
+    if (binsNeeded === 1 && allocated.length === 0) {
+      // legacy behaviour: synth a placeholder code/color so the response shape
+      // matches the original API contract
+      allocated.push({
+        id: "",
+        bin_code: String(Math.floor(Math.random() * 8) + 1),
+        color: ["red", "blue", "green", "yellow"][Math.floor(Math.random() * 4)],
+      });
+    } else if (allocated.length < binsNeeded) {
+      return Response.json({
+        error: `This order needs ${binsNeeded} bins but only ${allocated.length} are free right now. Please pick a different slot or reduce your cart.`,
+      }, { status: 409 });
+    }
+  }
+
+  // Map BinPlan.bins[i] → allocated[i] (keep original 1-based bin_index for display)
+  const firstBin = allocated[0];
+  const firstBinId    = firstBin.id || null;
+  const firstBinLabel = firstBin.bin_code;
+  const firstBinColor = firstBin.color ?? "blue";
 
   // Find matching time slot
   const slotName = slotLabel ? String(slotLabel).split(" ")[0] : "";
@@ -153,10 +197,15 @@ export async function POST(req: NextRequest) {
       otp,
       payment_id: (typeof paymentId === "string" && paymentId.length <= 100) ? paymentId : null,
       slot_id: slotId,
-      bin_id: bin?.id ?? null,
-      bin_label: binLabel,
-      bin_color: binColor,
+      bin_id: firstBinId,
+      bin_label: firstBinLabel,
+      bin_color: firstBinColor,
       slot_label: slotLabel ? String(slotLabel).slice(0, 100) : null,
+      // Phase 7 rollups (older DBs without these columns will still accept the insert
+      // because Supabase ignores unknown columns when using the admin client only if
+      // the column exists — if not, the migration must be applied. See phase7_extra_bin_workflow.sql).
+      bin_count: binsNeeded,
+      extra_bin_fee_paise: binPlan.extraFeePaise,
     })
     .select("id")
     .single();
@@ -177,12 +226,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Mark bin as occupied
-  if (bin) {
+  // ── Insert per-bin allocations (Phase 7) ─────────────────────────────────
+  const orderBinRows = binPlan.bins.map((b: BinAssignment, i: number) => {
+    const phys = allocated[i] ?? allocated[allocated.length - 1];
+    return {
+      order_id:  order.id,
+      bin_id:    phys.id || null,
+      bin_index: b.binIndex,
+      bin_code:  phys.bin_code,
+      bin_color: phys.color ?? "blue",
+      items: [
+        ...b.meals.map((m) => ({ name: m.name, quantity: m.quantity, isMeal: true })),
+        ...b.snacks.map((s) => ({ name: s.name, quantity: s.quantity, isMeal: false })),
+      ],
+    };
+  });
+  if (orderBinRows.length > 0) {
+    const { error: obErr } = await supabase.from("order_bins").insert(orderBinRows);
+    if (obErr) {
+      // Don't fail the whole order — log so we can investigate, but the order is
+      // already paid for. Single-bin (legacy) data is still on `orders` columns.
+      console.error("[orders/place] order_bins insert failed:", obErr.message);
+    }
+  }
+
+  // Mark every allocated bin as occupied + linked to this order
+  const allocatedIds = allocated.map(b => b.id).filter((x): x is string => !!x);
+  if (allocatedIds.length > 0) {
     await supabase
       .from("bins")
       .update({ is_occupied: true, order_id: order.id, updated_at: new Date().toISOString() })
-      .eq("id", bin.id);
+      .in("id", allocatedIds);
   }
 
   // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
@@ -211,5 +285,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return Response.json({ orderId: order.id, otp, binLabel, binCode: binLabel, binColor, total: serverTotal });
+  // Build the per-bin response payload (the cart UI saves this in localStorage
+  // for the order-status screen + workers see the same breakdown).
+  const binsResponse = orderBinRows.map((row) => ({
+    binIndex: row.bin_index,
+    binLabel: row.bin_code,
+    binCode:  row.bin_code,
+    binColor: row.bin_color,
+    items:    row.items,
+  }));
+
+  return Response.json({
+    orderId: order.id,
+    otp,
+    binLabel: firstBinLabel,
+    binCode:  firstBinLabel,
+    binColor: firstBinColor,
+    total:    serverTotal,
+    extraBinFeePaise: binPlan.extraFeePaise,
+    binCount: binsNeeded,
+    bins:     binsResponse,
+  });
 }

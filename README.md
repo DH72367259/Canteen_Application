@@ -11,7 +11,56 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
-## Latest Round (Full PDF Compliance — `9659022`)
+## Latest Round (Phase 7 — Extra-Bin Workflow + Stale-Session Fix)
+
+Implements the client's *"Work Flow of Extra bin"* PDF and fixes a stale-localStorage bug
+where deleted-user state could re-render after a wipe.
+
+### Summary table
+
+| # | Area                              | Change                                                                                                                                                              | Files                                                                                                                                                                            |
+|---|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | DB schema                         | New `order_bins` table + `orders.bin_count` and `orders.extra_bin_fee_paise` rollups; RLS policy lets order owner + staff read.                                     | [supabase/migrations/phase7_extra_bin_workflow.sql](supabase/migrations/phase7_extra_bin_workflow.sql)                                                                            |
+| 2 | Migration runner                  | One-shot Node script (mirrors `apply-phase6-indexes.mjs`); idempotent.                                                                                              | [scripts/apply-phase7-extra-bin.mjs](scripts/apply-phase7-extra-bin.mjs)                                                                                                          |
+| 3 | Order placement                   | Server-side re-runs `assignBins`, allocates N free physical bins, inserts per-bin item JSON, marks every bin occupied, returns `{bins[], binCount, extraBinFeePaise}`. Adds the extra-bin fee to `serverTotal` so the user is billed correctly even if the client tampers with totals. | [app/api/orders/place/route.ts](app/api/orders/place/route.ts)                                                                                                                  |
+| 4 | Order detail / repository         | Projections now select `order_bins(*)` with progressive fallbacks; `CanteenOrder.binAssignments` carries the per-bin breakdown to every UI surface.                  | [lib/orderRepository.ts](lib/orderRepository.ts), [lib/db.ts](lib/db.ts), [types/canteen.ts](types/canteen.ts)                                                                  |
+| 5 | Cart popup (PDF page 2)           | Modal with the exact wording *"Larger orders may need an additional pickup bin for safe and faster collection."* + bins-required count + extra-bin fee + Continue / Adjust Order buttons; ack stored per cart-signature so qty edits re-prompt. | [app/dashboard/cart/page.tsx](app/dashboard/cart/page.tsx)                                                                                                                       |
+| 6 | Student order-status (PDF page 3) | "📦 This order will be in N pickup bins" notice on the preparing screen + a per-bin breakdown card on both preparing and ready screens.                              | [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx)                                                                                                       |
+| 7 | Vendor dashboard                  | "📦 N bins required" badge on every multi-bin order tile in Live Orders.                                                                                            | [app/vendor/dashboard/page.tsx](app/vendor/dashboard/page.tsx)                                                                                                                   |
+| 8 | Worker dashboard                  | `OrderCard` renders per-bin sections (*"Place in Bin BLU002 → Biryani ×2 / Place in Bin BLU003 → Biryani ×1"*) so the worker knows exactly what goes where.         | [app/worker/dashboard/page.tsx](app/worker/dashboard/page.tsx)                                                                                                                   |
+| 9 | Stale-session bug fix             | `fetchProfile` now distinguishes "no profile row" (deleted user) from a network error and forces a clean signOut + purge of all student-side localStorage / sessionStorage. Active-order banner is uid-tagged so it can never render for the wrong account. | [lib/auth-context.tsx](lib/auth-context.tsx), [app/dashboard/page.tsx](app/dashboard/page.tsx), [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx), [app/dashboard/cart/page.tsx](app/dashboard/cart/page.tsx) |
+
+### Bin-packing rules (already met by `lib/slotCapacity.ts`)
+
+| Cap                  | Default | Source                                                                |
+|----------------------|---------|-----------------------------------------------------------------------|
+| Meals per bin        | 2       | `slot_control.meals_per_bin`                                          |
+| Snacks per bin       | 5       | `slot_control.snacks_per_bin`                                         |
+| Extra-bin fee (₹)    | 2       | `slot_control.extra_bin_fee_paise` (200 paise) — added per extra bin  |
+| Mixed pack tolerated | yes     | The packer fills meal and snack slots independently in each bin       |
+
+### Verification
+
+| Check                  | Result                                                                                       |
+|------------------------|----------------------------------------------------------------------------------------------|
+| `npx next build`       | Clean — no errors, no warnings                                                               |
+| Backend test suite     | **141 / 142** (the 1 unrelated failure in `api.notifications.phase5.test.ts` is pre-existing on `main`) |
+| `slotCapacity.test.ts` | All bin-packing assertions pass (3 meals → 2 bins ₹2; 6 samosas → 2 bins ₹2; mixed → 1 bin ₹0) |
+
+### Required deployment step
+
+Run the Phase 7 migration **once** against Supabase (Railway autodeploys from `main`):
+
+```bash
+SUPABASE_DB_URL=postgres://... node scripts/apply-phase7-extra-bin.mjs
+```
+
+Without it, the route still places single-bin orders, but multi-bin breakdowns won't persist
+and `bin_count` / `extra_bin_fee_paise` won't surface on dashboards.
+
+---
+
+## Previous Round (Full PDF Compliance — `9659022`)
 
 Final pass against the client's 15-page *Revised Work Flow* PDF. Shipped on top of `1884095`:
 

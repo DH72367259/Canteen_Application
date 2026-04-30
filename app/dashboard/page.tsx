@@ -118,7 +118,17 @@ export default function UserHomePage() {
   useEffect(() => {
     const order = localStorage.getItem("canteen_active_order");
     if (order) {
-      try { setActiveOrder(JSON.parse(order)); } catch { /* invalid data */ }
+      try {
+        const parsed = JSON.parse(order);
+        // Only honour the cached active order if it belongs to the currently
+        // signed-in user. A stale banner for a previous (or deleted) account
+        // would otherwise render on this device after re-login.
+        if (!parsed?.uid || (user?.uid && parsed.uid === user.uid)) {
+          setActiveOrder(parsed);
+        } else {
+          localStorage.removeItem("canteen_active_order");
+        }
+      } catch { /* invalid data */ localStorage.removeItem("canteen_active_order"); }
     }
     const savedLoc = localStorage.getItem("canteen_student_location");
     const savedCoords = localStorage.getItem("canteen_student_coords");
@@ -130,7 +140,7 @@ export default function UserHomePage() {
     } else {
       setShowLocationPicker(true);
     }
-  }, []);
+  }, [user?.uid]);
 
   // Auto-focus search + reset GPS error state when picker opens
   useEffect(() => {

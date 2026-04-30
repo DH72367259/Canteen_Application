@@ -19,6 +19,14 @@ interface WorkerOrder {
   // legacy snake_case aliases (from old bins API, kept for fallback)
   bin_code?: string; bin_color?: string; bin_number?: number; bin_id?: string;
   pickup_slot?: string; created_at?: string;
+  // Phase 7: per-bin breakdown
+  binCount?: number;
+  binAssignments?: Array<{
+    binIndex: number;
+    binLabel: string;
+    binColor: string;
+    items: Array<{ name: string; quantity: number; isMeal?: boolean }>;
+  }>;
 }
 interface BinDetail {
   id: string; bin_code: string | number; color: string;
@@ -274,6 +282,7 @@ function OrderCard({ order, binColor, binCode, footer }: { order: WorkerOrder; b
   const fullCode = String(binCode);
   const numMatch = fullCode.match(/(\d+)\s*$/);
   const bigNum = numMatch ? Number(numMatch[1]) : fullCode;
+  const isMultiBin = (order.binAssignments?.length ?? order.binCount ?? 1) > 1;
   return (
     <div style={{ background: "#fff", borderRadius: 18, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", overflow: "hidden", marginBottom: "1rem" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem 1rem 0.75rem" }}>
@@ -281,16 +290,41 @@ function OrderCard({ order, binColor, binCode, footer }: { order: WorkerOrder; b
           {bigNum}
         </div>
         {fullCode && fullCode !== "?" && <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.3rem", letterSpacing: "0.08em", fontFamily: "monospace" }}>{fullCode.startsWith("#") ? fullCode : `#${fullCode}`}</div>}
-      </div>
-      <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
-        {order.items.map((item, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.4rem 0", borderBottom: i < order.items.length - 1 ? "1px solid #fde68a" : "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", flexShrink: 0 }}>🍽️</div>
-            <span style={{ flex: 1, fontWeight: 600, fontSize: "0.95rem" }}>{item.name}</span>
-            <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1e293b" }}>×{item.quantity}</span>
+        {isMultiBin && (
+          <div style={{ marginTop: "0.4rem", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 999, padding: "0.2rem 0.6rem", fontSize: "0.72rem", fontWeight: 700 }}>
+            📦 {order.binAssignments?.length ?? order.binCount} bins required
           </div>
-        ))}
+        )}
       </div>
+      {/* Phase 7: per-bin placement instructions */}
+      {isMultiBin && order.binAssignments ? (
+        <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
+          {order.binAssignments.map((b, idx) => (
+            <div key={b.binIndex} style={{ paddingBottom: "0.5rem", marginBottom: idx < order.binAssignments!.length - 1 ? "0.5rem" : 0, borderBottom: idx < order.binAssignments!.length - 1 ? "1px dashed #fde68a" : "none" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.86rem", color: "#9a3412", marginBottom: "0.3rem" }}>
+                Place in Bin {b.binLabel}
+              </div>
+              {b.items.map((it, j) => (
+                <div key={j} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.3rem 0" }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 7, background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>{it.isMeal ? "🍽️" : "🥪"}</div>
+                  <span style={{ flex: 1, fontWeight: 600, fontSize: "0.9rem" }}>{it.name}</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1e293b" }}>×{it.quantity}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
+          {order.items.map((item, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.4rem 0", borderBottom: i < order.items.length - 1 ? "1px solid #fde68a" : "none" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", flexShrink: 0 }}>🍽️</div>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: "0.95rem" }}>{item.name}</span>
+              <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1e293b" }}>×{item.quantity}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {footer}
     </div>
   );

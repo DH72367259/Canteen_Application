@@ -43,12 +43,32 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
     binId:        row.bin_id ? String(row.bin_id) : undefined,
     pickupSlot:   slotRow?.slot_name ? String(slotRow.slot_name) : undefined,
     slotLabel:    row.slot_label ? String(row.slot_label) : undefined,
+    binCount:         row.bin_count ? Number(row.bin_count) : undefined,
+    extraBinFeePaise: row.extra_bin_fee_paise != null ? Number(row.extra_bin_fee_paise) : undefined,
+    binAssignments:   Array.isArray(row.order_bins)
+      ? (row.order_bins as Array<Record<string, unknown>>)
+          .slice()
+          .sort((a, b) => Number(a.bin_index ?? 0) - Number(b.bin_index ?? 0))
+          .map((ob) => ({
+            binIndex: Number(ob.bin_index ?? 1),
+            binLabel: String(ob.bin_code ?? ""),
+            binColor: String(ob.bin_color ?? "blue"),
+            items: Array.isArray(ob.items)
+              ? (ob.items as Array<Record<string, unknown>>).map((it) => ({
+                  name: String(it.name ?? ""),
+                  quantity: Number(it.quantity ?? 0),
+                  isMeal: typeof it.isMeal === "boolean" ? it.isMeal : undefined,
+                }))
+              : [],
+          }))
+      : undefined,
   };
 }
 
 export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
   const projections = [
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
     "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
     "*, order_items(*, menu_items(name))",
   ];
@@ -70,7 +90,8 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
   // Resilient against prod schema drift: try rich projection (with skipped_at,
   // bins, time_slots), then fall back to progressively simpler queries.
   const projections = [
-    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time), order_bins(bin_index, bin_code, bin_color, items)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
     "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
     "*, order_items(*, menu_items(name))",
   ];

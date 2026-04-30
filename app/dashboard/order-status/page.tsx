@@ -17,6 +17,16 @@ interface OrderData {
   status: string;
   paymentId?: string;
   total?: number;
+  // Phase 7: per-bin breakdown
+  bins?: Array<{
+    binIndex: number;
+    binLabel: string;
+    binCode: string;
+    binColor: string;
+    items: Array<{ name: string; quantity: number; isMeal?: boolean }>;
+  }>;
+  binCount?: number;
+  extraBinFeePaise?: number;
 }
 
 type Phase = "preparing" | "ready" | "collected";
@@ -56,13 +66,20 @@ export default function OrderStatusPage() {
     try {
       const raw = localStorage.getItem("canteen_active_order");
       if (!raw) { router.replace("/dashboard"); return; }
-      const data = JSON.parse(raw) as OrderData;
+      const data = JSON.parse(raw) as OrderData & { uid?: string };
+      // Bug fix: a banner for a different user (e.g. deleted/wiped account)
+      // must not be rendered just because it sat in localStorage.
+      if (data.uid && session?.user?.id && data.uid !== session.user.id) {
+        localStorage.removeItem("canteen_active_order");
+        router.replace("/dashboard");
+        return;
+      }
       setOrder(data);
       setPhase(toPhase(data.status || "preparing"));
     } catch {
       router.replace("/dashboard");
     }
-  }, [router]);
+  }, [router, session?.user?.id]);
 
   // Poll real order status from DB every 10 seconds
   useEffect(() => {
@@ -258,6 +275,29 @@ export default function OrderStatusPage() {
             ))}
           </div>
 
+          {/* Phase 7: per-bin breakdown for multi-bin orders */}
+          {order.bins && order.bins.length > 1 && (
+            <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #f97316" }}>
+              <div style={{ fontSize: "0.72rem", color: "#9a3412", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.6rem" }}>
+                📦 Pickup from {order.bins.length} bins
+              </div>
+              {order.bins.map((b) => (
+                <div key={b.binIndex} style={{ marginBottom: "0.6rem", paddingBottom: "0.6rem", borderBottom: b.binIndex < order.bins!.length ? "1px dashed var(--border)" : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, background: getBinColor(`#${(b.binColor || "BLU").substring(0,3).toUpperCase()}${b.binLabel}`), color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>{b.binIndex}</span>
+                    <span style={{ fontWeight: 700, fontSize: "0.88rem" }}>Bin {b.binLabel}</span>
+                  </div>
+                  {b.items.map((it, j) => (
+                    <div key={j} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.84rem", paddingLeft: "0.4rem", color: "var(--ink-3)" }}>
+                      <span>{it.name}</span>
+                      <span>×{it.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Mark collected */}
           <button
             onClick={handleMarkCollected}
@@ -337,7 +377,32 @@ export default function OrderStatusPage() {
           <div style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>#{order.id}</div>
           <div style={{ fontSize: "0.88rem", fontWeight: 600, marginBottom: "0.25rem" }}>{order.slot}</div>
           <div style={{ fontSize: "0.8rem", color: "var(--ink-3)" }}>{order.items}</div>
+          {order.bins && order.bins.length > 1 && (
+            <div style={{ marginTop: "0.5rem", fontSize: "0.78rem", color: "#9a3412", fontWeight: 600 }}>
+              📦 This order will be in {order.bins.length} pickup bins.
+            </div>
+          )}
         </div>
+
+        {/* Phase 7: per-bin breakdown for multi-bin orders (preparing screen) */}
+        {order.bins && order.bins.length > 1 && (
+          <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #fed7aa", background: "#fff7ed" }}>
+            <div style={{ fontSize: "0.72rem", color: "#9a3412", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.6rem" }}>
+              📦 Bin breakdown
+            </div>
+            {order.bins.map((b, i) => (
+              <div key={b.binIndex} style={{ marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: i < order.bins!.length - 1 ? "1px dashed #fed7aa" : "none" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.86rem", color: "#9a3412", marginBottom: "0.2rem" }}>Bin {b.binLabel}</div>
+                {b.items.map((it, j) => (
+                  <div key={j} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", paddingLeft: "0.4rem", color: "#7c2d12" }}>
+                    <span>{it.name}</span>
+                    <span>×{it.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Info */}
         <div style={{ background: "var(--blue-light)", border: "1px solid #bfdbfe", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#1d4ed8" }}>

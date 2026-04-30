@@ -46,6 +46,15 @@ export type CanteenOrder = {
   binId?: string;
   pickupSlot?: string;
   slotLabel?: string;
+  // Phase 7: extra-bin workflow
+  binCount?: number;
+  extraBinFeePaise?: number;
+  binAssignments?: Array<{
+    binIndex: number;
+    binLabel: string;
+    binColor: string;
+    items: Array<{ name: string; quantity: number; isMeal?: boolean }>;
+  }>;
 };
 
 export type CreateOrderRequest = {

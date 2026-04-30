@@ -94,6 +94,10 @@ function CartContent() {
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
   const [cartCheck,   setCartCheck]   = useState<CartCheck | null>(null);
+  // Phase 7: extra-bin popup acknowledgement. The PDF requires a confirm step
+  // when an order needs >1 bin, so the student knows about the +₹2/bin fee
+  // before they're charged.
+  const [showExtraBinModal, setShowExtraBinModal] = useState(false);
 
   useEffect(() => {
     const proStatus = localStorage.getItem("noqx_pro_active");
@@ -224,6 +228,11 @@ function CartContent() {
       // the friendly bin display and the monospace bin code chip.
       bin = `Bin ${json.binLabel}`;
       binCode = json.binCode ?? json.binLabel ?? "";
+      // Phase 7: persist per-bin breakdown for the order-status screen.
+      var responseBins: Array<{ binIndex: number; binLabel: string; binCode: string; binColor: string; items: Array<{ name: string; quantity: number; isMeal?: boolean }> }> | undefined =
+        Array.isArray(json.bins) ? json.bins : undefined;
+      var responseBinCount: number = Number(json.binCount) || (responseBins?.length ?? 1);
+      var responseExtraFeePaise: number = Number(json.extraBinFeePaise) || 0;
     } catch (err) {
       console.error("Place order network error:", err);
       setError("Network error placing order. Please try again.");
@@ -237,6 +246,13 @@ function CartContent() {
       itemsList: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price })),
       canteen: canteenName, status: "preparing",
       paymentId, total: payable,
+      // Phase 7: per-bin breakdown shown on /dashboard/order-status
+      bins: responseBins,
+      binCount: responseBinCount,
+      extraBinFeePaise: responseExtraFeePaise,
+      // Bug fix: tag with the placing user's uid so a different (or deleted)
+      // user signing in on the same browser doesn't inherit this banner.
+      uid: user?.uid ?? null,
     };
 
     localStorage.setItem("canteen_active_order", JSON.stringify(orderData));
@@ -258,6 +274,23 @@ function CartContent() {
     if (!slot)            { setError("Please choose a pickup time slot."); return; }
     if (cart.length === 0) { setError("Your cart is empty."); return; }
     if (cartCheck?.slot_full) { setError("This slot just filled up. Please pick another."); return; }
+
+    // Phase 7: extra-bin acknowledgement gate. If the cart needs >1 bin and
+    // the modal hasn't been confirmed yet, show it instead of proceeding to
+    // payment. The user picks Continue (sets ack → re-runs handleCheckout)
+    // or Adjust Order (closes the modal, lets them edit quantities).
+    if (cartCheck?.requires_extra_bin && !showExtraBinModal && !busy) {
+      // Re-open the modal only if the user hasn't already passed it. We use
+      // a transient "ack" via clearing requires_extra_bin in a ref-style
+      // boolean: the simplest route is a sessionStorage flag keyed on cart
+      // signature so re-renders don't re-prompt.
+      const sig = `${canteenId}:${cart.map(c => `${c.id}x${c.qty}`).join(",")}:${slot}`;
+      const acked = typeof window !== "undefined" && sessionStorage.getItem("extra_bin_ack") === sig;
+      if (!acked) {
+        setShowExtraBinModal(true);
+        return;
+      }
+    }
 
     setBusy(true);
     setError(null);
@@ -604,6 +637,57 @@ function CartContent() {
           {busy ? "Processing…" : (!isPro && proChoice === "go_pro") ? "Get Pro & Save →" : payable === 0 ? "Place Order (Wallet)" : `Pay ₹${payable} via Razorpay →`}
         </button>
       </div>
+
+      {/* ── Phase 7: Extra-bin acknowledgement modal ─────────────────────
+          PDF requires this exact prompt before the user is charged. */}
+      {showExtraBinModal && cartCheck?.requires_extra_bin && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1.5rem" }}>
+          <div className="card" style={{ maxWidth: 360, width: "100%", padding: "1.4rem 1.25rem", background: "#fff", borderRadius: 18, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>📦</div>
+              <h3 style={{ fontWeight: 800, fontSize: "1.05rem", marginBottom: "0.4rem", color: "#9a3412" }}>
+                Extra pickup bin needed
+              </h3>
+              <p style={{ fontSize: "0.86rem", color: "var(--ink-3)", lineHeight: 1.4 }}>
+                Larger orders may need an additional pickup bin for safe and faster collection.
+              </p>
+            </div>
+
+            <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.7rem 0.85rem", marginBottom: "1rem", fontSize: "0.82rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                <span style={{ color: "#7c2d12" }}>Bins required</span>
+                <strong style={{ color: "#9a3412" }}>{cartCheck.bin_plan.bins.length}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#7c2d12" }}>Extra-bin fee</span>
+                <strong style={{ color: "#9a3412" }}>+₹{extraBinFee}</strong>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  const sig = `${canteenId}:${cart.map(c => `${c.id}x${c.qty}`).join(",")}:${slot ?? ""}`;
+                  sessionStorage.setItem("extra_bin_ack", sig);
+                }
+                setShowExtraBinModal(false);
+                // Re-trigger checkout immediately after ack
+                setTimeout(() => { void handleCheckout(); }, 0);
+              }}
+              className="btn btn-primary btn-full"
+              style={{ padding: "0.8rem", fontSize: "0.95rem", fontWeight: 800, marginBottom: "0.5rem" }}
+            >
+              Continue (pay +₹{extraBinFee})
+            </button>
+            <button
+              onClick={() => { setShowExtraBinModal(false); setBusy(false); }}
+              style={{ width: "100%", background: "none", border: "1.5px solid var(--border)", color: "var(--ink)", borderRadius: 12, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+            >
+              Adjust Order
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

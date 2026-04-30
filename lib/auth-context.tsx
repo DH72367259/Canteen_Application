@@ -65,6 +65,30 @@ function clearProfileCache() {
   try { localStorage.removeItem(PROFILE_CACHE_KEY) } catch { /* SSR safe */ }
 }
 
+/**
+ * Wipe every piece of student-side state we cache in localStorage / sessionStorage.
+ * Called on logout AND when we detect a deleted-user session so a fresh login
+ * doesn't inherit the previous user's active-order banner, transactions,
+ * Pro flag, extra-bin ack, etc.
+ */
+function purgeStudentLocalState() {
+  if (typeof window === 'undefined') return
+  const KEYS = [
+    'canteen_active_order',
+    'canteen_transactions',
+    'canteen_student_location',
+    'canteen_student_coords',
+    'canteen_pw_expired',
+    'noqx_pro_active',
+    'noqx_pro_expires',
+    'noqx_canteens_cache',
+  ]
+  for (const k of KEYS) {
+    try { localStorage.removeItem(k) } catch { /* SSR safe */ }
+  }
+  try { sessionStorage.removeItem('extra_bin_ack') } catch { /* SSR safe */ }
+}
+
 // ============================================================
 // Types
 // ============================================================
@@ -134,8 +158,16 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Profile fetch timed out')), 4000)
     )
-    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).single()
-    const { data } = await Promise.race([query, timeoutPromise])
+    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).maybeSingle()
+    const { data, error } = await Promise.race([query, timeoutPromise])
+    // Detect deleted user: row missing AND no error (PGRST116 — "no rows").
+    // When this happens the JWT in localStorage is for a Supabase auth user
+    // whose profile (and likely auth.users row) no longer exists. We must
+    // treat the session as invalid so the dashboard doesn't render a stale
+    // cached profile for a user that's been wiped from the DB.
+    if (!data && !error) {
+      return { walletBalance: 0, _resolved: true, _deleted: true } as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
+    }
     let canteenId: string | null = data?.canteen_id ?? null
     const role = (data?.role as UserRole) ?? 'user'
     // Mirror the server-side self-heal in lib/authServer.ts: vendor / canteen_admin /
@@ -285,7 +317,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // already-resolved privileged role here — it would bounce admins/vendors to /login
             // and trigger a redirect-loop flicker between dashboards.
             fetchProfile(session.user.id).then(fresh => {
-              const f = fresh as Partial<AuthUser> & { _resolved?: boolean }
+              const f = fresh as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
+              // Deleted user (profile row gone) — nuke local state and bounce to login.
+              // Without this the cached profile + JWT keep the dashboard rendering
+              // "phantom" sessions for users that were wiped server-side.
+              if (f._deleted) {
+                purgeStudentLocalState()
+                clearProfileCache()
+                setUser(null)
+                roleRef.current = null
+                setSession(null)
+                supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+                supabase.auth.signOut().catch(() => {})
+                if (typeof window !== 'undefined') window.location.replace('/login?role=user')
+                return
+              }
               if (f._resolved === false) return // network blip — keep cached profile
               const prevRole = roleRef.current
               const safeRole: UserRole = (
@@ -299,7 +345,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(updated)
             }).catch(() => {})
           } else {
-            const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean }
+            const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
+            // Deleted-user short-circuit (no cache available either)
+            if (profile._deleted) {
+              purgeStudentLocalState()
+              clearProfileCache()
+              setUser(null)
+              roleRef.current = null
+              setSession(null)
+              await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+              supabase.auth.signOut().catch(() => {})
+              setLoading(false)
+              if (typeof window !== 'undefined') window.location.replace('/login?role=user')
+              return
+            }
             // If profile fetch failed (timeout / network), do NOT downgrade to 'user'.
             // Use the role embedded in the Supabase JWT user_metadata as a fallback,
             // since super_admin / canteen_admin / vendor accounts are seeded with metadata.role.
@@ -459,6 +518,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function logout() {
     try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
     clearProfileCache()
+    purgeStudentLocalState()
     // Mark session as inactive before signing out (fire-and-forget)
     if (session?.access_token && activeSessionIdRef.current) {
       fetch('/api/auth/session', {

@@ -22,6 +22,7 @@ interface Bin {
   binColor?: string | null;
   rawStatus?: string;
   placedAt?: string | null;
+  binCount?: number;
 }
 
 
@@ -239,6 +240,7 @@ export default function VendorDashboard() {
         rawOrderId: o.id,
         rawStatus: o.rawStatus,
         placedAt: o.createdAt ?? null,
+        binCount: o.binCount ?? (o.binAssignments?.length ?? 1),
       }));
       // Only show bins that have an assigned order (no empty filler bins)
       mapped.sort((a, b) => a.number - b.number);
@@ -623,6 +625,11 @@ export default function VendorDashboard() {
                       <div className="bin-order-id">{bin.orderId}</div>
                       <div className="bin-customer">{bin.customerName}</div>
                       <div className="bin-slot">{bin.slot} · {bin.items}</div>
+                      {(bin.binCount ?? 1) > 1 && (
+                        <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
+                          📦 {bin.binCount} bins required
+                        </div>
+                      )}
                       {bin.status === "placed" && bin.rawOrderId && (
                         <button
                           onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
