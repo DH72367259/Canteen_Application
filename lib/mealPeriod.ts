@@ -13,17 +13,57 @@
 
 export type MealPeriod = "breakfast" | "lunch" | "snacks" | "dinner";
 
-export function getCurrentMealPeriod(date: Date = new Date()): MealPeriod | null {
-  // Convert to IST (UTC+5:30) regardless of the runtime timezone. We start
-  // from absolute UTC ms (date.getTime()) and shift by +330 minutes, then
-  // read the hour with getUTCHours so the local tz never enters the math.
+export interface MealWindow { start: string; end: string }
+export interface MealWindows {
+  breakfast: MealWindow | null;
+  lunch:     MealWindow | null;
+  snacks:    MealWindow | null;
+  dinner:    MealWindow | null;
+}
+
+export const DEFAULT_WINDOWS: MealWindows = {
+  breakfast: { start: "07:00", end: "11:00" },
+  lunch:     { start: "11:00", end: "15:00" },
+  snacks:    { start: "15:00", end: "18:00" },
+  dinner:    { start: "18:00", end: "22:00" },
+};
+
+function istHourMinutes(date: Date): number {
   const istMs = date.getTime() + 330 * 60_000;
-  const h     = new Date(istMs).getUTCHours();
-  if (h >= 7  && h < 11) return "breakfast";
-  if (h >= 11 && h < 15) return "lunch";
-  if (h >= 15 && h < 18) return "snacks";
-  if (h >= 18 && h < 22) return "dinner";
+  const d = new Date(istMs);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+function toMin(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+export function getCurrentMealPeriod(
+  date: Date = new Date(),
+  windows: MealWindows = DEFAULT_WINDOWS,
+): MealPeriod | null {
+  const nowMin = istHourMinutes(date);
+  const order: MealPeriod[] = ["breakfast", "lunch", "snacks", "dinner"];
+  for (const p of order) {
+    const w = windows[p];
+    if (!w) continue;
+    const s = toMin(w.start), e = toMin(w.end);
+    if (nowMin >= s && nowMin < e) return p;
+  }
   return null;
+}
+
+export function mealLabel(p: MealPeriod, w: MealWindow | null): string {
+  const base = { breakfast: "Breakfast", lunch: "Lunch", snacks: "Snacks", dinner: "Dinner" }[p];
+  if (!w) return base;
+  const fmt = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    const h12 = ((h + 11) % 12) + 1;
+    const ap = h < 12 ? "AM" : "PM";
+    return m ? `${h12}:${String(m).padStart(2, "0")} ${ap}` : `${h12} ${ap}`;
+  };
+  return `${base} (${fmt(w.start)}–${fmt(w.end)})`;
 }
 
 // Vendor stores meal type as the `category` column with values like

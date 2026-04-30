@@ -76,19 +76,60 @@ export default function SuperAdminDashboard() {
   );
 }
 
+type AdminStats = {
+  counts: { canteens_active: number; users_total: number };
+  today:  { orders: number; revenue: number };
+  month:  { orders: number; revenue: number };
+  monthly: { month: string; revenue: number; orders: number }[];
+  recent: { id: string; time: string; event: string; canteen: string; detail: string }[];
+};
+
+// 3-second polling against /api/admin/stats keeps the Dashboard + Analytics
+// numbers "lively updating" per spec. Single hook — share between sections.
+function useAdminStats(pollMs = 3000): AdminStats | null {
+  const { session } = useAuth();
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/admin/stats", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      })
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (!cancelled && j) setStats(j); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, pollMs);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [session?.access_token, pollMs]);
+  return stats;
+}
+
 function OverviewSection() {
+  const stats = useAdminStats(3000);
+  const fmtRel = (iso: string) => {
+    const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (diffSec < 60)    return `${diffSec}s ago`;
+    if (diffSec < 3600)  return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  };
+  const cards = [
+    { icon: "🏪", label: "Active Canteens",    value: String(stats?.counts.canteens_active ?? 0), sub: "live now",                       color: "var(--orange)" },
+    { icon: "👥", label: "Total Users",        value: String(stats?.counts.users_total ?? 0),     sub: "profiles",                        color: "var(--blue)"   },
+    { icon: "📦", label: "Orders Today",       value: String(stats?.today.orders ?? 0),           sub: `₹${(stats?.today.revenue ?? 0).toFixed(0)} revenue`, color: "var(--green)"  },
+    { icon: "💰", label: "Canteen Cash Given", value: `₹${(stats?.month.revenue ?? 0).toFixed(0)}`, sub: "this month gross",                color: "var(--yellow)" },
+    { icon: "⭐",  label: "Avg. Rating",         value: "—",                                          sub: "no ratings yet",                  color: "var(--orange)" },
+    { icon: "📱", label: "App Users",          value: String(stats?.counts.users_total ?? 0),     sub: "installed",                       color: "var(--blue)"   },
+  ];
   return (
     <div className="page-content">
       <div className="page-header"><h2>Platform Overview</h2><span className="tag tag-green">● Live</span></div>
       <div className="dashboard-grid">
-        {[
-          { icon: "🏪", label: "Active Canteens", value: "0", sub: "—", color: "var(--orange)" },
-          { icon: "👥", label: "Total Users", value: "0", sub: "—", color: "var(--blue)" },
-          { icon: "📦", label: "Orders Today", value: "0", sub: "₹0 revenue", color: "var(--green)" },
-          { icon: "💰", label: "Canteen Cash Given", value: "₹0", sub: "this month", color: "var(--yellow)" },
-          { icon: "⭐", label: "Avg. Rating", value: "—", sub: "—", color: "var(--orange)" },
-          { icon: "📱", label: "App Users", value: "0", sub: "—", color: "var(--blue)" },
-        ].map(s => (
+        {cards.map(s => (
           <div key={s.label} className="stat-card" style={{ textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
               <span style={{ fontSize: "1.2rem" }}>{s.icon}</span>
@@ -105,7 +146,18 @@ function OverviewSection() {
         <table>
           <thead><tr><th>TIME</th><th>EVENT</th><th>CANTEEN</th><th>DETAIL</th></tr></thead>
           <tbody>
-            <tr><td colSpan={4} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No activity yet.</td></tr>
+            {(stats?.recent ?? []).length === 0 ? (
+              <tr><td colSpan={4} style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No activity yet.</td></tr>
+            ) : (
+              stats!.recent.map(r => (
+                <tr key={r.id}>
+                  <td>{fmtRel(r.time)}</td>
+                  <td>{r.event}</td>
+                  <td>{r.canteen}</td>
+                  <td>{r.detail}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -1612,8 +1664,9 @@ function relativeTime(iso: string) {
 
 
 function AnalyticsSection() {
-  const revenueData: { month: string; value: number }[] = [];
-  const ordersData: { month: string; value: number }[] = [];
+  const stats = useAdminStats(3000);
+  const revenueData = (stats?.monthly ?? []).map(m => ({ month: m.month, value: m.revenue }));
+  const ordersData  = (stats?.monthly ?? []).map(m => ({ month: m.month, value: m.orders  }));
   const canteenShare: { name: string; pct: number; color: string }[] = [];
   const topItems: { name: string; orders: number; revenue: string; canteen: string }[] = [];
 
@@ -1645,19 +1698,19 @@ function AnalyticsSection() {
       {/* KPI row */}
       <div className="stats-row">
         <div className="stat-card">
-          <div className="stat-num">₹0</div>
+          <div className="stat-num">₹{(stats?.month.revenue ?? 0).toFixed(0)}</div>
           <div className="stat-label">Revenue This Month</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>{stats ? "live" : "loading…"}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">0</div>
+          <div className="stat-num">{stats?.month.orders ?? 0}</div>
           <div className="stat-label">Orders This Month</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>{stats?.today.orders ?? 0} today</div>
         </div>
         <div className="stat-card">
-          <div className="stat-num">0</div>
+          <div className="stat-num">{stats?.counts.users_total ?? 0}</div>
           <div className="stat-label">Active Users</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>No data yet</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: 2 }}>total profiles</div>
         </div>
         <div className="stat-card">
           <div className="stat-num" style={{ color: "var(--ink-3)" }}>—</div>

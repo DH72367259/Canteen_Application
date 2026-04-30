@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getCurrentMealPeriod, categoryToMealPeriod, MEAL_LABEL } from "@/lib/mealPeriod";
+import { getCurrentMealPeriod, categoryToMealPeriod, mealLabel, DEFAULT_WINDOWS, type MealWindows } from "@/lib/mealPeriod";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
 const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {};
@@ -96,12 +96,35 @@ export default function CanteenMenuPage() {
     ? items
     : items.filter(i => i.category === activeCategory);
 
+  // ── Dynamic meal windows from the canteen's slot_control ───────────────
+  // The vendor sets their own breakfast/lunch/dinner times via Slot and Bin
+  // Control. We poll every 60s so a vendor's window edit lands on the
+  // student menu without a page reload.
+  const [mealWindows, setMealWindows] = useState<MealWindows>(DEFAULT_WINDOWS);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch(`/api/canteens/${canteenId}/meal-windows`)
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (!cancelled && j?.windows) setMealWindows(j.windows); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [canteenId]);
+
   // ── Meal-period gating (client request 2026-04-30) ────────────────────
   // Only show items whose vendor-assigned category matches the current meal
-  // window (breakfast 7-11, lunch 11-3, snacks 3-6, dinner 6-10). Items the
-  // vendor never tagged (no recognisable category) stay visible so legacy
-  // menus aren't accidentally hidden. Outside meal windows we don't filter.
-  const currentMeal = getCurrentMealPeriod();
+  // window. Items the vendor never tagged (no recognisable category) stay
+  // visible so legacy menus aren't accidentally hidden. We re-derive the
+  // window every minute so it ticks over without a reload.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const currentMeal = getCurrentMealPeriod(now, mealWindows);
   const mealFilteredItems = currentMeal
     ? visibleItems.filter(i => {
         const m = categoryToMealPeriod(i.category);
@@ -190,7 +213,7 @@ export default function CanteenMenuPage() {
         {currentMeal && (
           <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.55rem 0.85rem", fontSize: "0.78rem", color: "#9a3412", display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <span style={{ fontSize: "1rem" }}>⏰</span>
-            <span>Showing <strong>{MEAL_LABEL[currentMeal]}</strong> menu only{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
+            <span>Showing <strong>{mealLabel(currentMeal, mealWindows[currentMeal])}</strong> menu only{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
           </div>
         )}
         {menuLoading && (

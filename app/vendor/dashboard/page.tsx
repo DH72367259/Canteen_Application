@@ -248,6 +248,19 @@ export default function VendorDashboard() {
     }
   }, [session?.access_token]);
 
+  // Accept transitions placed → preparing. After Accept the order is locked
+  // (student can no longer cancel — see /api/orders/[id]/status server check).
+  const handleAccept = useCallback(async (rawOrderId: string) => {
+    const token = session?.access_token;
+    if (!token) return;
+    await fetch(`/api/orders/${rawOrderId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: "preparing" }),
+    }).catch(() => {});
+    await fetchOrders();
+  }, [session?.access_token, fetchOrders]);
+
   const handleMarkReady = useCallback(async (rawOrderId: string) => {
     const token = session?.access_token;
     if (!token) return;
@@ -608,7 +621,15 @@ export default function VendorDashboard() {
                       <div className="bin-order-id">{bin.orderId}</div>
                       <div className="bin-customer">{bin.customerName}</div>
                       <div className="bin-slot">{bin.slot} · {bin.items}</div>
-                      {(bin.status === "placed" || bin.status === "preparing") && bin.rawOrderId && (
+                      {bin.status === "placed" && bin.rawOrderId && (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
+                          style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                        >
+                          ✓ Accept
+                        </button>
+                      )}
+                      {bin.status === "preparing" && bin.rawOrderId && (
                         <button
                           onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
                           style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}

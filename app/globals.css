@@ -768,7 +768,9 @@ body {
 }
 
 .otp-digit {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
   height: 56px;
   text-align: center;
   font-size: 1.5rem;
@@ -778,6 +780,7 @@ body {
   background: var(--surface);
   color: var(--ink);
   transition: border-color 0.15s;
+  box-sizing: border-box;
 }
 
 .otp-digit:focus { outline: none; border-color: var(--orange); }
