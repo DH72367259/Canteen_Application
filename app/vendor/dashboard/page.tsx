@@ -45,6 +45,29 @@ const NAV_ITEMS = [
   { id: "support",      icon: "🎧", label: "Raise a Concern" },
 ];
 
+// Phase 8 rack zones — must mirror the order RACK_ZONES is iterated below.
+// Used to compute a stable rack-global bin number from a bin's colour + the
+// numeric suffix of its bin code (e.g. "#BLU002" → blue zone, local 2).
+const ZONE_ORDER = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
+
+function rackIndexFor(binLabel: string | null, binColor: string | null, maxBins: number): number | null {
+  if (!binLabel || !binColor || maxBins <= 0) return null;
+  const zoneIdx = ZONE_ORDER.indexOf(binColor.toLowerCase() as typeof ZONE_ORDER[number]);
+  if (zoneIdx < 0) return null;
+  const m = binLabel.match(/(\d+)\s*$/);
+  if (!m) return null;
+  const localIdx = parseInt(m[1], 10);
+  if (!Number.isFinite(localIdx) || localIdx < 1) return null;
+  const base = Math.floor(maxBins / 6);
+  const extra = maxBins % 6;
+  let offset = 0;
+  for (let i = 0; i < zoneIdx; i++) offset += base + (i < extra ? 1 : 0);
+  const zoneCount = base + (zoneIdx < extra ? 1 : 0);
+  // Clamp into the configured zone size — guards against legacy data with
+  // suffix > zone size (e.g. seeded extras from earlier provisioning runs).
+  return offset + Math.min(localIdx, zoneCount);
+}
+
 export default function VendorDashboard() {
   const router = useRouter();
   const { user, logout, session, loading } = useAuth();
@@ -222,7 +245,15 @@ export default function VendorDashboard() {
       );
       const mapped: Bin[] = active.map((o, idx) => ({
         id: o.id,
-        number: parseInt(o.binLabel ?? String(idx + 1), 10) || idx + 1,
+        // Compute the rack-grid global index from the actual bin colour +
+        // parsed bin-code suffix. E.g. "#BLU002" → blue zone (4th) +
+        // localIndex 2 → globalIndex = (red+yellow+green counts) + 2. This
+        // is what the rack distribution at the bottom of this file uses to
+        // place each bin in the correct colour row. Falling back to
+        // `parseInt(binLabel)` (which is NaN for "#BLU002") was the bug
+        // that landed every order in the RED zone regardless of its real
+        // bin colour.
+        number: rackIndexFor(o.binLabel ?? null, o.binColor ?? null, maxBins) ?? (idx + 1),
         status: o.rawStatus === "ready_for_pickup" || o.rawStatus === "placed_in_bin"
           ? "completed"
           : o.rawStatus === "preparing"
@@ -250,7 +281,7 @@ export default function VendorDashboard() {
     } finally {
       setOrdersLoading(false);
     }
-  }, [session?.access_token]);
+  }, [session?.access_token, maxBins]);
 
   // Accept transitions placed → preparing. After Accept the order is locked
   // (student can no longer cancel — see /api/orders/[id]/status server check).

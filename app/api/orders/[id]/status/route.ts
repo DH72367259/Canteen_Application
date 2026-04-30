@@ -208,9 +208,29 @@ export async function PATCH(
     .select("id, status")
     .single();
 
-  if (error || !updated) {
+  // Resilient against prod schema drift: not every database has the
+  // optional `skipped_at` column (added in Phase 8). When it is missing,
+  // Postgres rejects the whole UPDATE with a schema-cache error. Retry
+  // without that field so worker transitions don't 404 silently.
+  let finalRow = updated;
+  let finalErr = error;
+  if (error && /skipped_at|column .* does not exist/i.test(error.message) && "skipped_at" in updates) {
+    const { skipped_at: _omit, ...slim } = updates;
+    void _omit;
+    const retry = await supabase
+      .from("orders")
+      .update(slim)
+      .eq("id", orderId)
+      .select("id, status")
+      .single();
+    finalRow = retry.data;
+    finalErr = retry.error;
+  }
+
+  if (finalErr || !finalRow) {
+    console.error("[orders/status] update failed", { orderId, status, error: finalErr?.message });
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ order: updated });
+  return NextResponse.json({ order: finalRow });
 }

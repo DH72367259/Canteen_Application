@@ -6,11 +6,15 @@ import { useAuth } from "@/lib/auth-context";
 
 interface WorkerOrder {
   id: string;
+  /** Raw lifecycle status (placed | confirmed | preparing | ready_for_placement | placed_in_bin | ready_for_pickup | collected | cancelled). */
   status: string;
-  bin_number?: number;
-  bin_color?: string;
-  pickup_slot?: string;
+  /** First-bin label e.g. "#BLU002" — actual physical bin code. */
+  bin_label?: string | null;
+  bin_color?: string | null;
+  pickup_slot?: string | null;
   items: { name: string; quantity: number }[];
+  /** Per-bin breakdown for multi-bin orders (Phase 7). */
+  bin_assignments?: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number; isMeal?: boolean }[] }[];
 }
 
 const BIN_COLORS: Record<string, string> = {
@@ -42,9 +46,40 @@ export default function WorkerOrdersPage() {
         });
         const data = await res.json();
         if (!aborted) {
-          setOrders(data.orders ?? []);
-          if ((data.orders ?? []).length > 0) {
-            setActiveSlot(data.orders[0].pickup_slot ?? null);
+          // /api/orders returns CanteenOrder objects (camelCase, mapped status).
+          // We need the RAW status for transition buttons, plus the actual bin
+          // label/colour, slot label, and per-bin assignments. Without this
+          // mapping the worker sees the order but gets no action button (the
+          // mapped status `received` matched none of our cases) and no bin
+          // header (bin_number was always undefined).
+          type ApiCanteenOrder = {
+            id: string;
+            status?: string;
+            rawStatus?: string;
+            binLabel?: string | null;
+            binColor?: string | null;
+            slotLabel?: string | null;
+            pickupSlot?: string | null;
+            items?: { name: string; quantity: number }[];
+            binAssignments?: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number; isMeal?: boolean }[] }[];
+          };
+          const mapped: WorkerOrder[] = ((data.orders ?? []) as ApiCanteenOrder[])
+            .filter((o) => {
+              const raw = o.rawStatus ?? o.status ?? "";
+              return !["collected", "completed", "cancelled"].includes(raw);
+            })
+            .map((o) => ({
+              id: o.id,
+              status: o.rawStatus ?? o.status ?? "placed",
+              bin_label: o.binLabel ?? null,
+              bin_color: o.binColor ?? null,
+              pickup_slot: o.slotLabel ?? o.pickupSlot ?? null,
+              items: o.items ?? [],
+              bin_assignments: o.binAssignments,
+            }));
+          setOrders(mapped);
+          if (mapped.length > 0) {
+            setActiveSlot(mapped[0].pickup_slot ?? null);
           }
           setFetching(false);
         }
@@ -104,26 +139,51 @@ export default function WorkerOrdersPage() {
         {slotOrders.length === 0 && <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 0", fontSize: "0.9rem" }}>No orders for this slot.</div>}
         {slotOrders.map(order => {
           const binColor = BIN_COLORS[order.bin_color ?? "orange"] ?? "#f97316";
+          const assignments = order.bin_assignments ?? [];
+          const multiBin = assignments.length > 1;
           return (
             <div key={order.id} style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", overflow: "hidden" }}>
-              {/* Bin number header */}
-              {order.bin_number && (
+              {/* Bin header — show actual bin code (e.g. #BLU002) instead of a
+                  numeric placeholder. For multi-bin orders we show "+N more". */}
+              {order.bin_label && (
                 <div style={{ background: binColor, padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.5rem" }}>{order.bin_number}</span>
+                  <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.25rem" }}>{order.bin_label}{multiBin ? ` +${assignments.length - 1}` : ""}</span>
                   <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.78rem" }}>#{order.id.slice(-6).toUpperCase()} · {order.pickup_slot}</span>
                 </div>
               )}
               <div style={{ padding: "0.75rem" }}>
-                {/* Items */}
-                {order.items.map((item, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 700, padding: "0.2rem 0", borderBottom: i < order.items.length - 1 ? "1px solid var(--border)" : "none" }}>
-                    <span>{item.name}</span>
-                    <span style={{ color: "var(--orange)" }}>×{item.quantity}</span>
-                  </div>
-                ))}
+                {/* Items — for multi-bin orders show the per-bin breakdown so
+                    the worker knows what to put in each physical bin. */}
+                {multiBin ? (
+                  assignments.map((a) => (
+                    <div key={a.binIndex} style={{ borderTop: a.binIndex > 1 ? "1px dashed var(--border)" : "none", padding: "0.4rem 0" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: BIN_COLORS[a.binColor] ?? "#475569", marginBottom: 4 }}>
+                        {a.binLabel}
+                      </div>
+                      {a.items.map((it, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 600, padding: "0.15rem 0" }}>
+                          <span>{it.name}</span>
+                          <span style={{ color: "var(--orange)" }}>×{it.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                ) : (
+                  order.items.map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 700, padding: "0.2rem 0", borderBottom: i < order.items.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      <span>{item.name}</span>
+                      <span style={{ color: "var(--orange)" }}>×{item.quantity}</span>
+                    </div>
+                  ))
+                )}
 
                 {/* Status actions */}
                 <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {order.status === "placed" && (
+                    <button disabled={updating === order.id} onClick={() => updateStatus(order.id, "preparing")} style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}>
+                      {updating === order.id ? "..." : "Accept Order → Start Preparing"}
+                    </button>
+                  )}
                   {order.status === "confirmed" && (
                     <button disabled={updating === order.id} onClick={() => updateStatus(order.id, "preparing")} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}>
                       {updating === order.id ? "..." : "To Prepare → Next order"}
@@ -136,7 +196,7 @@ export default function WorkerOrdersPage() {
                   )}
                   {order.status === "ready_for_placement" && (
                     <button disabled={updating === order.id} onClick={() => updateStatus(order.id, "placed_in_bin")} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 900, fontSize: "0.95rem", cursor: "pointer" }}>
-                      {updating === order.id ? "..." : `✅ Placed (double verify) → Bin ${order.bin_number}`}
+                      {updating === order.id ? "..." : `✅ Placed (double verify) → ${order.bin_label ?? "bin"}`}
                     </button>
                   )}
                   {["placed_in_bin", "ready_for_pickup"].includes(order.status) && (
