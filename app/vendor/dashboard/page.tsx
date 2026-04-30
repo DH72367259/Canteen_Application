@@ -2006,14 +2006,14 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
                   </thead>
                   <tbody>
                     {data.orders.map((o: EarningsOrder) => (
-                      <tr key={o.id}>
-                        <td style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{o.id.slice(0, 8)}…</td>
+                      <tr key={o.order_id}>
+                        <td style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{o.order_ref}</td>
                         <td style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>{new Date(o.created_at).toLocaleDateString("en-IN")}</td>
-                        <td style={{ fontWeight: 600 }}>{fmt(o.gross)}</td>
+                        <td style={{ fontWeight: 600 }}>{fmt(o.gross_amount)}</td>
                         <td style={{ color: "var(--red)", fontSize: "0.82rem" }}>{fmt(o.platform_fee)}</td>
                         <td style={{ color: "var(--ink-2)", fontSize: "0.82rem" }}>{fmt(o.gst_on_fee)}</td>
                         <td style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(o.net_earnings)}</td>
-                        <td><span className={`tag ${o.status === "completed" ? "tag-green" : o.status === "cancelled" ? "tag-red" : "tag-orange"}`} style={{ fontSize: "0.7rem" }}>{o.status}</span></td>
+                        <td><span className={`tag ${o.status === "collected" ? "tag-green" : o.status === "cancelled" ? "tag-red" : "tag-orange"}`} style={{ fontSize: "0.7rem" }}>{o.status}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -2065,7 +2065,7 @@ interface EarningsData {
   period_start: string; period_end: string;
 }
 interface EarningsOrder {
-  id: string; created_at: string; gross: number; platform_fee: number;
+  order_id: string; order_ref: string; created_at: string; gross_amount: number; platform_fee: number;
   gst_on_fee: number; total_platform_charge: number; net_earnings: number; status: string;
 }
 interface EarningsPayment {
