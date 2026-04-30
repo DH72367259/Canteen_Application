@@ -3,6 +3,11 @@ import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 
 const KEY_ID     = process.env.RAZORPAY_KEY_ID     || "";
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
+// TEST MODE — when on, skips real Razorpay and returns a synthetic order id.
+// Defaults ON so end-to-end testing works without a live Razorpay account or
+// network access to checkout.razorpay.com. Flip PAYMENT_TEST_MODE="false" on
+// Railway to enable real payments.
+const TEST_MODE = process.env.PAYMENT_TEST_MODE !== "false";
 
 export async function POST(req: NextRequest) {
   // Rate limit before doing any expensive work — IP-based since this endpoint
@@ -13,13 +18,24 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: rl.message }, { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } });
   }
 
-  if (!KEY_ID || !KEY_SECRET) {
-    return Response.json({ error: "Razorpay is not configured on this server." }, { status: 503 });
-  }
   const body        = await req.json();
   const amountPaise = Math.round((body.amount ?? 0) * 100);
   if (amountPaise < 100) {
     return Response.json({ error: "Minimum payable amount is \u20b91." }, { status: 400 });
+  }
+
+  // ── DUMMY MODE ───────────────────────────────────────────────────────────
+  // Returns a synthetic order id and tells the client to skip the Razorpay
+  // popup. The verify endpoint accepts these `test_` ids without HMAC.
+  if (TEST_MODE || !KEY_ID || !KEY_SECRET) {
+    const fakeOrderId = `order_test_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    return Response.json({
+      orderId: fakeOrderId,
+      amount:  amountPaise,
+      currency: "INR",
+      keyId:    KEY_ID || "rzp_test_dummy",
+      testMode: true,
+    });
   }
   const auth = Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
   const resp = await fetch("https://api.razorpay.com/v1/orders", {

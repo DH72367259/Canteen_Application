@@ -272,7 +272,7 @@ function CartContent() {
       return;
     }
 
-    let orderData: { orderId: string; amount: number; currency: string; keyId: string };
+    let orderData: { orderId: string; amount: number; currency: string; keyId: string; testMode?: boolean };
     try {
       const res = await fetch("/api/payments/razorpay-order", {
         method: "POST",
@@ -289,6 +289,49 @@ function CartContent() {
     } catch {
       setError("Network error. Please try again.");
       setBusy(false);
+      return;
+    }
+
+    // ── DUMMY MODE ─────────────────────────────────────────────────────────
+    // The server returns testMode=true when PAYMENT_TEST_MODE is on (or no
+    // Razorpay keys are configured). Skip the checkout popup entirely and
+    // simulate a successful payment so end-to-end flows can be exercised.
+    if (orderData.testMode) {
+      const fakePaymentId = `pay_test_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const fakeSignature = "test_sig";
+      try {
+        const verifyRes = await fetch("/api/payments/razorpay-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            razorpay_order_id:   orderData.orderId,
+            razorpay_payment_id: fakePaymentId,
+            razorpay_signature:  fakeSignature,
+          }),
+        });
+        const vd = await verifyRes.json();
+        if (!verifyRes.ok || !vd.success) {
+          setError("Test payment verification failed.");
+          setBusy(false);
+          return;
+        }
+        if (proAddon > 0 && session?.access_token) {
+          try {
+            await fetch("/api/subscriptions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({ paymentId: fakePaymentId, amount: 69 }),
+            });
+            const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            localStorage.setItem("noqx_pro_active", "true");
+            localStorage.setItem("noqx_pro_expires", expiry);
+          } catch { /* webhook will reconcile */ }
+        }
+        await finaliseOrder(fakePaymentId, orderData.orderId, fakeSignature);
+      } catch {
+        setError("Test payment failed unexpectedly.");
+        setBusy(false);
+      }
       return;
     }
 

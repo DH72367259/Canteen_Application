@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   { id: "live",         icon: "📊", label: "Live Orders" },
   { id: "prep-summary", icon: "📋", label: "Prep Summary" },
   { id: "menu",         icon: "🍽️", label: "Menu & Items" },
-  { id: "slot-control", icon: "🎚️", label: "Slot Control" },
+  { id: "slot-control", icon: "🎚️", label: "Slot and Bin Control" },
   { id: "slots",        icon: "🕐", label: "Time Slots" },
   { id: "bins",         icon: "📦", label: "Bin Management" },
   { id: "sales",        icon: "💰", label: "Sales" },
@@ -141,7 +141,7 @@ export default function VendorDashboard() {
       if (!slotsOk || !menuOk) {
         const missing: string[] = [];
         if (!menuOk)  missing.push("add at least one menu item (Menu & Items)");
-        if (!slotsOk) missing.push("save your slot control (Slot Control → Save)");
+        if (!slotsOk) missing.push("save your slot and bin control (Slot and Bin Control → Save)");
         setToggleError(`Before going online, please ${missing.join(" and ")}.`);
         return;
       }
@@ -576,7 +576,7 @@ export default function VendorDashboard() {
               <div className="empty-state" style={{ padding: "2.5rem", textAlign: "center", color: "var(--ink-3)" }}>
                 <div style={{ fontSize: "2rem" }}>📦</div>
                 <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
-                <p style={{ fontSize: "0.82rem" }}>Configure Slot Control → Max Bins to display the full bin grid here.</p>
+                <p style={{ fontSize: "0.82rem" }}>Configure Slot and Bin Control → Max Bins to display the full bin grid here.</p>
               </div>
             ) : (
             <div className="bin-grid">
@@ -1283,7 +1283,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
       <div className="page-header">
         <h2>Bin Management</h2>
         <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
-          Adjust rack size via <strong>Slot Control → Max Bins</strong>
+          Adjust rack size via <strong>Slot and Bin Control → Max Bins</strong>
         </div>
       </div>
 
@@ -1304,7 +1304,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
       ) : bins.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
           <p style={{ fontWeight: 600, marginBottom: "0.4rem" }}>No bins provisioned yet.</p>
-          <p style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Open Slot Control and save Max Bins to provision the rack.</p>
+          <p style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Open Slot and Bin Control and save Max Bins to provision the rack.</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
@@ -2024,7 +2024,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   return (
     <div className="page-content">
       <div className="page-header">
-        <h2>Slot Control</h2>
+        <h2>Slot and Bin Control</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <span className="tag tag-gray" style={{ fontFamily: "monospace", fontSize: "0.75rem" }} title={`Canteen ID: ${sc.canteen_id}`}>
             Canteen ID: {sc.canteen_id.slice(0, 8)}…
