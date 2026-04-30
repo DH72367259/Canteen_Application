@@ -61,7 +61,19 @@ export default function UserHomePage() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Live data from Phase 4 APIs ───────────────────────────────────
-  const [apiCanteens, setApiCanteens] = useState<ApiCanteen[] | null>(null);
+  const [apiCanteens, setApiCanteens] = useState<ApiCanteen[] | null>(() => {
+    // SWR-style: hydrate from sessionStorage on first render so the canteen
+    // grid paints instantly instead of waiting for the network round-trip.
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem("canteen_list_v1");
+      if (!raw) return null;
+      const { data, ts } = JSON.parse(raw);
+      // 5-min freshness — older than that we still show but background-refresh.
+      if (Date.now() - ts < 5 * 60 * 1000) return data as ApiCanteen[];
+      return data as ApiCanteen[];
+    } catch { return null; }
+  });
   const [colleges, setColleges] = useState<string[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -187,7 +199,12 @@ export default function UserHomePage() {
     }
     fetch(`/api/canteens?${params.toString()}`)
       .then(r => r.ok ? r.json() : { canteens: [] })
-      .then((j: { canteens?: ApiCanteen[] }) => { if (!cancelled) setApiCanteens(j.canteens ?? []); })
+      .then((j: { canteens?: ApiCanteen[] }) => {
+        if (cancelled) return;
+        const list = j.canteens ?? [];
+        setApiCanteens(list);
+        try { sessionStorage.setItem("canteen_list_v1", JSON.stringify({ data: list, ts: Date.now() })); } catch { /* ignore */ }
+      })
       .catch(() => { if (!cancelled) setApiCanteens([]); });
     return () => { cancelled = true; };
   }, [userCoords, selectedLocation, showAll, colleges]);
@@ -475,6 +492,13 @@ export default function UserHomePage() {
           </button>
           <Link href="/dashboard/support" onClick={e => e.stopPropagation()} title="Help & Support"
             style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}>🎧</Link>
+          <Link
+            href="/dashboard/orders/stats"
+            onClick={e => e.stopPropagation()}
+            title="My order stats"
+            aria-label="My order stats"
+            style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}
+          >📊</Link>
           <div style={{ textAlign: "right", lineHeight: 1.15, marginLeft: "0.4rem" }}>
             <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 500 }}>{greeting} 👋</div>
             <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

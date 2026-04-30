@@ -127,11 +127,12 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 // ============================================================
 async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
   try {
-    // 10s timeout (was 3s) — slow Supabase regions + cellular cold-start
-    // were hitting the 3s ceiling and returning the role='user' fallback,
-    // which downgraded vendors/admins to the student dashboard on refresh.
+    // 4s timeout — strikes a balance between slow-network tolerance and
+    // perceived dashboard latency. With cached profile the timeout almost
+    // never fires; on cache-miss we'd rather use the JWT-metadata fallback
+    // (instant) than block the dashboard for 10s.
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Profile fetch timed out')), 10000)
+      setTimeout(() => reject(new Error('Profile fetch timed out')), 4000)
     )
     const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
@@ -234,11 +235,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Safety timeout: if Supabase is unreachable, stop the spinner after 5s.
-    // We avoid a tighter timeout because on slow mobile networks (cellular cold-start,
-    // bridge tunnels, etc.) the legitimate getSession() round-trip can take ~2-3s, and a
-    // shorter cutoff caused student sessions to be misread as "logged out" on navigation.
-    const fallback = setTimeout(() => setLoading(false), 5000)
+    // Safety timeout: if Supabase is unreachable, stop the spinner after 2.5s.
+    // Lowered from 5s to keep refreshes responsive — the cached profile + JWT
+    // metadata fallback paths are both instant, so we no longer need to wait
+    // a full 5s for getSession() before showing the dashboard.
+    const fallback = setTimeout(() => setLoading(false), 2500)
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
