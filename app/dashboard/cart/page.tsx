@@ -196,6 +196,9 @@ function CartContent() {
     let otp: string;
     let bin: string;
     let binCode: string;
+    let responseBins: Array<{ binIndex: number; binLabel: string; binCode: string; binColor: string; items: Array<{ name: string; quantity: number; isMeal?: boolean }> }> | undefined;
+    let responseBinCount = 1;
+    let responseExtraFeePaise = 0;
 
     try {
       const res = await fetch("/api/orders/place", {
@@ -229,10 +232,9 @@ function CartContent() {
       bin = `Bin ${json.binLabel}`;
       binCode = json.binCode ?? json.binLabel ?? "";
       // Phase 7: persist per-bin breakdown for the order-status screen.
-      var responseBins: Array<{ binIndex: number; binLabel: string; binCode: string; binColor: string; items: Array<{ name: string; quantity: number; isMeal?: boolean }> }> | undefined =
-        Array.isArray(json.bins) ? json.bins : undefined;
-      var responseBinCount: number = Number(json.binCount) || (responseBins?.length ?? 1);
-      var responseExtraFeePaise: number = Number(json.extraBinFeePaise) || 0;
+      responseBins = Array.isArray(json.bins) ? json.bins : undefined;
+      responseBinCount = Number(json.binCount) || (responseBins?.length ?? 1);
+      responseExtraFeePaise = Number(json.extraBinFeePaise) || 0;
     } catch (err) {
       console.error("Place order network error:", err);
       setError("Network error placing order. Please try again.");

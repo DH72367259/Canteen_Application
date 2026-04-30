@@ -66,14 +66,16 @@ function clearProfileCache() {
 }
 
 /**
- * Wipe every piece of student-side state we cache in localStorage / sessionStorage.
- * Called on logout AND when we detect a deleted-user session so a fresh login
- * doesn't inherit the previous user's active-order banner, transactions,
- * Pro flag, extra-bin ack, etc.
+ * Wipe every piece of role-specific state we cache in localStorage / sessionStorage.
+ * Called on logout AND when we detect a deleted-user session (any role) so a fresh
+ * login doesn't inherit the previous user's banners, cached lists, Pro flag, etc.
+ * Covers: students (active-order, transactions, location, Pro), workers (canteen_user),
+ * vendors / canteen_admin / super_admin / co_admin (canteen list cache, expired pw flag).
  */
 function purgeStudentLocalState() {
   if (typeof window === 'undefined') return
   const KEYS = [
+    // student
     'canteen_active_order',
     'canteen_transactions',
     'canteen_student_location',
@@ -82,11 +84,34 @@ function purgeStudentLocalState() {
     'noqx_pro_active',
     'noqx_pro_expires',
     'noqx_canteens_cache',
+    // worker / staff
+    'canteen_user',
+    // shared
+    'canteen_last_activity',
   ]
   for (const k of KEYS) {
     try { localStorage.removeItem(k) } catch { /* SSR safe */ }
   }
-  try { sessionStorage.removeItem('extra_bin_ack') } catch { /* SSR safe */ }
+  try {
+    sessionStorage.removeItem('extra_bin_ack')
+    sessionStorage.removeItem('canteen_list_v1')
+  } catch { /* SSR safe */ }
+}
+
+/**
+ * Map a user role to its login page so a deleted-user redirect bounces the
+ * user back to the screen they originally signed in from, not the student
+ * login by default.
+ */
+function loginUrlForRole(role: UserRole | null | undefined): string {
+  switch (role) {
+    case 'worker':         return '/worker/login'
+    case 'super_admin':
+    case 'co_admin':       return '/login?role=super_admin'
+    case 'canteen_admin':
+    case 'vendor':         return '/login?role=vendor'
+    default:               return '/login?role=user'
+  }
 }
 
 // ============================================================
@@ -322,6 +347,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Without this the cached profile + JWT keep the dashboard rendering
               // "phantom" sessions for users that were wiped server-side.
               if (f._deleted) {
+                const redirectUrl = loginUrlForRole(roleRef.current ?? cached.role ?? (session.user.user_metadata?.role as UserRole))
                 purgeStudentLocalState()
                 clearProfileCache()
                 setUser(null)
@@ -329,7 +355,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setSession(null)
                 supabase.auth.signOut({ scope: 'local' }).catch(() => {})
                 supabase.auth.signOut().catch(() => {})
-                if (typeof window !== 'undefined') window.location.replace('/login?role=user')
+                if (typeof window !== 'undefined') window.location.replace(redirectUrl)
                 return
               }
               if (f._resolved === false) return // network blip — keep cached profile
@@ -348,6 +374,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
             // Deleted-user short-circuit (no cache available either)
             if (profile._deleted) {
+              const redirectUrl = loginUrlForRole((session.user.user_metadata?.role as UserRole) ?? roleRef.current)
               purgeStudentLocalState()
               clearProfileCache()
               setUser(null)
@@ -356,7 +383,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
               supabase.auth.signOut().catch(() => {})
               setLoading(false)
-              if (typeof window !== 'undefined') window.location.replace('/login?role=user')
+              if (typeof window !== 'undefined') window.location.replace(redirectUrl)
               return
             }
             // If profile fetch failed (timeout / network), do NOT downgrade to 'user'.
@@ -444,7 +471,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
           return
         }
-        const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean }
+        const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
+        // Deleted-user short-circuit on token refresh / re-auth events too — without this
+        // a TOKEN_REFRESHED that fires after the row was wiped would silently keep the
+        // ghost session alive.
+        if (profile._deleted) {
+          const redirectUrl = loginUrlForRole(existingRole ?? (session.user.user_metadata?.role as UserRole))
+          purgeStudentLocalState()
+          clearProfileCache()
+          setUser(null)
+          roleRef.current = null
+          setSession(null)
+          await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+          supabase.auth.signOut().catch(() => {})
+          setLoading(false)
+          if (typeof window !== 'undefined') window.location.replace(redirectUrl)
+          return
+        }
         // Same defence as the cold-start path: if profile fetch failed, prefer the
         // previously-confirmed roleRef, then the JWT user_metadata.role, never silently 'user'.
         let resolvedProfile = profile
