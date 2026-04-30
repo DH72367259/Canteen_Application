@@ -68,22 +68,12 @@ const SLOT_TEMPLATES = [
 const BIN_COLORS = ["red", "blue", "green", "yellow", "purple", "orange"];
 
 export async function POST(request: Request) {
-  // One-time bypass token for autonomous cleanup (will be removed immediately after use)
-  const BYPASS_TOKEN = "noqx-cleanup-2026-04-30-x9k3vL7mQa2pEr8nJh4tWzY1";
-  const bypassHeader = request.headers.get("x-cleanup-bypass") || "";
-  const isBypass = bypassHeader === BYPASS_TOKEN;
-  if (!isBypass) {
-    const ctx = await getRequestContext(request);
-    if (!ctx || ctx.role !== "super_admin") {
-      return NextResponse.json({ error: "super_admin only" }, { status: 403 });
-    }
+  const ctx = await getRequestContext(request);
+  if (!ctx || ctx.role !== "super_admin") {
+    return NextResponse.json({ error: "super_admin only" }, { status: 403 });
   }
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const mode = String(body.mode ?? "status");
-  // Bypass token may ONLY be used for cleanup/status modes
-  if (isBypass && mode !== "cleanup" && mode !== "status") {
-    return NextResponse.json({ error: "bypass restricted to cleanup/status" }, { status: 403 });
-  }
   const supabase = createAdminClient();
 
   try {
