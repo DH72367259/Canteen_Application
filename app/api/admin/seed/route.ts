@@ -89,6 +89,7 @@ export async function POST(request: Request) {
                             Number(body.days  ?? 90),
                             Number(body.batch ?? 1000)));
       case "settlements": return NextResponse.json(await runSettlements(supabase));
+      case "cleanup":     return NextResponse.json(await runCleanup(supabase));
       default:            return NextResponse.json({ error: `Unknown mode: ${mode}` }, { status: 400 });
     }
   } catch (e) {
@@ -343,4 +344,86 @@ async function runSettlements(supabase: ReturnType<typeof createAdminClient>) {
     }
   }
   return { settlements: rows.length };
+}
+
+// ─── Phase X: Cleanup — wipe everything seeded ───────────────────────────────
+async function runCleanup(supabase: ReturnType<typeof createAdminClient>) {
+  const result = { settlements: 0, orders: 0, menu_items: 0, bins: 0, time_slots: 0, profiles: 0, auth_users: 0, canteens: 0 };
+
+  // 1. Seed canteen ids
+  const { data: canteens } = await supabase
+    .from("canteens").select("id").like("name", `${SEED_PREFIX} Canteen %`);
+  const canteenIds = (canteens ?? []).map(c => c.id);
+
+  // 2. Seed profile ids
+  const { data: profiles } = await supabase
+    .from("profiles").select("id").like("email", "seed.%@noqx.test");
+  const profileIds = (profiles ?? []).map(p => p.id);
+
+  // 3. Delete orders: any seed-prefixed payment_id OR any order belonging to a seed canteen / seed user
+  // (covers live "today" orders that might have non-seed payment_id but were created against seed entities)
+  if (profileIds.length || canteenIds.length) {
+    // delete via payment_id prefix first
+    const r1 = await supabase.from("orders").delete({ count: "exact" }).like("payment_id", "seed_%");
+    result.orders += r1.count ?? 0;
+    if (canteenIds.length) {
+      // chunk to avoid URL too long
+      for (let i = 0; i < canteenIds.length; i += 100) {
+        const r = await supabase.from("orders").delete({ count: "exact" }).in("canteen_id", canteenIds.slice(i, i + 100));
+        result.orders += r.count ?? 0;
+      }
+    }
+    if (profileIds.length) {
+      for (let i = 0; i < profileIds.length; i += 100) {
+        const r = await supabase.from("orders").delete({ count: "exact" }).in("user_id", profileIds.slice(i, i + 100));
+        result.orders += r.count ?? 0;
+      }
+    }
+  }
+
+  // 4. Delete settlement_payments for seed canteens (also catches "Seed weekly settlement" notes)
+  const rs = await supabase.from("settlement_payments").delete({ count: "exact" }).like("notes", "Seed%");
+  result.settlements += rs.count ?? 0;
+  if (canteenIds.length) {
+    for (let i = 0; i < canteenIds.length; i += 100) {
+      const r = await supabase.from("settlement_payments").delete({ count: "exact" }).in("canteen_id", canteenIds.slice(i, i + 100));
+      result.settlements += r.count ?? 0;
+    }
+  }
+
+  // 5. Delete menu_items, bins, time_slots for seed canteens
+  if (canteenIds.length) {
+    for (let i = 0; i < canteenIds.length; i += 100) {
+      const slice = canteenIds.slice(i, i + 100);
+      const m = await supabase.from("menu_items").delete({ count: "exact" }).in("canteen_id", slice);
+      result.menu_items += m.count ?? 0;
+      const b = await supabase.from("bins").delete({ count: "exact" }).in("canteen_id", slice);
+      result.bins += b.count ?? 0;
+      const t = await supabase.from("time_slots").delete({ count: "exact" }).in("canteen_id", slice);
+      result.time_slots += t.count ?? 0;
+    }
+  }
+
+  // 6. Delete profiles + auth users
+  if (profileIds.length) {
+    for (let i = 0; i < profileIds.length; i += 100) {
+      const slice = profileIds.slice(i, i + 100);
+      const p = await supabase.from("profiles").delete({ count: "exact" }).in("id", slice);
+      result.profiles += p.count ?? 0;
+    }
+    for (const id of profileIds) {
+      const { error } = await supabase.auth.admin.deleteUser(id);
+      if (!error) result.auth_users++;
+    }
+  }
+
+  // 7. Delete canteens last
+  if (canteenIds.length) {
+    for (let i = 0; i < canteenIds.length; i += 100) {
+      const r = await supabase.from("canteens").delete({ count: "exact" }).in("id", canteenIds.slice(i, i + 100));
+      result.canteens += r.count ?? 0;
+    }
+  }
+
+  return result;
 }
