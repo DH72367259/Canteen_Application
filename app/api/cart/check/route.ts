@@ -88,18 +88,32 @@ export async function POST(request: Request) {
   });
 
   // 3. Count orders already placed for this slot today
+  // Prod schema drift: orders has `slot_label` (or legacy `pickup_slot`),
+  // not `slot`. Try the modern column first then fall back gracefully so
+  // older deployments and dev DBs both work.
   const utcNow = new Date();
   const todayIST = new Date(utcNow.getTime() + 330 * 60000).toISOString().slice(0, 10);
-  const { data: existingOrders, error: ordErr } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("canteen_id", canteen_id)
-    .eq("slot", slot)
-    .gte("created_at", `${todayIST}T00:00:00+05:30`)
-    .not("status", "in", '("cancelled","refunded")');
-  if (ordErr) return Response.json({ error: ordErr.message }, { status: 500 });
+  const slotCols = ["slot_label", "pickup_slot", "slot"] as const;
+  let existingOrders: Array<{ id: string }> | null = null;
+  let lastErr: string | null = null;
+  for (const col of slotCols) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("canteen_id", canteen_id)
+      .eq(col, slot)
+      .gte("created_at", `${todayIST}T00:00:00+05:30`)
+      .not("status", "in", '("cancelled","refunded")');
+    if (!error) { existingOrders = (data ?? []) as Array<{ id: string }>; lastErr = null; break; }
+    lastErr = error.message;
+    // Only retry when the failure looks like a missing column.
+    if (!/column .* does not exist|undefined column/i.test(error.message)) break;
+  }
+  if (existingOrders === null) {
+    return Response.json({ error: lastErr ?? "Failed to load orders" }, { status: 500 });
+  }
 
-  const slotOrdersUsed = (existingOrders ?? []).length;
+  const slotOrdersUsed = existingOrders.length;
   const slotFull = slotOrdersUsed >= capacity.maxOrdersPerSlot;
 
   // 4. Compute bin plan with this canteen's per-bin settings
