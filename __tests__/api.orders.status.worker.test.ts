@@ -125,7 +125,7 @@ describe("PATCH /api/orders/[id]/status — pseudo-status: grace_bin", () => {
     expect(binsQB.update).toHaveBeenCalled();
     const binArg = (binsQB.update as jest.Mock).mock.calls[0][0];
     expect(binArg.is_occupied).toBe(false);
-    expect(binArg.current_order_id).toBeNull();
+    expect(binArg.assigned_order_id).toBeNull();
 
     // Notification queued
     expect(notificationsQB.insert).toHaveBeenCalled();

@@ -63,7 +63,6 @@ export async function PATCH(
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No editable fields." }, { status: 400 });
   }
-  updates.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("menu_items")
@@ -71,7 +70,10 @@ export async function PATCH(
     .eq("id", id)
     .select("*")
     .single();
-  if (error || !data) return NextResponse.json({ error: "Failed to update item." }, { status: 500 });
+  if (error || !data) {
+    console.error("[PATCH /api/canteen/menu/:id] update failed:", error);
+    return NextResponse.json({ error: error?.message || "Failed to update item." }, { status: 500 });
+  }
   return NextResponse.json({ item: data });
 }
 

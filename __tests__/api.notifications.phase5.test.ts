@@ -84,10 +84,10 @@ describe("POST /api/notifications (Phase 5 target_role)", () => {
     expect(j.error).toMatch(/target_role/);
   });
 
-  it("persists null target_role when omitted (legacy path)", async () => {
+  it("persists 'all_staff' target_role when omitted (legacy path mapped for prod DB)", async () => {
     mockGetRequestContext.mockResolvedValue(ADMIN);
     const res = await POST(reqBody({ title: "x", message: "y", recipient_type: "all" }));
     expect(res.status).toBe(200);
-    expect((notifQB.insert.mock.calls[0][0] as Record<string, unknown>).target_role).toBeNull();
+    expect((notifQB.insert.mock.calls[0][0] as Record<string, unknown>).target_role).toBe("all_staff");
   });
 });
