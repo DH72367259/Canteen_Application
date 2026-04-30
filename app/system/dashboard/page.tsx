@@ -44,19 +44,19 @@ export default function SuperAdminDashboard() {
               <strong>🏪 Manage Canteens</strong>
               <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Create, edit, and manage canteen locations</p>
             </Link>
-            <Link href="/system/users" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
+            <Link href="/system/users-control" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
               <strong>👥 User Management</strong>
               <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Control user roles and permissions</p>
             </Link>
-            <Link href="/system/campaigns" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
-              <strong>📢 Marketing Campaigns</strong>
-              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Send email campaigns for offers & festivals</p>
+            <Link href="/system/cities" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
+              <strong>🌆 Manage Cities</strong>
+              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>City-level operational configuration</p>
             </Link>
-            <Link href="/system/slots" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
-              <strong>⏰ Slot Settings</strong>
-              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>Control morning, afternoon & evening slot windows</p>
+            <Link href="/system/colleges" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
+              <strong>🎓 Manage Colleges</strong>
+              <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>College onboarding and configuration</p>
             </Link>
-            <Link href="/system/analytics" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
+            <Link href="/system/platform-analytics" style={{ display: "block", padding: "0.75rem", background: "#fff8ef", border: "1px solid #e8cfb4", borderRadius: "10px", textDecoration: "none", color: "inherit" }}>
               <strong>📊 Platform Analytics</strong>
               <p style={{ fontSize: "0.9rem", color: "#999", marginTop: "0.2rem" }}>View platform performance metrics</p>
             </Link>
