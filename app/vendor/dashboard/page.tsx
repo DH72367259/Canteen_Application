@@ -99,9 +99,11 @@ export default function VendorDashboard() {
       // If a Supabase session exists in storage we are mid-hydration — wait,
       // don't bounce. The auth-context will deliver the user shortly.
       if (typeof window !== "undefined") {
-        const keys = Object.keys(localStorage);
-        const hasSupabaseSession = keys.some(k => k.startsWith("sb-") && k.endsWith("-auth-token"));
-        if (hasSupabaseSession) return;
+        // Our supabase client uses storageKey: 'canteen_auth_v2' (see lib/supabase-client.ts).
+        // The historical 'sb-*-auth-token' check never matched, so this guard always failed,
+        // bouncing vendors to /login on every refresh and producing a student-login flicker.
+        const stored = localStorage.getItem("canteen_auth_v2");
+        if (stored && stored.length > 20) return;
       }
       router.replace("/login");
       return;

@@ -43,14 +43,21 @@ function getCachedProfile(userId: string): Partial<AuthUser> | null {
     if (!raw) return null
     const { uid, data, ts } = JSON.parse(raw)
     if (uid !== userId) return null
-    if (Date.now() - ts > 5 * 60 * 1000) return null // 5-min TTL
+    // 24h TTL — role/canteen rarely change. Keeps refreshes instant and avoids
+    // the role-flicker bug where a slow fetchProfile returned the 'user' fallback,
+    // downgrading admins/vendors to students for ~1s after refresh.
+    if (Date.now() - ts > 24 * 60 * 60 * 1000) return null
     return data as Partial<AuthUser>
   } catch { return null }
 }
 
 function setCachedProfile(userId: string, data: Partial<AuthUser>) {
   try {
-    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: userId, data, ts: Date.now() }))
+    // Strip the internal _resolved flag before persisting — it is only meaningful
+    // in-memory while the auth provider decides whether to trust a fetchProfile result.
+    const { _resolved, ...persist } = data as Partial<AuthUser> & { _resolved?: boolean }
+    void _resolved
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: userId, data: persist, ts: Date.now() }))
   } catch { /* SSR safe */ }
 }
 
@@ -120,8 +127,11 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 // ============================================================
 async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
   try {
+    // 10s timeout (was 3s) — slow Supabase regions + cellular cold-start
+    // were hitting the 3s ceiling and returning the role='user' fallback,
+    // which downgraded vendors/admins to the student dashboard on refresh.
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Profile fetch timed out')), 3000)
+      setTimeout(() => reject(new Error('Profile fetch timed out')), 10000)
     )
     const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).single()
     const { data } = await Promise.race([query, timeoutPromise])
@@ -153,9 +163,15 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
       phone: data?.phone ?? null,
       username: data?.username ?? null,
       canteenId,
-    }
+      // Mark this profile as authoritative so callers can distinguish a real
+      // student profile from the error-fallback below.
+      _resolved: true,
+    } as Partial<AuthUser> & { _resolved?: boolean }
   } catch {
-    return { role: 'user', walletBalance: 0 }
+    // _resolved=false signals to the auth provider: do NOT trust this role.
+    // It will be merged with whatever role we've already confirmed (roleRef)
+    // or with the JWT user_metadata.role as a last-resort fallback.
+    return { walletBalance: 0, _resolved: false } as Partial<AuthUser> & { _resolved?: boolean }
   }
 }
 
@@ -264,28 +280,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(builtUser)
             setLoading(false)
             // Silently refresh profile in background so stale data doesn't persist.
-            // Guard: a transient fetchProfile error returns role='user'; never downgrade an
+            // Guard: a transient fetchProfile error returns _resolved=false; never downgrade an
             // already-resolved privileged role here — it would bounce admins/vendors to /login
             // and trigger a redirect-loop flicker between dashboards.
             fetchProfile(session.user.id).then(fresh => {
+              const f = fresh as Partial<AuthUser> & { _resolved?: boolean }
+              if (f._resolved === false) return // network blip — keep cached profile
               const prevRole = roleRef.current
               const safeRole: UserRole = (
-                fresh.role === 'user' && prevRole !== null && prevRole !== 'user'
-              ) ? prevRole : (fresh.role ?? 'user')
-              const safeFresh = { ...fresh, role: safeRole }
+                f.role === 'user' && prevRole !== null && prevRole !== 'user'
+              ) ? prevRole : (f.role ?? 'user')
+              const safeFresh = { ...f, role: safeRole }
               setCachedProfile(session.user.id, safeFresh)
               const updated = buildAuthUser(session.user.id, session.user.email, { ...safeFresh, mustChangePassword, hasPassword })
-              if (updated.role === prevRole) return // no-op: avoid an unnecessary re-render
+              if (updated.role === prevRole && updated.canteenId === roleRef.current) return
               roleRef.current = updated.role
               setUser(updated)
             }).catch(() => {})
           } else {
-            const profile = await fetchProfile(session.user.id)
-            setCachedProfile(session.user.id, profile)
-            const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, mustChangePassword, hasPassword })
+            const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean }
+            // If profile fetch failed (timeout / network), do NOT downgrade to 'user'.
+            // Use the role embedded in the Supabase JWT user_metadata as a fallback,
+            // since super_admin / canteen_admin / vendor accounts are seeded with metadata.role.
+            // This is what fixes the "refresh → student login flicker → vendor dashboard" bug.
+            let resolvedProfile = profile
+            if (profile._resolved === false) {
+              const metaRole = (session.user.user_metadata?.role as UserRole) ?? null
+              resolvedProfile = { ...profile, role: metaRole ?? 'user' }
+            }
+            // Only persist authoritative profiles — unresolved fallbacks would poison the cache.
+            if (profile._resolved !== false) setCachedProfile(session.user.id, resolvedProfile)
+            const builtUser = buildAuthUser(session.user.id, session.user.email, { ...resolvedProfile, mustChangePassword, hasPassword })
             roleRef.current = builtUser.role
             setUser(builtUser)
             setLoading(false)
+            // Background retry: if we used the JWT-metadata fallback above, schedule a single
+            // retry to upgrade canteenId / displayName once the network is healthy.
+            if (profile._resolved === false) {
+              setTimeout(() => {
+                fetchProfile(session.user.id).then(retry => {
+                  const r = retry as Partial<AuthUser> & { _resolved?: boolean }
+                  if (r._resolved === false) return
+                  setCachedProfile(session.user.id, r)
+                  const updated = buildAuthUser(session.user.id, session.user.email, { ...r, mustChangePassword, hasPassword })
+                  roleRef.current = updated.role
+                  setUser(updated)
+                }).catch(() => {})
+              }, 2000)
+            }
           }
           registerSession(session.access_token).catch(() => {})
         } else {
@@ -342,17 +384,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
           return
         }
-        const profile = await fetchProfile(session.user.id)
-        setCachedProfile(session.user.id, profile)
+        const profile = await fetchProfile(session.user.id) as Partial<AuthUser> & { _resolved?: boolean }
+        // Same defence as the cold-start path: if profile fetch failed, prefer the
+        // previously-confirmed roleRef, then the JWT user_metadata.role, never silently 'user'.
+        let resolvedProfile = profile
+        if (profile._resolved === false) {
+          const metaRole = (session.user.user_metadata?.role as UserRole) ?? null
+          const fallbackRole = existingRole ?? metaRole ?? 'user'
+          resolvedProfile = { ...profile, role: fallbackRole }
+        }
+        if (profile._resolved !== false) setCachedProfile(session.user.id, resolvedProfile)
         // Guard: if fetchProfile returned the error-fallback role ('user') but we previously
         // confirmed a privileged role for this same session, keep the privileged role.
         // This prevents a transient DB timeout from kicking an admin to the student dashboard.
         const safeRole: UserRole = (
-          profile.role === 'user' &&
+          resolvedProfile.role === 'user' &&
           existingRole !== null &&
           existingRole !== 'user'
-        ) ? existingRole : (profile.role ?? 'user')
-        const builtUser = buildAuthUser(session.user.id, session.user.email, { ...profile, role: safeRole, mustChangePassword, hasPassword })
+        ) ? existingRole : (resolvedProfile.role ?? 'user')
+        const builtUser = buildAuthUser(session.user.id, session.user.email, { ...resolvedProfile, role: safeRole, mustChangePassword, hasPassword })
         roleRef.current = builtUser.role
         setUser(builtUser)
         // Only register a new active_sessions row on actual new logins, not background token refreshes.

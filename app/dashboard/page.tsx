@@ -90,6 +90,7 @@ export default function UserHomePage() {
       // give the auth provider a moment to finish restoring it instead of redirecting.
       let hasStoredSession = false;
       try {
+        // Storage key matches lib/supabase-client.ts (storageKey: 'canteen_auth_v2').
         const raw = localStorage.getItem("canteen_auth_v2");
         hasStoredSession = !!raw && raw.length > 20;
       } catch { /* SSR safe */ }

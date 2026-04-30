@@ -28,7 +28,16 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     if (loading) return; // wait for Supabase auth to settle
-    if (!user) { router.replace("/login"); return; }
+    if (!user) {
+      // If a Supabase session token is sitting in localStorage but hasn't hydrated yet,
+      // wait instead of bouncing — prevents the refresh → login flicker on slow networks.
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("canteen_auth_v2");
+        if (stored && stored.length > 20) return;
+      }
+      router.replace("/login");
+      return;
+    }
     if (user.role !== "super_admin" && user.role !== "co_admin") router.replace("/login");
   }, [user, loading, router]);
 

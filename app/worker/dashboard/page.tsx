@@ -40,8 +40,16 @@ export default function WorkerApp() {
   const [tab, setTab] = useState<"orders" | "bins" | "prep">("orders");
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/worker/login");
-    if (!loading && user && user.role !== "worker") router.replace("/");
+    if (loading) return;
+    if (!user) {
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("canteen_auth_v2");
+        if (stored && stored.length > 20) return;
+      }
+      router.replace("/worker/login");
+      return;
+    }
+    if (user.role !== "worker") router.replace("/");
   }, [user, loading, router]);
 
   if (loading || !user || user.role !== "worker") {
