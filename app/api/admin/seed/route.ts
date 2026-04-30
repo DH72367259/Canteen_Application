@@ -511,7 +511,7 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
       address: "Mysore Road, Bangalore",
       lat: 12.9279,
       lng: 77.4865,
-      status: "active",
+      status: "open",
       is_active: true,
     }).select("id").single();
     if (error || !data) { errors.push(`canteen ${u.canteenName}: ${error?.message}`); continue; }
@@ -526,9 +526,10 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
     });
   }
 
-  // Create users
+  // Create users (idempotent — if user exists, look them up and reuse)
   let usersCreated = 0;
   for (const u of WHITELIST) {
+    let userId: string | null = null;
     const { data, error } = await supabase.auth.admin.createUser({
       email: u.email,
       password: u.password,
@@ -537,10 +538,22 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
       phone_confirm: true,
       user_metadata: { has_password: true, role: u.role, password_changed_at: new Date().toISOString() },
     });
-    if (error || !data?.user) { errors.push(`create ${u.email}: ${error?.message}`); continue; }
+    if (error || !data?.user) {
+      // Probably already exists — try to find by email and update password
+      const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 200 });
+      const existing = list?.users?.find(x => x.email === u.email);
+      if (!existing) { errors.push(`create ${u.email}: ${error?.message ?? "unknown"}`); continue; }
+      userId = existing.id;
+      await supabase.auth.admin.updateUserById(existing.id, {
+        password: u.password,
+        user_metadata: { has_password: true, role: u.role, password_changed_at: new Date().toISOString() },
+      });
+    } else {
+      userId = data.user.id;
+    }
     const canteenId = u.canteenName ? canteenMap[u.canteenName] ?? null : null;
     const { error: profErr } = await supabase.from("profiles").upsert({
-      id: data.user.id, email: u.email, name: u.name, phone: u.phone, role: u.role,
+      id: userId, email: u.email, name: u.name, phone: u.phone, role: u.role,
       canteen_id: canteenId, wallet_balance: 0,
     }, { onConflict: "id" });
     if (profErr) errors.push(`profile ${u.email}: ${profErr.message}`);
