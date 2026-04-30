@@ -79,13 +79,13 @@ export async function GET(request: Request) {
   const richProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
     profiles(name),
-    bins(bin_code, color),
+    bins!orders_bin_id_fkey(bin_code, color),
     order_items(quantity, menu_items(name, is_meal))
   `;
   const baseProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
     profiles(name),
-    bins(bin_code, color),
+    bins!orders_bin_id_fkey(bin_code, color),
     order_items(quantity, menu_items(name, is_meal))
   `;
   const minimalProj: ProjBuilder = (sc) => `

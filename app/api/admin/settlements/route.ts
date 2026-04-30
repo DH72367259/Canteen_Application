@@ -5,7 +5,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const ctx = await getRequestContext(request);
-  if (!ctx || ctx.role !== "super_admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+  // co_admin can view settlements (read-only); only super_admin can mutate
+  // (POST handlers in /pay and /payout still gate on super_admin).
+  if (!ctx || (ctx.role !== "super_admin" && ctx.role !== "co_admin")) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const { searchParams } = new URL(request.url);
   const now = new Date();

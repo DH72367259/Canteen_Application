@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 // orders). Single endpoint keeps the polling story simple for the UI.
 export async function GET(request: Request) {
   const ctx = await getRequestContext(request);
-  if (!ctx || ctx.role !== "super_admin") {
+  // Both super_admin and co_admin can view platform stats. co_admin is the
+  // operations / read-only counterpart and the /system dashboard depends on
+  // this endpoint.
+  if (!ctx || (ctx.role !== "super_admin" && ctx.role !== "co_admin")) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const supabase = createAdminClient();

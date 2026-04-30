@@ -19,14 +19,21 @@ export async function GET(
       return Response.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Verify user owns this order or is staff
-    if (order.user_id !== context.uid && context.role !== 'canteen_admin' && context.role !== 'super_admin' && context.role !== 'vendor') {
+    // Verify user owns this order or is staff (any role that manages orders).
+    const isStaff = (
+      context.role === 'canteen_admin' ||
+      context.role === 'vendor' ||
+      context.role === 'worker' ||
+      context.role === 'super_admin' ||
+      context.role === 'co_admin'
+    );
+    if (order.user_id !== context.uid && !isStaff) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     return Response.json({ order });
   } catch (error) {
-    void error;
+    console.error('[GET /api/orders/:id] error:', error);
     return Response.json(
       { error: 'Failed to fetch order' },
       { status: 500 }
