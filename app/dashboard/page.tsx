@@ -116,20 +116,38 @@ export default function UserHomePage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    const order = localStorage.getItem("canteen_active_order");
-    if (order) {
+    // Read the active-order banner from localStorage. Run on every uid change
+    // and whenever the tab regains focus / the storage key changes (so a fresh
+    // order placed in /dashboard/cart is immediately visible when the user
+    // navigates back to /dashboard, even if Next router reuses the page from
+    // bfcache and the component itself doesn't re-mount).
+    const readActive = () => {
       try {
+        const order = localStorage.getItem("canteen_active_order");
+        if (!order) { setActiveOrder(null); return; }
         const parsed = JSON.parse(order);
         // Only honour the cached active order if it belongs to the currently
         // signed-in user. A stale banner for a previous (or deleted) account
-        // would otherwise render on this device after re-login.
-        if (!parsed?.uid || (user?.uid && parsed.uid === user.uid)) {
+        // would otherwise render on this device after re-login. If user is
+        // still loading (uid=undefined) we accept the entry tentatively rather
+        // than hiding the banner — the next render with the real uid will
+        // re-validate via this same path.
+        if (!parsed?.uid || !user?.uid || parsed.uid === user.uid) {
           setActiveOrder(parsed);
         } else {
           localStorage.removeItem("canteen_active_order");
+          setActiveOrder(null);
         }
-      } catch { /* invalid data */ localStorage.removeItem("canteen_active_order"); }
-    }
+      } catch { localStorage.removeItem("canteen_active_order"); setActiveOrder(null); }
+    };
+    readActive();
+    const onStorage = (e: StorageEvent) => { if (e.key === "canteen_active_order" || e.key === null) readActive(); };
+    const onFocus = () => readActive();
+    const onPageShow = () => readActive();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+
     const savedLoc = localStorage.getItem("canteen_student_location");
     const savedCoords = localStorage.getItem("canteen_student_coords");
     if (savedCoords) {
@@ -140,6 +158,11 @@ export default function UserHomePage() {
     } else {
       setShowLocationPicker(true);
     }
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, [user?.uid]);
 
   // Auto-focus search + reset GPS error state when picker opens

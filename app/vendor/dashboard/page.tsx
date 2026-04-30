@@ -969,7 +969,18 @@ function VendorMenuView({ session }: { session: { access_token: string } | null 
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{item.name}</div>
               <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
-                ₹{item.price} · {item.productionType === "batch" ? `Batch · ${item.capacity} plates` : `Made to order · ${item.capacity}/slot`}
+                ₹{item.price} · {(() => {
+                  // Per client spec (PDF "No of plates or plates per slot, Meal
+                  // or snack, must be shown"): every menu row must surface its
+                  // production type AND a meaningful quantity. Treat capacity=0
+                  // as "Unlimited" rather than rendering the misleading "0 plates"
+                  // badge that legacy rows (added before quantity was required)
+                  // would otherwise show.
+                  if (item.productionType === "batch") {
+                    return item.capacity > 0 ? `Batch · ${item.capacity} plates` : "Batch · Unlimited";
+                  }
+                  return item.capacity > 0 ? `Made to order · ${item.capacity}/slot` : "Made to order · No cap";
+                })()}
                 {" · "}{item.serveType === "meals" ? "🍽️ Meal (on plate)" : "🥡 Snack (no plate)"}
               </div>
             </div>

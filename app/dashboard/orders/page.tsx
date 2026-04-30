@@ -52,8 +52,20 @@ export default function MyOrdersPage() {
   const [invLoading,   setInvLoading]   = useState(false);
   const [reorderMsg,   setReorderMsg]   = useState<string | null>(null);
 
-  // Auth guard
-  useEffect(() => { if (!loading && !user) router.push("/login"); }, [user, loading, router]);
+  // Auth guard — same pattern as /dashboard: never bounce to /login while a
+  // Supabase session token is sitting in localStorage waiting to hydrate, and
+  // always send the user to the student login screen with the correct role param.
+  useEffect(() => {
+    if (loading) return;
+    if (user) return;
+    let hasStoredSession = false;
+    try {
+      const raw = localStorage.getItem("canteen_auth_v2");
+      hasStoredSession = !!raw && raw.length > 20;
+    } catch { /* SSR safe */ }
+    if (hasStoredSession) return;
+    router.replace("/login?role=user");
+  }, [user, loading, router]);
 
   // Fetch orders from DB
   const fetchOrders = useCallback(async () => {
@@ -93,14 +105,24 @@ export default function MyOrdersPage() {
     } catch { /* ignore */ } finally { setInvLoading(false); }
   }
 
-  // Active order from localStorage
-  const [activeOrder, setActiveOrder] = useState<{ id: string; bin: string; otp: string; slot: string; items: string } | null>(null);
+  // Active order banner is shown ONLY on /dashboard and /dashboard/order-status
+  // (per client spec: OTP must never appear on the My Orders page, and the user
+  // must NOT have a self-serve "Mark as collected" button — only canteen staff can
+  // mark an order picked up). Keep a compact pointer instead so the user can jump
+  // back to the live status screen.
+  const [hasActiveOrder, setHasActiveOrder] = useState<{ id: string; slot: string } | null>(null);
   useEffect(() => {
     try {
       const ao = localStorage.getItem("canteen_active_order");
-      if (ao) setActiveOrder(JSON.parse(ao));
+      if (!ao) return;
+      const parsed = JSON.parse(ao);
+      if (parsed?.uid && user?.uid && parsed.uid !== user.uid) {
+        localStorage.removeItem("canteen_active_order");
+        return;
+      }
+      setHasActiveOrder({ id: parsed.id, slot: parsed.slot });
     } catch { /* ignore */ }
-  }, []);
+  }, [user?.uid]);
 
   const completed = dbOrders.filter(o => o.rawStatus === "collected" || o.status === "completed");
   const active    = dbOrders.filter(o => !["collected", "cancelled"].includes(o.rawStatus ?? o.status) && o.rawStatus !== "completed");
@@ -137,28 +159,23 @@ export default function MyOrdersPage() {
         {/* ── ACTIVE ORDERS TAB ── */}
         {tab === "orders" && (
           <>
-            {/* LocalStorage active order (OTP card) */}
-            {activeOrder && (
-              <div className="card" style={{ padding: "1rem" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: "0.25rem" }}>{activeOrder.id}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--ink-3)", marginBottom: "0.5rem" }}>{activeOrder.slot}</div>
-                <div style={{ background: "var(--green-light)", border: "1px solid #bbf7d0", borderRadius: 12, padding: "0.75rem", marginTop: "0.25rem" }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803d", textTransform: "uppercase", marginBottom: "0.3rem" }}>
-                    Show this OTP at pickup · {activeOrder.bin}
-                  </div>
-                  <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: "0.3em", color: "var(--ink)" }}>{activeOrder.otp}</div>
-                  <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Canteen staff will confirm using this OTP.</div>
+            {/* Compact pointer to /dashboard/order-status (OTP + Mark-Picked
+                live ONLY there, per client spec). No OTP, no "Mark as collected"
+                button on this page — those are wrong placement. */}
+            {hasActiveOrder && (
+              <Link href="/dashboard/order-status" className="card" style={{ padding: "0.85rem", display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit", border: "1.5px solid var(--orange)", background: "#fff7ed" }}>
+                <div>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "var(--orange)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Order in progress</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.92rem", marginTop: "0.15rem" }}>{hasActiveOrder.slot}</div>
+                  <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.1rem" }}>Tap to view bin & OTP</div>
                 </div>
-                <button className="btn btn-outline btn-full" style={{ marginTop: "0.75rem", fontSize: "0.82rem", padding: "0.5rem" }}
-                  onClick={() => { localStorage.removeItem("canteen_active_order"); setActiveOrder(null); }}>
-                  Mark as collected
-                </button>
-              </div>
+                <span style={{ fontSize: "1.3rem", color: "var(--orange)" }}>›</span>
+              </Link>
             )}
 
             {/* DB active orders */}
             {fetching && <p style={{ color: "var(--ink-3)", fontSize: "0.85rem" }}>Loading…</p>}
-            {!fetching && active.length === 0 && !activeOrder && (
+            {!fetching && active.length === 0 && !hasActiveOrder && (
               <div className="empty-state">
                 <span className="empty-icon">📦</span>
                 <h3>No active orders</h3>

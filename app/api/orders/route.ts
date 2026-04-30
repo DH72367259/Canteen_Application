@@ -60,13 +60,21 @@ export async function GET(request: Request) {
     const context = await getRequestContext(request);
     if (!context) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-    let orders;
+    let orders: Awaited<ReturnType<typeof listRecentOrders>> = [];
     if (canManageOrders(context.role)) {
-      // Workers only see their own canteen's orders; admins see all
-      if (context.role === "worker" && context.canteenId) {
+      // Multi-tenant isolation: vendor / canteen_admin / worker only ever see
+      // their own canteen's orders. Only super_admin / co_admin (no canteen)
+      // see the global feed. Without this, two canteen admins logging in on
+      // the same instance would each see every other canteen's live orders.
+      const isPlatformAdmin = (context.role === "super_admin" || context.role === "co_admin") && !context.canteenId;
+      if (isPlatformAdmin) {
+        orders = await listRecentOrders(200);
+      } else if (context.canteenId) {
         orders = await listRecentOrders(200, context.canteenId);
       } else {
-        orders = await listRecentOrders(200);
+        // Staff role with no assigned canteen — return nothing rather than
+        // leaking another canteen's orders.
+        orders = [];
       }
     } else {
       orders = await listOrdersForUser(context.uid);
