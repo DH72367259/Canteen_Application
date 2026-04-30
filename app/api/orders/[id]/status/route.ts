@@ -84,10 +84,21 @@ export async function PATCH(
       await supabase.from("bins").update({
         is_occupied: false,
         current_order_id: null,
+        assigned_order_id: null,
+        order_id: null,
         status: "empty",
         updated_at: new Date().toISOString(),
       }).eq("id", o.bin_id);
     }
+    // Phase 8: also free any rack bins linked via assigned_order_id (multi-bin)
+    await supabase.from("bins").update({
+      is_occupied: false,
+      current_order_id: null,
+      assigned_order_id: null,
+      order_id: null,
+      status: "empty",
+      updated_at: new Date().toISOString(),
+    }).eq("assigned_order_id", orderId);
   }
 
   // ── Pseudo: skip ───────────────────────────────────────────────
@@ -177,11 +188,18 @@ export async function PATCH(
   }
 
   if (status === "collected") {
-    await supabase.from("bins").update({
+    // Phase 8: free every bin linked to this order via either legacy
+    // current_order_id or new assigned_order_id (multi-bin orders).
+    const freeUpdate = {
       is_occupied: false,
       current_order_id: null,
+      assigned_order_id: null,
+      order_id: null,
+      status: "empty",
       updated_at: new Date().toISOString(),
-    }).eq("current_order_id", orderId);
+    };
+    await supabase.from("bins").update(freeUpdate).eq("current_order_id", orderId);
+    await supabase.from("bins").update(freeUpdate).eq("assigned_order_id", orderId);
   }
 
   const { data: updated, error } = await supabase

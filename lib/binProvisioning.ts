@@ -76,7 +76,14 @@ export async function ensureBinsForCanteen(
 
   const toInsert = targetCodes
     .filter(t => !have.has(t.bin_code))
-    .map(t => ({ canteen_id: canteenId, bin_code: t.bin_code, color: t.color }));
+    .map(t => ({
+      canteen_id: canteenId,
+      bin_code:   t.bin_code,
+      color:      t.color,
+      zone_color: t.color,
+      bin_number: t.bin_number,
+      status:     "empty",
+    }));
 
   if (toInsert.length === 0) return 0;
   const { error } = await supabase.from("bins").insert(toInsert);

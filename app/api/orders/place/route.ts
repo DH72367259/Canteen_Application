@@ -113,15 +113,46 @@ export async function POST(req: NextRequest) {
   // saturated that there aren't enough free bins, fail loudly so the user
   // can pick a different slot rather than silently losing items.
   const binsNeeded = binPlan.bins.length;
+  // Pull the entire free bin pool ordered by colour-zone then bin number so
+  // we can hand out same-colour ADJACENT bins for multi-bin orders ("Place
+  // Part 1 in #RED004, Part 2 in #RED005"). Falls back to any free bins if
+  // no contiguous run exists.
   const { data: freeBins } = await supabase
     .from("bins")
-    .select("id, bin_code, color")
+    .select("id, bin_code, color, zone_color, bin_number")
     .eq("canteen_id", canteenId)
     .eq("is_occupied", false)
-    .order("bin_code")
-    .limit(binsNeeded);
+    .order("zone_color", { ascending: true })
+    .order("bin_number", { ascending: true });
 
-  const allocated = (freeBins ?? []) as Array<{ id: string; bin_code: string; color: string | null }>;
+  type FreeBin = { id: string; bin_code: string; color: string | null; zone_color: string | null; bin_number: number | null };
+  const pool = (freeBins ?? []) as FreeBin[];
+
+  // Pick same-colour adjacent run when possible.
+  function pickContiguous(n: number): FreeBin[] | null {
+    if (n <= 1) return pool.length >= 1 ? [pool[0]] : null;
+    const byZone = new Map<string, FreeBin[]>();
+    for (const b of pool) {
+      const z = (b.zone_color || b.color || "_").toLowerCase();
+      if (!byZone.has(z)) byZone.set(z, []);
+      byZone.get(z)!.push(b);
+    }
+    for (const list of byZone.values()) {
+      list.sort((a, b) => (a.bin_number ?? 0) - (b.bin_number ?? 0));
+      for (let i = 0; i + n <= list.length; i++) {
+        let ok = true;
+        for (let k = 1; k < n; k++) {
+          const prev = list[i + k - 1].bin_number ?? -1;
+          const cur  = list[i + k].bin_number ?? -2;
+          if (cur !== prev + 1) { ok = false; break; }
+        }
+        if (ok) return list.slice(i, i + n);
+      }
+    }
+    return null;
+  }
+
+  const allocated: FreeBin[] = pickContiguous(binsNeeded) ?? pool.slice(0, binsNeeded);
   if (allocated.length < binsNeeded) {
     // Fall back gracefully when only one or zero bins exist (typical for a
     // freshly-seeded test canteen). Pad with synthetic placeholders so the
@@ -134,6 +165,8 @@ export async function POST(req: NextRequest) {
         id: "",
         bin_code: String(Math.floor(Math.random() * 8) + 1),
         color: ["red", "blue", "green", "yellow"][Math.floor(Math.random() * 4)],
+        zone_color: null,
+        bin_number: null,
       });
     } else if (allocated.length < binsNeeded) {
       return Response.json({
@@ -253,9 +286,19 @@ export async function POST(req: NextRequest) {
   // Mark every allocated bin as occupied + linked to this order
   const allocatedIds = allocated.map(b => b.id).filter((x): x is string => !!x);
   if (allocatedIds.length > 0) {
+    // Phase 8: also stamp `assigned_order_id` and set status='reserved' so
+    // the rack UI shows the bin as taken even before the worker has placed
+    // the food. The worker dashboard flips status='occupied' when each part
+    // is physically placed.
     await supabase
       .from("bins")
-      .update({ is_occupied: true, order_id: order.id, updated_at: new Date().toISOString() })
+      .update({
+        is_occupied: true,
+        order_id: order.id,
+        assigned_order_id: order.id,
+        status: "reserved",
+        updated_at: new Date().toISOString(),
+      })
       .in("id", allocatedIds);
   }
 

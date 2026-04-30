@@ -410,6 +410,45 @@ export default function VendorDashboard() {
     return true;
   });
 
+  // ── Phase 8: rack-style colour rows ───────────────────────────────────
+  // Split the bins into the 6 colour zones in the same order as the physical
+  // rack (red→orange) so the manager sees one row per colour. Distribution
+  // mirrors lib/binProvisioning.ts: floor(max/6) per zone + 1 extra to the
+  // first `max%6` zones.
+  const RACK_ZONES = [
+    { key: "red",    label: "RED",    abbr: "RED", color: "#dc2626" },
+    { key: "yellow", label: "YELLOW", abbr: "YEL", color: "#eab308" },
+    { key: "green",  label: "GREEN",  abbr: "GRE", color: "#16a34a" },
+    { key: "blue",   label: "BLUE",   abbr: "BLU", color: "#2563eb" },
+    { key: "purple", label: "PURPLE", abbr: "PUR", color: "#9333ea" },
+    { key: "orange", label: "ORANGE", abbr: "ORA", color: "#ea580c" },
+  ] as const;
+  type RackBin = Bin & { zoneKey: string; zoneAbbr: string; zoneColor: string; zoneNumber: number };
+  const rackRows: { zone: typeof RACK_ZONES[number]; bins: RackBin[] }[] = [];
+  if (maxBins > 0) {
+    const base = Math.floor(maxBins / 6);
+    const extra = maxBins % 6;
+    let cursor = 0;
+    RACK_ZONES.forEach((zone, zi) => {
+      const count = base + (zi < extra ? 1 : 0);
+      const row: RackBin[] = [];
+      for (let n = 1; n <= count; n++) {
+        const flatIdx = cursor + n; // 1-based across the whole rack
+        const src = filteredFullGrid.find(b => b.number === flatIdx) ?? fullBinGrid[flatIdx - 1];
+        if (!src) continue;
+        row.push({
+          ...src,
+          zoneKey:    zone.key,
+          zoneAbbr:   zone.abbr,
+          zoneColor:  zone.color,
+          zoneNumber: n,
+        });
+      }
+      cursor += count;
+      rackRows.push({ zone, bins: row });
+    });
+  }
+
   const uniqueSlots = Array.from(new Set(bins.filter(b => b.slot).map(b => b.slot as string)));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
 
@@ -595,9 +634,93 @@ export default function VendorDashboard() {
                 <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
                 <p style={{ fontSize: "0.82rem" }}>Configure Slot and Bin Control → Max Bins to display the full bin grid here.</p>
               </div>
+            ) : (maxBins > 0) ? (
+              // ── Phase 8 colour rack: 6 horizontal colour rows, each with
+              //     pill cards numbered 1..n inside that zone. Empty bins
+              //     stay tinted in their zone colour so the rack reads as a
+              //     real physical rack at a glance.
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem", padding: "0.5rem 0" }}>
+                {rackRows.map(({ zone, bins: zoneBins }) => zoneBins.length > 0 && (
+                  <div key={zone.key} style={{ display: "flex", alignItems: "stretch", gap: "0.6rem" }}>
+                    <div style={{
+                      minWidth: 84, padding: "0.5rem 0.6rem", borderRadius: 10,
+                      background: zone.color, color: "#fff", fontWeight: 800,
+                      fontSize: "0.78rem", display: "flex", alignItems: "center",
+                      justifyContent: "center", letterSpacing: "0.5px",
+                    }}>{zone.label}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: "0.5rem", flex: 1 }}>
+                      {zoneBins.map(bin => {
+                        const badgeLabel =
+                          bin.status === "placed" || bin.status === "preparing" ? "Reserved" :
+                          bin.status === "completed" ? "Occupied" :
+                          bin.status === "delayed"   ? "Late Pickup" :
+                          "Empty";
+                        const badgeKey =
+                          bin.status === "placed" || bin.status === "preparing" ? "reserved" :
+                          bin.status === "completed" ? "occupied" :
+                          bin.status === "delayed"   ? "late" :
+                          "empty";
+                        return (
+                          <div
+                            key={bin.id}
+                            className={`bin-card ${bin.status}`}
+                            onClick={() => bin.status !== "empty" && handleBinClick(bin)}
+                            style={{
+                              cursor: bin.status === "empty" ? "default" : "pointer",
+                              borderLeft: `4px solid ${bin.zoneColor}`,
+                              opacity: bin.status === "empty" ? 0.78 : 1,
+                            }}
+                          >
+                            <span className={`bin-status-badge ${badgeKey}`}>{badgeLabel}</span>
+                            <div className="bin-number" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                              {bin.status !== "empty" && <span className="bin-status-dot" />}
+                              <span style={{ color: bin.zoneColor, fontWeight: 800 }}>#{bin.zoneAbbr}{String(bin.zoneNumber).padStart(3, "0")}</span>
+                            </div>
+                            {bin.orderId ? (
+                              <>
+                                <div className="bin-order-id">{bin.orderId}</div>
+                                <div className="bin-customer">{bin.customerName}</div>
+                                <div className="bin-slot">{bin.slot} · {bin.items}</div>
+                                {(bin.binCount ?? 1) > 1 && (
+                                  <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
+                                    📦 {bin.binCount} bins required
+                                  </div>
+                                )}
+                                {bin.status === "placed" && bin.rawOrderId && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
+                                    style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                  >
+                                    ✓ Accept
+                                  </button>
+                                )}
+                                {bin.status === "preparing" && bin.rawOrderId && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
+                                    style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                  >
+                                    ✓ Mark Ready
+                                  </button>
+                                )}
+                                {bin.status === "completed" && (
+                                  <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
+                                    Ready for pickup — tap to verify OTP
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Available</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
             <div className="bin-grid">
-              {(maxBins > 0 ? filteredFullGrid : visibleSlotBins).map(bin => {
+              {visibleSlotBins.map(bin => {
                 const badgeLabel =
                   bin.status === "placed" || bin.status === "preparing" ? "Reserved" :
                   bin.status === "completed" ? "Occupied" :

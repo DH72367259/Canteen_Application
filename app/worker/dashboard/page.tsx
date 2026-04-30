@@ -123,6 +123,10 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
   const [updating, setUpdating]       = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [fetching, setFetching]       = useState(true);
+  // Phase 8 progressive flow: how many bins of the current multi-bin order
+  // have already been physically placed. Resets when the active order changes.
+  const [placedIdx, setPlacedIdx]     = useState(0);
+  const lastOrderIdRef                = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchOrders = useCallback(async () => {
@@ -147,6 +151,12 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
         .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
       setCurrent(pending[0] ?? null);
       setRemaining(pending.length);
+      // Reset progressive placement counter when active order changes.
+      const newId = pending[0]?.id ?? null;
+      if (newId !== lastOrderIdRef.current) {
+        lastOrderIdRef.current = newId;
+        setPlacedIdx(0);
+      }
     } catch { /* retry */ }
     finally { setFetching(false); }
   }, [session]);
@@ -209,14 +219,42 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
   const binCode   = currentOrder.binLabel ?? currentOrder.bin_code ?? currentOrder.bin_number ?? "?";
   const isReady   = (currentOrder.rawStatus ?? currentOrder.status) === "ready_for_placement";
 
+  // Phase 8 progressive placement: cycle through binAssignments one at a time
+  // so the worker confirms "Placed in #RED004" → "Placed in #RED005" rather
+  // than verifying the whole order in a single tap.
+  const assignments    = currentOrder.binAssignments ?? [];
+  const totalBins      = assignments.length || (currentOrder.binCount ?? 1);
+  const isMultiBin     = totalBins > 1 && assignments.length > 0;
+  const currentBin     = isMultiBin ? assignments[Math.min(placedIdx, assignments.length - 1)] : null;
+  const remainingBins  = isMultiBin ? Math.max(totalBins - placedIdx, 0) : 0;
+  const placeBtnLabel  = !isMultiBin
+    ? "Placed (double verify)"
+    : (placedIdx < totalBins - 1
+        ? `Placed in ${currentBin?.binLabel ?? ""} → next bin`
+        : `Placed in ${currentBin?.binLabel ?? ""} (final)`);
+  const onPlaceClick = () => {
+    if (!isMultiBin) { setShowConfirm(true); return; }
+    if (placedIdx < totalBins - 1) {
+      setPlacedIdx(i => i + 1);
+    } else {
+      setShowConfirm(true);
+    }
+  };
+
   return (
     <div style={{ padding: "1rem" }}>
       {prepSlot && <SlotBanner label={`Now Prepare ${prepSlot}`} />}
       <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600, marginBottom: "0.5rem" }}>
         Orders remaining: <strong style={{ color: "#1e293b" }}>{remaining}</strong>
       </div>
-      <OrderCard order={currentOrder} binColor={binColor} binCode={binCode} footer={
+      <OrderCard order={currentOrder} binColor={binColor} binCode={binCode} highlightBinIndex={isMultiBin ? placedIdx : undefined} footer={
         <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {isReady && isMultiBin && (
+            <div style={{ background: "#fff7ed", border: "1.5px solid #fed7aa", borderRadius: 10, padding: "0.55rem 0.75rem", fontSize: "0.82rem", color: "#9a3412", fontWeight: 700, textAlign: "center" }}>
+              Step {placedIdx + 1} of {totalBins} — Place in <strong>{currentBin?.binLabel}</strong>
+              <div style={{ fontSize: "0.7rem", fontWeight: 500, marginTop: "0.2rem" }}>{remainingBins} bin{remainingBins !== 1 ? "s" : ""} remaining</div>
+            </div>
+          )}
           {!isReady && (
             <button onClick={() => updateStatus(currentOrder.id, "skip")} disabled={updating} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 12, padding: "0.8rem", fontWeight: 700, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }}>
               To Prepare → Next order
@@ -228,8 +266,8 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
             </button>
           )}
           {isReady && (
-            <button onClick={() => setShowConfirm(true)} disabled={updating} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 12, padding: "0.9rem", fontWeight: 800, fontSize: "1rem", cursor: "pointer", boxShadow: "0 4px 12px rgba(34,197,94,0.35)" }}>
-              {updating ? "Updating…" : "Placed (double verify)"}
+            <button onClick={onPlaceClick} disabled={updating} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 12, padding: "0.9rem", fontWeight: 800, fontSize: "1rem", cursor: "pointer", boxShadow: "0 4px 12px rgba(34,197,94,0.35)" }}>
+              {updating ? "Updating…" : placeBtnLabel}
             </button>
           )}
         </div>
@@ -275,7 +313,7 @@ function SlotBanner({ label, color = "#f97316", bg = "#fff7ed" }: { label: strin
   );
 }
 
-function OrderCard({ order, binColor, binCode, footer }: { order: WorkerOrder; binColor: string; binCode: string | number; footer: React.ReactNode }) {
+function OrderCard({ order, binColor, binCode, footer, highlightBinIndex }: { order: WorkerOrder; binColor: string; binCode: string | number; footer: React.ReactNode; highlightBinIndex?: number }) {
   // PDF page 4 mock: big tile shows just the bin number (e.g. "2"), with the
   // canonical code "#RED002" underneath in monospace. Parse the canonical
   // bin_code (`#RED001`, `#YEL012`, …) to extract the trailing number.
@@ -299,20 +337,33 @@ function OrderCard({ order, binColor, binCode, footer }: { order: WorkerOrder; b
       {/* Phase 7: per-bin placement instructions */}
       {isMultiBin && order.binAssignments ? (
         <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
-          {order.binAssignments.map((b, idx) => (
-            <div key={b.binIndex} style={{ paddingBottom: "0.5rem", marginBottom: idx < order.binAssignments!.length - 1 ? "0.5rem" : 0, borderBottom: idx < order.binAssignments!.length - 1 ? "1px dashed #fde68a" : "none" }}>
-              <div style={{ fontWeight: 800, fontSize: "0.86rem", color: "#9a3412", marginBottom: "0.3rem" }}>
-                Place in Bin {b.binLabel}
-              </div>
-              {b.items.map((it, j) => (
-                <div key={j} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.3rem 0" }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 7, background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>{it.isMeal ? "🍽️" : "🥪"}</div>
-                  <span style={{ flex: 1, fontWeight: 600, fontSize: "0.9rem" }}>{it.name}</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1e293b" }}>×{it.quantity}</span>
+          {order.binAssignments.map((b, idx) => {
+            const isCurrent = highlightBinIndex !== undefined && idx === highlightBinIndex;
+            const isDone    = highlightBinIndex !== undefined && idx < highlightBinIndex;
+            return (
+              <div key={b.binIndex} style={{
+                paddingBottom: "0.5rem",
+                marginBottom: idx < order.binAssignments!.length - 1 ? "0.5rem" : 0,
+                borderBottom: idx < order.binAssignments!.length - 1 ? "1px dashed #fde68a" : "none",
+                opacity: isDone ? 0.45 : 1,
+                background: isCurrent ? "rgba(234,179,8,0.12)" : "transparent",
+                borderRadius: isCurrent ? 8 : 0,
+                padding: isCurrent ? "0.4rem 0.5rem" : undefined,
+              }}>
+                <div style={{ fontWeight: 800, fontSize: "0.86rem", color: isDone ? "#16a34a" : "#9a3412", marginBottom: "0.3rem" }}>
+                  {isDone ? "✓ Placed in" : "Place in"} Bin {b.binLabel}
+                  {isCurrent && <span style={{ marginLeft: "0.4rem", fontSize: "0.7rem", background: "#eab308", color: "#fff", padding: "0.1rem 0.4rem", borderRadius: 999 }}>NOW</span>}
                 </div>
-              ))}
-            </div>
-          ))}
+                {b.items.map((it, j) => (
+                  <div key={j} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.3rem 0" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 7, background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>{it.isMeal ? "🍽️" : "🥪"}</div>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: "0.9rem" }}>{it.name}</span>
+                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1e293b" }}>×{it.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div style={{ background: "#fef9ef", margin: "0 0.75rem 0.75rem", borderRadius: 12, border: "1px solid #fde68a", padding: "0.5rem 0.75rem" }}>
