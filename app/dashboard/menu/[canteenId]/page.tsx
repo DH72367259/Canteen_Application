@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { getCurrentMealPeriod, categoryToMealPeriod, MEAL_LABEL } from "@/lib/mealPeriod";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
 const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {};
@@ -95,6 +96,20 @@ export default function CanteenMenuPage() {
     ? items
     : items.filter(i => i.category === activeCategory);
 
+  // ── Meal-period gating (client request 2026-04-30) ────────────────────
+  // Only show items whose vendor-assigned category matches the current meal
+  // window (breakfast 7-11, lunch 11-3, snacks 3-6, dinner 6-10). Items the
+  // vendor never tagged (no recognisable category) stay visible so legacy
+  // menus aren't accidentally hidden. Outside meal windows we don't filter.
+  const currentMeal = getCurrentMealPeriod();
+  const mealFilteredItems = currentMeal
+    ? visibleItems.filter(i => {
+        const m = categoryToMealPeriod(i.category);
+        return m === null || m === currentMeal;
+      })
+    : visibleItems;
+  const hiddenByMeal = currentMeal ? visibleItems.length - mealFilteredItems.length : 0;
+
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const addItem = (item: { id: string; name: string; price: number }) => {
@@ -172,19 +187,27 @@ export default function CanteenMenuPage() {
 
       {/* Menu items */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem", paddingBottom: cartCount > 0 ? "8rem" : "5rem" }}>
+        {currentMeal && (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.55rem 0.85rem", fontSize: "0.78rem", color: "#9a3412", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <span style={{ fontSize: "1rem" }}>⏰</span>
+            <span>Showing <strong>{MEAL_LABEL[currentMeal]}</strong> menu only{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
+          </div>
+        )}
         {menuLoading && (
           <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem 0", fontSize: "0.85rem" }}>Loading menu…</div>
         )}
         {!menuLoading && menuError && (
           <div style={{ textAlign: "center", color: "#b91c1c", padding: "1.5rem 0", fontSize: "0.85rem" }}>{menuError}</div>
         )}
-        {!menuLoading && !menuError && visibleItems.length === 0 && (
+        {!menuLoading && !menuError && mealFilteredItems.length === 0 && (
           <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2.5rem 0", fontSize: "0.9rem" }}>
             <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
-            No items available right now.
+            {currentMeal && visibleItems.length > 0
+              ? `No ${currentMeal} items available right now.`
+              : "No items available right now."}
           </div>
         )}
-        {visibleItems.map(item => {
+        {mealFilteredItems.map(item => {
           const inCart = cart.find(c => c.id === item.id);
           return (
             <div key={item.id} className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "center", opacity: isClosed ? 0.6 : 1 }}>

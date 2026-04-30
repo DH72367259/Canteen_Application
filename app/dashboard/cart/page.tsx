@@ -102,11 +102,10 @@ function CartContent() {
 
   // Preload Razorpay checkout.js as soon as the cart mounts so the click on
   // "Pay" feels instant and we surface CDN failures (network/CSP/AdBlock) up
-  // front instead of after the user clicks Pay. Idempotent — safe to call
-  // even if the script is already in the DOM.
-  useEffect(() => {
-    void loadRazorpay();
-  }, []);
+  // We no longer eagerly preload the Razorpay SDK — it's only loaded if the
+  // server says we're not in PAYMENT_TEST_MODE (see handleCheckout below).
+  // This avoids a noisy "Couldn't load Razorpay" error when the SDK is
+  // unreachable but the server is in test mode anyway.
 
   // ── Fetch live slots from canteen, auto-refresh every 60s ──────────────
   useEffect(() => {
@@ -265,13 +264,9 @@ function CartContent() {
 
     if (payable === 0) { await finaliseOrder("WALLET"); return; }
 
-    const loaded = await loadRazorpay();
-    if (!loaded) {
-      setError("Couldn't load Razorpay. This is usually caused by an ad-blocker or unstable network — please disable any blocker for this site, check your connection, and try again.");
-      setBusy(false);
-      return;
-    }
-
+    // 1. Create the Razorpay (or test-mode) order FIRST. The server tells us
+    //    whether we're in test mode — if we are, we skip loading the SDK
+    //    entirely so a blocked CDN / ad-blocker doesn't break testing.
     let orderData: { orderId: string; amount: number; currency: string; keyId: string; testMode?: boolean };
     try {
       const res = await fetch("/api/payments/razorpay-order", {
@@ -332,6 +327,14 @@ function CartContent() {
         setError("Test payment failed unexpectedly.");
         setBusy(false);
       }
+      return;
+    }
+
+    // 2. Real Razorpay path — only here do we need the SDK.
+    const loaded = await loadRazorpay();
+    if (!loaded) {
+      setError("Couldn't load Razorpay. This is usually caused by an ad-blocker or unstable network — please disable any blocker for this site, check your connection, and try again.");
+      setBusy(false);
       return;
     }
 
