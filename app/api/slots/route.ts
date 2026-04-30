@@ -78,6 +78,12 @@ export async function GET(request: Request) {
     // exactly when the canteen begins preparing it. This also matches the
     // "order before 12:45 for 1:00 slot" rule on the Vendor flow doc.
     const cutoff = nowMin + duration;
+    // Client request 2026-04-30: cap visible slots to the next ~60 minutes
+    // so the picker shows e.g. 8:10 → 9:10 only, not the whole day. Keeps
+    // the UI scannable on phones and matches user mental model (pick within
+    // the next hour). 60 + duration accounts for slots that extend just
+    // past the hour (e.g. 8:45–9:00 still shows when nowMin=8:00).
+    const windowEndMin = nowMin + 60 + duration;
 
     // Fetch today's order counts grouped by slot label. Resilient against
     // prod schema drift: prod may have `slot_label` (new) or `pickup_slot`
@@ -122,6 +128,7 @@ export async function GET(request: Request) {
       for (const p of pieces) {
         const startMin = hhmmToMinutes(p.start);
         if (startMin < cutoff) continue;
+        if (startMin > windowEndMin) continue;
         const label = rangeLabel(p.start, p.end);
         const id = `${winStart}-${p.start}`;
         const booked = counts.get(label) || 0;

@@ -59,6 +59,11 @@ export default function VendorDashboard() {
   }, []);
   const [bins, setBins] = useState<Bin[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
+  // Total bin slots configured for this canteen (Slot Control → Max Bins).
+  // Drives the "show every bin on Live Orders" grid (client request 2026-04-30
+  // matching the screenshot mock). Defaults to 0 until slot_control loads so
+  // the grid stays empty rather than showing 60 phantom bins.
+  const [maxBins, setMaxBins] = useState<number>(0);
   const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
   const [slotsConfigured, setSlotsConfigured] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("vendor_slots_configured") === "true"
@@ -272,6 +277,29 @@ export default function VendorDashboard() {
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
   }, [fetchOrders]);
 
+  // Fetch slot_control.max_bins so Live Orders can render every physical bin
+  // (placed/preparing/completed/delayed/empty) instead of only bins that have
+  // an active order. Refreshes when the user navigates back to Live Orders so
+  // changes from Slot Control take effect without a page reload.
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/canteen/slot-control", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        const mb = Number(j?.slot_control?.max_bins);
+        if (!cancelled && Number.isFinite(mb) && mb > 0) setMaxBins(mb);
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.access_token, activeNav]);
+
   const handleBinClick = (bin: Bin) => {
     if (bin.status === "empty") return;
     setSelectedBin(bin);
@@ -326,6 +354,44 @@ export default function VendorDashboard() {
       const tb = b.placedAt ? Date.parse(b.placedAt) : 0;
       return ta - tb;
     });
+
+  // Full bin grid for Live Orders (client request 2026-04-30): show every
+  // physical bin 1..maxBins. Bins with an active order use the order's
+  // status; the rest render as "empty". Status filter narrows the visible
+  // set including empty (which is filtered out unless the user chose "all").
+  // Map active orders by bin number for O(1) lookup.
+  const activeBinByNum = new Map<number, Bin>();
+  for (const b of slotBins) {
+    if (b.status !== "empty" && b.orderId) activeBinByNum.set(b.number, b);
+  }
+  const fullBinGrid: Bin[] = [];
+  for (let i = 1; i <= maxBins; i++) {
+    const active = activeBinByNum.get(i);
+    if (active) {
+      fullBinGrid.push(active);
+    } else {
+      fullBinGrid.push({
+        id: `empty-${i}`,
+        number: i,
+        status: "empty",
+        orderId: null,
+        customerName: null,
+        slot: null,
+        items: null,
+        otp: null,
+        binLabel: null,
+        binColor: null,
+        placedAt: null,
+      });
+    }
+  }
+  const filteredFullGrid = fullBinGrid.filter(b => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
+    if (statusFilter === "occupied") return b.status === "completed";
+    if (statusFilter === "late")     return b.status === "delayed";
+    return true;
+  });
 
   const uniqueSlots = Array.from(new Set(bins.filter(b => b.slot).map(b => b.slot as string)));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
@@ -501,23 +567,38 @@ export default function VendorDashboard() {
               <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--red)", marginRight: 4 }} />Late Pickup</span>
             </div>
 
-            {/* Bin grid */}
+            {/* Bin grid — full grid showing every physical bin (1..maxBins).
+                When the canteen has not configured a slot-control max yet,
+                fall back to just the bins that have active orders. */}
             {ordersLoading ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>Loading live orders…</div>
-            ) : visibleSlotBins.length === 0 ? (
+            ) : (maxBins === 0 && visibleSlotBins.length === 0) ? (
               <div className="empty-state" style={{ padding: "2.5rem", textAlign: "center", color: "var(--ink-3)" }}>
                 <div style={{ fontSize: "2rem" }}>📦</div>
                 <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
-                <p style={{ fontSize: "0.82rem" }}>{activeSlot === "all" ? "Bins will appear here as customers place orders." : `No orders for ${activeSlot}.`}</p>
+                <p style={{ fontSize: "0.82rem" }}>Configure Slot Control → Max Bins to display the full bin grid here.</p>
               </div>
             ) : (
             <div className="bin-grid">
-              {visibleSlotBins.map(bin => (
+              {(maxBins > 0 ? filteredFullGrid : visibleSlotBins).map(bin => {
+                const badgeLabel =
+                  bin.status === "placed" || bin.status === "preparing" ? "Reserved" :
+                  bin.status === "completed" ? "Occupied" :
+                  bin.status === "delayed"   ? "Late Pickup" :
+                  "Empty";
+                const badgeKey =
+                  bin.status === "placed" || bin.status === "preparing" ? "reserved" :
+                  bin.status === "completed" ? "occupied" :
+                  bin.status === "delayed"   ? "late" :
+                  "empty";
+                return (
                 <div
                   key={bin.id}
                   className={`bin-card ${bin.status}`}
-                  onClick={() => handleBinClick(bin)}
+                  onClick={() => bin.status !== "empty" && handleBinClick(bin)}
+                  style={bin.status === "empty" ? { cursor: "default", opacity: 0.78 } : undefined}
                 >
+                  <span className={`bin-status-badge ${badgeKey}`}>{badgeLabel}</span>
                   <div className="bin-number">
                     {bin.status !== "empty" && <span className="bin-status-dot" />}
                     Bin #{bin.number}
@@ -542,10 +623,11 @@ export default function VendorDashboard() {
                       )}
                     </>
                   ) : (
-                    <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Empty · Available</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Available</div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             )}
           </>

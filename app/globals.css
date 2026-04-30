@@ -411,6 +411,7 @@ body {
   flex-direction: column;
   gap: 0.4rem;
   border: 2px solid transparent;
+  position: relative;
 }
 
 .bin-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
@@ -470,6 +471,25 @@ body {
 .bin-card.placed    .bin-status-dot { background: var(--blue); }
 .bin-card.completed .bin-status-dot { background: var(--green); }
 .bin-card.delayed   .bin-status-dot { background: var(--red); }
+
+/* Bin status badge (top-right corner) — labels every bin in Live Orders */
+.bin-status-badge {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.bin-status-badge.empty    { background: #e5e7eb; color: #475569; }
+.bin-status-badge.reserved { background: var(--blue);  color: #fff; }
+.bin-status-badge.occupied { background: var(--green); color: #fff; }
+.bin-status-badge.late     { background: var(--red);   color: #fff; }
 
 /* ─── Bin Zone Grid (Vendor → Bin Management) ─── */
 .bin-zone {

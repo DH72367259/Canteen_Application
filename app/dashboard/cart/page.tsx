@@ -26,12 +26,43 @@ interface CartCheck {
 
 function loadRazorpay(): Promise<boolean> {
   return new Promise(resolve => {
-    if (typeof window !== "undefined" && window.Razorpay) { resolve(true); return; }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload  = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
+    if (typeof window === "undefined") { resolve(false); return; }
+    if (window.Razorpay) { resolve(true); return; }
+    // Reuse an in-flight script tag if a previous call is still pending,
+    // otherwise the second click would inject a second copy and Razorpay
+    // would race-init. Idempotent loader pattern.
+    const SCRIPT_ID = "razorpay-checkout-js";
+    const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      if ((existing as HTMLScriptElement & { _loaded?: boolean })._loaded) { resolve(true); return; }
+      existing.addEventListener("load", () => resolve(!!window.Razorpay), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+      return;
+    }
+    let attempts = 0;
+    const tryLoad = () => {
+      attempts++;
+      const script = document.createElement("script");
+      script.id = SCRIPT_ID;
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.crossOrigin = "anonymous";
+      script.onload = () => {
+        (script as HTMLScriptElement & { _loaded?: boolean })._loaded = true;
+        resolve(!!window.Razorpay);
+      };
+      script.onerror = () => {
+        // Drop the failed tag so the next attempt starts clean.
+        script.remove();
+        if (attempts < 3) {
+          setTimeout(tryLoad, 600 * attempts);
+        } else {
+          resolve(false);
+        }
+      };
+      document.head.appendChild(script);
+    };
+    tryLoad();
   });
 }
 
@@ -67,6 +98,14 @@ function CartContent() {
   useEffect(() => {
     const proStatus = localStorage.getItem("noqx_pro_active");
     if (proStatus === "true") setIsPro(true);
+  }, []);
+
+  // Preload Razorpay checkout.js as soon as the cart mounts so the click on
+  // "Pay" feels instant and we surface CDN failures (network/CSP/AdBlock) up
+  // front instead of after the user clicks Pay. Idempotent — safe to call
+  // even if the script is already in the DOM.
+  useEffect(() => {
+    void loadRazorpay();
   }, []);
 
   // ── Fetch live slots from canteen, auto-refresh every 60s ──────────────
@@ -228,7 +267,7 @@ function CartContent() {
 
     const loaded = await loadRazorpay();
     if (!loaded) {
-      setError("Payment gateway failed to load. Check your internet connection.");
+      setError("Couldn't load Razorpay. This is usually caused by an ad-blocker or unstable network — please disable any blocker for this site, check your connection, and try again.");
       setBusy(false);
       return;
     }
