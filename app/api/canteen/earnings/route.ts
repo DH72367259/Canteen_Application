@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id, total_amount, status, created_at, items, payment_id")
+      .select("id, total_amount, status, created_at, payment_id")
       .eq("canteen_id", targetCanteenId)
       .gte("created_at", period_start + "T00:00:00Z")
       .lte("created_at", period_end   + "T23:59:59Z")
