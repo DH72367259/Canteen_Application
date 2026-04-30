@@ -19,15 +19,15 @@ export async function GET(
       return Response.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Verify user owns this order or is staff (any role that manages orders).
-    const isStaff = (
-      context.role === 'canteen_admin' ||
-      context.role === 'vendor' ||
-      context.role === 'worker' ||
-      context.role === 'super_admin' ||
-      context.role === 'co_admin'
-    );
-    if (order.user_id !== context.uid && !isStaff) {
+    // Verify user owns this order or is staff that legitimately serves this canteen.
+    const role = context.role;
+    const isPlatformStaff = role === 'super_admin' || role === 'co_admin';
+    const isOwnCanteenStaff =
+      (role === 'canteen_admin' || role === 'vendor' || role === 'worker') &&
+      !!context.canteenId &&
+      (order as { canteen_id?: string }).canteen_id === context.canteenId;
+    const isOwner = (order as { user_id?: string }).user_id === context.uid;
+    if (!isOwner && !isPlatformStaff && !isOwnCanteenStaff) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 

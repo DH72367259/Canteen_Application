@@ -36,8 +36,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     .update(updates)
     .eq("id", id)
     .select("*")
-    .single();
+    .maybeSingle();
 
-  if (error) return Response.json({ error: "Failed to update support ticket." }, { status: 500 });
+  if (error) {
+    const msg = String(error.message ?? "").toLowerCase();
+    if (msg.includes("invalid input syntax for type uuid")) {
+      return Response.json({ error: "Invalid ticket id." }, { status: 400 });
+    }
+    console.error("[PATCH /api/support/:id] error:", error);
+    return Response.json({ error: "Failed to update support ticket." }, { status: 500 });
+  }
+  if (!data) return Response.json({ error: "Ticket not found." }, { status: 404 });
   return Response.json({ success: true, ticket: data });
 }

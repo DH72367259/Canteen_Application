@@ -13,15 +13,22 @@ export async function getOrder(orderId: string) {
     '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins!orders_bin_id_fkey(*)',
   ]
   let data: Record<string, unknown> | null = null
-  let error: { message: string } | null = null
+  let error: { message: string; code?: string } | null = null
   for (const proj of projections) {
-    const r = await supabase.from('orders').select(proj).eq('id', orderId).single()
-    if (!r.error) { data = r.data as unknown as Record<string, unknown>; error = null; break }
-    error = r.error
+    const r = await supabase.from('orders').select(proj).eq('id', orderId).maybeSingle()
+    if (!r.error) { data = (r.data ?? null) as Record<string, unknown> | null; error = null; break }
+    error = r.error as { message: string; code?: string }
     if (!/relation .* does not exist|column .* does not exist/i.test(r.error.message)) break
   }
 
-  if (error) throw error
+  if (error) {
+    // Treat "no rows" and "invalid uuid input" as not-found rather than 500.
+    const msg = String(error.message ?? '').toLowerCase()
+    if (error.code === 'PGRST116' || msg.includes('invalid input syntax for type uuid')) {
+      return null
+    }
+    throw error
+  }
   return data
 }
 

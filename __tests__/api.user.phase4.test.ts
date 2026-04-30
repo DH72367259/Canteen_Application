@@ -147,12 +147,12 @@ describe("POST /api/cart/check", () => {
 
   it("rejects unauthenticated requests", async () => {
     mockGetRequestContext.mockResolvedValueOnce(null);
-    const res = await cartCheckPOST(reqBody({ canteen_id: "c1", slot: "12:30 PM", items: [{ id: "m1", quantity: 1 }] }));
+    const res = await cartCheckPOST(reqBody({ canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM", items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 1 }] }));
     expect(res.status).toBe(401);
   });
 
   it("rejects empty items", async () => {
-    const res = await cartCheckPOST(reqBody({ canteen_id: "c1", slot: "12:30 PM", items: [] }));
+    const res = await cartCheckPOST(reqBody({ canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM", items: [] }));
     expect(res.status).toBe(400);
   });
 
@@ -161,17 +161,17 @@ describe("POST /api/cart/check", () => {
     // sane defaults via lib/slotControlEnsure rather than 404'ing.
     scQB.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     scQB.single.mockResolvedValueOnce({
-      data: { canteen_id: "c1", max_bins: 60, slot_duration_mins: 15, meals_per_bin: 1, snacks_per_bin: 4, extra_bin_fee_paise: 0 },
+      data: { canteen_id: "11111111-1111-1111-1111-111111111111", max_bins: 60, slot_duration_mins: 15, meals_per_bin: 1, snacks_per_bin: 4, extra_bin_fee_paise: 0 },
       error: null,
     });
     // Cart item lookup returns one item that matches the canteen so the rest
     // of the handler can complete successfully.
     menuQB.in = jest.fn().mockResolvedValueOnce({
-      data: [{ id: "m1", name: "Thali", is_meal: true, canteen_id: "c1" }], error: null,
+      data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Thali", is_meal: true, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
     ordersQB.not.mockResolvedValueOnce({ data: [], error: null });
 
-    const res = await cartCheckPOST(reqBody({ canteen_id: "c1", slot: "12:30 PM", items: [{ id: "m1", quantity: 1 }] }));
+    const res = await cartCheckPOST(reqBody({ canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM", items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 1 }] }));
     expect(res.status).toBe(200);
     // The lazy insert was attempted on the slot_control table.
     expect(scQB.insert).toHaveBeenCalled();
@@ -182,9 +182,9 @@ describe("POST /api/cart/check", () => {
       data: { max_bins: 60, meals_per_bin: 2, snacks_per_bin: 5, extra_bin_fee_paise: 200 }, error: null,
     });
     menuQB.in = jest.fn().mockResolvedValueOnce({
-      data: [{ id: "m1", name: "Thali", is_meal: true, canteen_id: "OTHER" }], error: null,
+      data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Thali", is_meal: true, canteen_id: "33333333-3333-3333-3333-333333333333" }], error: null,
     });
-    const res = await cartCheckPOST(reqBody({ canteen_id: "c1", slot: "12:30 PM", items: [{ id: "m1", quantity: 1 }] }));
+    const res = await cartCheckPOST(reqBody({ canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM", items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 1 }] }));
     const j = await res.json();
     expect(res.status).toBe(400);
     expect(j.error).toMatch(/does not belong/);
@@ -195,14 +195,14 @@ describe("POST /api/cart/check", () => {
       data: { max_bins: 60, meals_per_bin: 2, snacks_per_bin: 5, extra_bin_fee_paise: 200 }, error: null,
     });
     menuQB.in = jest.fn().mockResolvedValueOnce({
-      data: [{ id: "m1", name: "Thali", is_meal: true, canteen_id: "c1" }], error: null,
+      data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Thali", is_meal: true, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
     // No existing orders for this slot
     ordersQB.not = jest.fn().mockResolvedValueOnce({ data: [], error: null });
 
     const res = await cartCheckPOST(reqBody({
-      canteen_id: "c1", slot: "12:30 PM",
-      items: [{ id: "m1", quantity: 5 }], // 5 meals → 3 bins (2+2+1)
+      canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM",
+      items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 5 }], // 5 meals → 3 bins (2+2+1)
     }));
     const j = await res.json();
     expect(res.status).toBe(200);
@@ -218,7 +218,7 @@ describe("POST /api/cart/check", () => {
       data: { max_bins: 60, meals_per_bin: 2, snacks_per_bin: 5, extra_bin_fee_paise: 200 }, error: null,
     });
     menuQB.in = jest.fn().mockResolvedValueOnce({
-      data: [{ id: "m1", name: "Samosa", is_meal: false, canteen_id: "c1" }], error: null,
+      data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Samosa", is_meal: false, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
     // 45 existing orders → at cap
     ordersQB.not = jest.fn().mockResolvedValueOnce({
@@ -226,8 +226,8 @@ describe("POST /api/cart/check", () => {
     });
 
     const res = await cartCheckPOST(reqBody({
-      canteen_id: "c1", slot: "12:30 PM",
-      items: [{ id: "m1", quantity: 2 }],
+      canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM",
+      items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 2 }],
     }));
     const j = await res.json();
     expect(res.status).toBe(200);

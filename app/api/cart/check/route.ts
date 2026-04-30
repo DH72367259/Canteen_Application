@@ -43,10 +43,17 @@ export async function POST(request: Request) {
   }
 
   const { canteen_id, slot, items } = body;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!canteen_id) return Response.json({ error: "canteen_id is required" }, { status: 400 });
+  if (!UUID_RE.test(canteen_id)) return Response.json({ error: "canteen_id must be a valid UUID" }, { status: 400 });
   if (!slot)       return Response.json({ error: "slot is required" }, { status: 400 });
   if (!Array.isArray(items) || items.length === 0) {
     return Response.json({ error: "items must be a non-empty array" }, { status: 400 });
+  }
+  for (const it of items) {
+    if (!it || typeof it.id !== "string" || !UUID_RE.test(it.id)) {
+      return Response.json({ error: "items[].id must be a valid UUID" }, { status: 400 });
+    }
   }
 
   const supabase = createAdminClient();
