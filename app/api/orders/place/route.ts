@@ -60,6 +60,15 @@ export async function POST(req: NextRequest) {
   // never trust client-supplied prices, and we re-run bin packing here so
   // the extra-bin fee can't be tampered with at checkout.
   const itemIds = [...new Set(cartItems.map((i: { id: string }) => i.id))];
+  // Pre-validate UUID shape: a stray "fake" id would otherwise cause
+  // Postgres to throw `22P02 invalid_text_representation`, which surfaces
+  // as a misleading 500. Reject malformed ids as a client error up-front.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const id of itemIds) {
+    if (!UUID_RE.test(id)) {
+      return Response.json({ error: `Invalid item id "${id}"` }, { status: 400 });
+    }
+  }
   const { data: menuRows, error: menuErr } = await supabase
     .from("menu_items")
     .select("id, name, price, is_available, is_meal, canteen_id")
@@ -67,6 +76,12 @@ export async function POST(req: NextRequest) {
     .eq("canteen_id", canteenId);
 
   if (menuErr) {
+    // Postgres invalid_text_representation (22P02) means the client sent a
+    // value the column type can't parse — that's a 400, not a 500.
+    const code = (menuErr as { code?: string }).code;
+    if (code === "22P02") {
+      return Response.json({ error: "Invalid item id format" }, { status: 400 });
+    }
     return Response.json({ error: "Failed to verify menu prices" }, { status: 500 });
   }
 

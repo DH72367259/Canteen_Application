@@ -84,3 +84,30 @@ export async function deleteUser(id: string) {
 export async function expectVisibleText(page: Page, pattern: RegExp, timeout = 15_000) {
   await expect(page.getByText(pattern).first()).toBeVisible({ timeout });
 }
+
+/**
+ * Build a unique X-Forwarded-For header so each test has its own per-IP
+ * rate-limit bucket in proxy.ts. Without this, parallel/serial test runs
+ * collide on the localhost IP and cascade into 429s.
+ */
+let _ipCounter = 0;
+export function uniqueIpHeaders(): Record<string, string> {
+  _ipCounter = (_ipCounter + 1) % 65000;
+  const a = 10 + ((_ipCounter >> 16) & 0xff);
+  const b = (_ipCounter >> 8) & 0xff;
+  const c = _ipCounter & 0xff;
+  return { "x-forwarded-for": `127.${a}.${b}.${c}` };
+}
+
+/**
+ * Drop-in replacement for fetch() that injects a unique X-Forwarded-For per
+ * call so the proxy.ts per-IP rate limiter never collides across tests.
+ * Use this instead of fetch() in API-driven tests; reserve raw fetch() for
+ * the dedicated rate-limit test that intentionally shares an IP.
+ */
+export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers ?? {});
+  const ip = uniqueIpHeaders();
+  for (const [k, v] of Object.entries(ip)) headers.set(k, v);
+  return fetch(url, { ...init, headers });
+}

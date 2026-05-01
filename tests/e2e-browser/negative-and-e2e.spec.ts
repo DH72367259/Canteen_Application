@@ -12,7 +12,7 @@ import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import {
   APP_URL, SUPABASE_URL, SUPABASE_ANON, WHITELIST,
-  adminClient, provisionStudent, deleteUser,
+  adminClient, provisionStudent, deleteUser, apiFetch,
 } from "./_helpers";
 
 const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
@@ -92,7 +92,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-rbac");
     try {
       const tok = await loginToken(stu.email, stu.password);
-      const r = await fetch(`${APP_URL}/api/orders/00000000-0000-0000-0000-000000000000/status`, {
+      const r = await apiFetch(`${APP_URL}/api/orders/00000000-0000-0000-0000-000000000000/status`, {
         method: "PATCH",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ status: "preparing" }),
@@ -107,7 +107,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-cart");
     try {
       const tok = await loginToken(stu.email, stu.password);
-      const r = await fetch(`${APP_URL}/api/orders/place`, {
+      const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ canteenId: CANTEEN_ID, cartItems: [], slotLabel: "X" }),
@@ -124,7 +124,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-canteen");
     try {
       const tok = await loginToken(stu.email, stu.password);
-      const r = await fetch(`${APP_URL}/api/orders/place`, {
+      const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ cartItems: [{ id: "x", qty: 1 }], slotLabel: "X" }),
@@ -142,7 +142,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     try {
       const tok = await loginToken(stu.email, stu.password);
       for (const qty of [0, -1, 999]) {
-        const r = await fetch(`${APP_URL}/api/orders/place`, {
+        const r = await apiFetch(`${APP_URL}/api/orders/place`, {
           method: "POST",
           headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
           body: JSON.stringify({ canteenId: CANTEEN_ID, cartItems: [{ id: "x", qty }], slotLabel: "X" }),
@@ -159,7 +159,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     try {
       const tok = await loginToken(stu.email, stu.password);
       const cart = Array.from({ length: 25 }, (_, i) => ({ id: `x${i}`, qty: 1 }));
-      const r = await fetch(`${APP_URL}/api/orders/place`, {
+      const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ canteenId: CANTEEN_ID, cartItems: cart, slotLabel: "X" }),
@@ -174,7 +174,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-json");
     try {
       const tok = await loginToken(stu.email, stu.password);
-      const r = await fetch(`${APP_URL}/api/orders/place`, {
+      const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
         body: "not-json{",
@@ -213,7 +213,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       expect(meal.error, meal.error?.message).toBeFalsy();
 
       const stuTok = await loginToken(stu.email, stu.password);
-      const place = await fetch(`${APP_URL}/api/orders/place`, {
+      const place = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${stuTok}` },
         body: JSON.stringify({ canteenId: CANTEEN_ID, slotLabel: slotName, cartItems: [{ id: meal.data!.id, qty: 1 }] }),
@@ -228,7 +228,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       // Walk worker state machine.
       const wTok = await loginToken(WHITELIST.worker.email, WHITELIST.worker.password);
       for (const status of ["preparing", "ready_for_placement", "placed_in_bin"]) {
-        const r = await fetch(`${APP_URL}/api/orders/${orderId}/status`, {
+        const r = await apiFetch(`${APP_URL}/api/orders/${orderId}/status`, {
           method: "PATCH",
           headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
           body: JSON.stringify({ status }),
@@ -237,7 +237,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       }
 
       // Wrong OTP must 400.
-      const wrong = await fetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
+      const wrong = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
         body: JSON.stringify({ otp: "000000" }),
@@ -245,7 +245,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       expect(wrong.status).toBe(400);
 
       // Real OTP collects the order.
-      const ok = await fetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
+      const ok = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
         body: JSON.stringify({ otp }),
@@ -259,7 +259,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       expect(stillHeld.data ?? []).toHaveLength(0);
 
       // Re-verifying a collected order must fail (idempotency).
-      const repeat = await fetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
+      const repeat = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
         body: JSON.stringify({ otp }),
