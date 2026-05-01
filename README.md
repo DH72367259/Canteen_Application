@@ -1606,7 +1606,7 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 10 | Wallet top-up end-to-end smoke | Run after Razorpay KYC is live: `POST /api/wallet/topup` → `POST /api/wallet/topup/verify`; verify `wallet_transactions` row appears | You |
 | 13 | Twilio trial → paid | [Twilio Console](https://console.twilio.com) → Account → Upgrade (~$15-20 minimum top-up) so OTPs deliver to all numbers, not just verified ones | You |
 | — | DLT registration (TRAI) for SMS | [trai.gov.in](https://www.trai.gov.in) — required before sending bulk transactional SMS in India | You |
-| — | Off-site database backups | See **[Campus Capacity Planning](#campus-capacity-planning-15-k-students--100s-of-canteens)** — Supabase Pro retains backups 7 days only; for multi-year retention add a nightly `pg_dump` to your own S3 bucket | You |
+| — | Off-site database backups | **Code is ready** — see [scripts/backup_to_s3.mjs](scripts/backup_to_s3.mjs) and [.github/workflows/nightly-backup.yml](.github/workflows/nightly-backup.yml). To activate: add 6 GitHub repo secrets (`BACKUP_DATABASE_URL`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`). See [Off-site Backup Setup](#off-site-backup-setup) below. | You (5 min) |
 
 ### Optional / future enhancements
 
@@ -1634,3 +1634,58 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 14 | Push notifications | 🔵 Optional |
 
 **Code-side: 0 TODOs remaining.** Everything left in this section is either an operations action only you can perform (KYC, billing, DNS, etc.) or an explicitly optional enhancement.
+
+---
+
+## Off-site Backup Setup
+
+Supabase Pro retains backups for only 7 days. For multi-year retention (DPDPA / GST / financial-audit obligations), the repo includes a turnkey nightly off-site backup pipeline.
+
+### What runs
+
+- [scripts/backup_to_s3.mjs](scripts/backup_to_s3.mjs) — runs `pg_dump`, gzip-compresses, uploads to any S3-compatible bucket (AWS S3, Cloudflare R2, Backblaze B2, MinIO), then prunes copies older than `BACKUP_RETENTION_DAYS` (default 400 days).
+- [.github/workflows/nightly-backup.yml](.github/workflows/nightly-backup.yml) — GitHub Action triggering at **02:30 UTC (08:00 IST) daily**, plus on-demand via `workflow_dispatch`.
+
+### Activation (5 minutes, one-time)
+
+1. **Pick a bucket provider.** Cheapest options:
+   - **Cloudflare R2** — 10 GB free, no egress fees, ~$0.015/GB above. Recommended.
+   - **Backblaze B2** — 10 GB free, $0.005/GB above, $0.01/GB egress.
+   - **AWS S3** — pay-as-you-go, $0.023/GB.
+2. **Create a bucket** named e.g. `noqx-backups`. Create an IAM key with **`PutObject`, `GetObject`, `ListBucket`, `DeleteObject`** on that bucket only.
+3. **Get your Supabase pooler URL.** Supabase dashboard → Project Settings → Database → Connection string → **Session mode** (port 5432), URI form. (Use the direct URL, not transaction-pooler — `pg_dump` needs session-level access.)
+4. **Add 6 GitHub Actions secrets** (Repo → Settings → Secrets and variables → Actions → New repository secret):
+
+   | Secret | Example value |
+   |---|---|
+   | `BACKUP_DATABASE_URL` | `postgres://postgres.<ref>:<pwd>@aws-0-...supabase.com:5432/postgres` |
+   | `BACKUP_S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` (R2) or `https://s3.amazonaws.com` (AWS) |
+   | `BACKUP_S3_REGION` | `auto` (R2) or `us-east-1` (AWS) |
+   | `BACKUP_S3_BUCKET` | `noqx-backups` |
+   | `BACKUP_S3_ACCESS_KEY_ID` | from step 2 |
+   | `BACKUP_S3_SECRET_ACCESS_KEY` | from step 2 |
+
+5. **Smoke-test** by clicking **Actions → Nightly DB Backup → Run workflow** in GitHub. Should complete in 1-3 minutes for a fresh DB and produce an object at `s3://noqx-backups/noqx/<YYYY-MM-DD>/noqx-<timestamp>.sql.gz`.
+
+### Restoring a backup
+
+```bash
+# Download from S3
+aws s3 cp s3://noqx-backups/noqx/2026-05-01/noqx-2026-05-01_02-30-00.sql.gz . \
+  --endpoint-url $S3_ENDPOINT --region $S3_REGION
+gunzip noqx-2026-05-01_02-30-00.sql.gz
+
+# Restore into a fresh database (NOT into prod — into a recovery project)
+psql "$RECOVERY_DATABASE_URL" -f noqx-2026-05-01_02-30-00.sql
+```
+
+### Cost estimate
+
+For a 15k-student campus with ~3 GB DB after Year 1, gzipped dump ≈ 600 MB. With 400-day retention you store ~240 GB cumulative. Cloudflare R2 cost: **~$3.50/month**. Worth it.
+
+### Local dry-run
+
+```bash
+DATABASE_URL="postgres://..." node scripts/backup_to_s3.mjs --dry-run
+# Writes to a tempdir, skips upload. Verify size > 4 KiB.
+```
