@@ -16,7 +16,7 @@ export async function GET(
 
   const { data: order, error } = await supabase
     .from("orders")
-    .select("*, order_items(*, menu_items(name, category)), canteens(name, city, college), profiles(name, email)")
+    .select("*, order_items(*, menu_items(name, category)), canteens(name, city, college), profiles!orders_user_id_fkey(name, email)")
     .eq("id", orderId)
     .single();
 

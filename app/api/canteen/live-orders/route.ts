@@ -42,31 +42,31 @@ export async function GET(request: Request) {
   };
   let bins: BinRow[] | null = null;
   {
-    const full = await supabase
+    // Use SELECT * so we transparently work whether prod has `current_order_id`
+    // (legacy) or `assigned_order_id` (post-Phase-8) — and any other column
+    // drift. This single query supersedes the previous full+minimal fallback,
+    // which was 500-ing on the missing-column path and rendering empty bins.
+    const r = await supabase
       .from("bins")
-      .select("id, bin_code, color, status, is_occupied, current_order_id, updated_at")
+      .select("*")
       .eq("canteen_id", canteenId)
       .order("bin_code");
-    if (!full.error) {
-      bins = (full.data ?? []) as BinRow[];
-    } else {
-      const minimal = await supabase
-        .from("bins")
-        .select("id, bin_code")
-        .eq("canteen_id", canteenId)
-        .order("bin_code");
-      if (minimal.error) {
-        return NextResponse.json({ error: `Failed to load bins: ${minimal.error.message}` }, { status: 500 });
-      }
-      bins = ((minimal.data ?? []) as Array<{ id: string; bin_code: string }>).map(b => ({
-        id: b.id,
-        bin_code: b.bin_code,
-        color: null,
-        status: null,
-        is_occupied: false,
-        current_order_id: null,
-      }));
+    if (r.error) {
+      return NextResponse.json({ error: `Failed to load bins: ${r.error.message}` }, { status: 500 });
     }
+    bins = ((r.data ?? []) as Array<Record<string, unknown>>).map(b => ({
+      id: String(b.id ?? ""),
+      bin_code: String(b.bin_code ?? ""),
+      color: (b.color as string | null) ?? null,
+      status: (b.status as string | null) ?? null,
+      is_occupied: Boolean(b.is_occupied),
+      current_order_id:
+        (b.current_order_id as string | null) ??
+        (b.assigned_order_id as string | null) ??
+        (b.order_id as string | null) ??
+        null,
+      updated_at: b.updated_at as string | undefined,
+    }));
   }
 
   // Resilient: prod renamed `pickup_slot` -> `slot_label` AND may not have
@@ -78,13 +78,13 @@ export async function GET(request: Request) {
   type ProjBuilder = (sc: string) => string;
   const richProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
-    profiles(name),
+    profiles!orders_user_id_fkey(name),
     bins!orders_bin_id_fkey(bin_code, color),
     order_items(quantity, menu_items(name, is_meal))
   `;
   const baseProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
-    profiles(name),
+    profiles!orders_user_id_fkey(name),
     bins!orders_bin_id_fkey(bin_code, color),
     order_items(quantity, menu_items(name, is_meal))
   `;
