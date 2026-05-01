@@ -172,6 +172,71 @@ async function main() {
     else ok(`worker transition -> ${step}`);
   }
 
+  // ── Per-customer pickup guard (multi-order, same student, same canteen) ──
+  // The same student places a SECOND order. Worker must NOT be able to verify
+  // OTP for the first order while the second is still being prepared. Once
+  // the second order also reaches placed_in_bin, both can be released.
+  let secondOrderId = null;
+  let secondOtp = null;
+  try {
+    const place2 = await fetch(`${APP}/api/orders/place`, {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${studentToken}` },
+      body: JSON.stringify({
+        canteenId: CANTEEN_ID,
+        slotLabel: slot.slot_name,
+        cartItems: [{ id: meal.id, qty: 1 }],
+      }),
+    });
+    const place2Body = await place2.json();
+    if (!place2.ok) { bad(`second order place failed: ${place2.status} ${JSON.stringify(place2Body)}`); }
+    else {
+      secondOrderId = place2Body.orderId;
+      ok(`second order placed for same student: ${secondOrderId.slice(0,8)} bin=${place2Body.binLabel}`);
+
+      const { data: o2row } = await admin.from("orders").select("otp").eq("id", secondOrderId).single();
+      secondOtp = o2row.otp;
+
+      // Try to verify the FIRST order's OTP — must be blocked with 409.
+      const { data: o1row } = await admin.from("orders").select("otp").eq("id", placeBody.orderId).single();
+      const blocked = await fetch(`${APP}/api/orders/${placeBody.orderId}/verify-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+        body: JSON.stringify({ otp: o1row.otp }),
+      });
+      const blockedBody = await blocked.json().catch(() => ({}));
+      if (blocked.status !== 409) bad(`pickup guard: expected 409 with sibling pending, got ${blocked.status} ${JSON.stringify(blockedBody)}`);
+      else ok(`pickup guard blocks first OTP while sibling still preparing (409)`);
+
+      // Same guard via PATCH status=collected (manager dashboard path)
+      const blockedStatus = await fetch(`${APP}/api/orders/${placeBody.orderId}/status`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+        body: JSON.stringify({ status: "collected" }),
+      });
+      if (blockedStatus.status !== 409) bad(`status=collected guard: expected 409, got ${blockedStatus.status}`);
+      else ok(`pickup guard blocks PATCH status=collected too (409)`);
+
+      // Walk the second order to placed_in_bin.
+      // (Manager Accept first to mirror real flow.)
+      await fetch(`${APP}/api/orders/${secondOrderId}/status`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${acceptToken}` },
+        body: JSON.stringify({ status: "preparing" }),
+      });
+      for (const step of ["ready_for_placement", "placed_in_bin"]) {
+        await fetch(`${APP}/api/orders/${secondOrderId}/status`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+          body: JSON.stringify({ status: step }),
+        });
+      }
+      ok(`second order walked to placed_in_bin`);
+    }
+  } catch (e) {
+    bad(`per-customer guard sub-test threw: ${e.message}`);
+  }
+
   // Worker verifies OTP via the new /api/orders/[id]/verify-otp endpoint.
   // First: a wrong OTP must be rejected with 400.
   const badOtpRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/verify-otp`, {
@@ -182,7 +247,7 @@ async function main() {
   if (badOtpRes.status !== 400) bad(`bad OTP should 400, got ${badOtpRes.status}`);
   else ok(`worker OTP verify rejects invalid OTP (400)`);
 
-  // Then: real OTP from DB
+  // Then: real OTP from DB — both orders should now be releasable.
   const { data: orderRow } = await admin.from("orders").select("otp, status").eq("id", placeBody.orderId).single();
   const otpRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/verify-otp`, {
     method: "POST",
@@ -191,6 +256,17 @@ async function main() {
   });
   if (!otpRes.ok) bad(`worker OTP verify failed: ${otpRes.status} ${await otpRes.text()}`);
   else ok(`worker OTP verify succeeded -> order should be collected`);
+
+  // Now release the second order — guard should pass since the first is collected.
+  if (secondOrderId && secondOtp) {
+    const r2 = await fetch(`${APP}/api/orders/${secondOrderId}/verify-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ otp: secondOtp }),
+    });
+    if (!r2.ok) bad(`second OTP verify failed: ${r2.status} ${await r2.text()}`);
+    else ok(`second order OTP verify succeeded after first collected`);
+  }
 
   // Confirm DB state: status=collected and all bins freed.
   const { data: finalOrder } = await admin.from("orders").select("status").eq("id", placeBody.orderId).single();
@@ -249,12 +325,15 @@ async function main() {
   else ok(`fan-out: each tile occupies a distinct rack slot`);
 
   if (!KEEP) {
-    await admin.from("order_bins").delete().eq("order_id", placeBody.orderId);
-    await admin.from("payments").delete().eq("order_id", placeBody.orderId);
-    await admin.from("order_items").delete().eq("order_id", placeBody.orderId);
-    await admin.from("orders").delete().eq("id", placeBody.orderId);
-    await admin.from("bins").update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: new Date().toISOString() }).eq("order_id", placeBody.orderId);
-    await admin.from("bins").update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: new Date().toISOString() }).eq("assigned_order_id", placeBody.orderId);
+    const ids = [placeBody.orderId, secondOrderId].filter(Boolean);
+    for (const id of ids) {
+      await admin.from("order_bins").delete().eq("order_id", id);
+      await admin.from("payments").delete().eq("order_id", id);
+      await admin.from("order_items").delete().eq("order_id", id);
+      await admin.from("orders").delete().eq("id", id);
+      await admin.from("bins").update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: new Date().toISOString() }).eq("order_id", id);
+      await admin.from("bins").update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: new Date().toISOString() }).eq("assigned_order_id", id);
+    }
     if (slot.slot_name === "E2ETest") await admin.from("time_slots").delete().eq("id", slot.id);
     await admin.auth.admin.deleteUser(studentId);
     ok("cleanup complete (use --keep to retain)");

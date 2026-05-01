@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { canManageOrders } from "@/lib/roleChecks";
 import { createAdminClient } from "@/lib/supabase-server";
+import { findUnfulfilledSiblings } from "@/lib/pickupGuard";
 
 // Raw DB statuses workers/admins may set directly.
 const STAFF_STATUSES = [
@@ -188,6 +189,22 @@ export async function PATCH(
   }
 
   if (status === "collected") {
+    // Per-customer pickup guard — block staff from marking collected while
+    // sibling orders for the same customer are still being prepared.
+    const { data: cur } = await supabase
+      .from("orders").select("id, user_id, canteen_id")
+      .eq("id", orderId)
+      .single<{ id: string; user_id: string | null; canteen_id: string | null }>();
+    if (cur) {
+      const block = await findUnfulfilledSiblings(supabase, cur);
+      if (block) {
+        return NextResponse.json(
+          { error: block.message, siblings: block.siblings },
+          { status: block.status },
+        );
+      }
+    }
+
     // Phase 8: free every bin linked to this order via order_id (legacy single-bin)
     // or assigned_order_id (multi-bin rack workflow).
     const freeUpdate = {

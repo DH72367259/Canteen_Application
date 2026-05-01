@@ -327,15 +327,25 @@ export default function VendorDashboard() {
     await fetchOrders();
   }, [session?.access_token, fetchOrders]);
 
-  const handleMarkCollected = useCallback(async (rawOrderId: string) => {
+  const handleMarkCollected = useCallback(async (rawOrderId: string): Promise<{ ok: boolean; error?: string }> => {
     const token = session?.access_token;
-    if (!token) return;
-    await fetch(`/api/orders/${rawOrderId}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status: "collected" }),
-    }).catch(() => {});
-    await fetchOrders();
+    if (!token) return { ok: false, error: "Not signed in." };
+    try {
+      const res = await fetch(`/api/orders/${rawOrderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: "collected" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        return { ok: false, error: data.error ?? `Server error (${res.status}).` };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Network error." };
+    } finally {
+      await fetchOrders();
+    }
   }, [session?.access_token, fetchOrders]);
 
   // Auto-refresh every 30 seconds (reduced from 5s to lower DB load at scale)
@@ -382,10 +392,19 @@ export default function VendorDashboard() {
       setOtpError("Incorrect OTP. Try again.");
       return;
     }
-    setOtpSuccess(true);
     if (selectedBin.rawOrderId) {
-      await handleMarkCollected(selectedBin.rawOrderId);
+      const r = await handleMarkCollected(selectedBin.rawOrderId);
+      if (!r.ok) {
+        // Most common: 409 from per-customer pickup guard (sibling orders
+        // for this student still preparing). Show the server message and
+        // do NOT close the dialog or mark success.
+        setOtpError(r.error ?? "Could not mark collected.");
+        setOtpSuccess(false);
+        return;
+      }
+      setOtpSuccess(true);
     } else {
+      setOtpSuccess(true);
       setBins(prev => prev.map(b => b.id === selectedBin.id ? { ...b, status: "completed" } : b));
     }
     setTimeout(() => setSelectedBin(null), 1200);
