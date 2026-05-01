@@ -45,3 +45,8 @@ serviceAccountKey.json
 # Capacitor — native projects are scaffolded per-developer (see CAPACITOR.md)
 /ios
 /android
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
