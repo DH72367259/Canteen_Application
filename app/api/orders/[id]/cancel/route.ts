@@ -4,8 +4,9 @@
  * Staff-initiated order cancellation with mandatory reason and
  * automatic Razorpay refund.
  *
- * Roles allowed: super_admin | co_admin | canteen_admin | vendor | worker
- * (canteen staff are restricted to their own canteen).
+ * Roles allowed: super_admin | co_admin | canteen_admin | vendor
+ * (canteen managers are restricted to their own canteen). Workers
+ * cannot cancel — it is a managerial decision only.
  *
  * Side-effects:
  *   1. Validates order is still cancellable (not collected / not already cancelled).
@@ -42,13 +43,14 @@ export async function POST(
   }
   if (!auth) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  // Worker, canteen_admin, vendor, super_admin and co_admin can cancel orders.
-  // Anyone else (regular users) is rejected.
+  // Worker is intentionally excluded — cancellation is a managerial decision.
+  // Only canteen managers (canteen_admin / vendor) and platform admins
+  // (super_admin / co_admin) can cancel orders.
   const role = auth.role ?? "";
   const isPlatformAdmin = role === "super_admin" || role === "co_admin";
-  const isCanteenStaff  = role === "canteen_admin" || role === "vendor" || role === "worker";
-  if (!isPlatformAdmin && !isCanteenStaff) {
-    return NextResponse.json({ error: "Only canteen staff and platform admins can cancel orders." }, { status: 403 });
+  const isCanteenManager = role === "canteen_admin" || role === "vendor";
+  if (!isPlatformAdmin && !isCanteenManager) {
+    return NextResponse.json({ error: "Only canteen managers and platform admins can cancel orders." }, { status: 403 });
   }
   if (!canManageOrders(role)) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -87,8 +89,8 @@ export async function POST(
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  // Canteen staff (worker / vendor / canteen_admin) can only cancel orders for their own canteen.
-  if (isCanteenStaff && auth.canteenId && order.canteen_id !== auth.canteenId) {
+  // Canteen managers (vendor / canteen_admin) can only cancel orders for their own canteen.
+  if (isCanteenManager && auth.canteenId && order.canteen_id !== auth.canteenId) {
     return NextResponse.json({ error: "You can only cancel orders for your own canteen." }, { status: 403 });
   }
 
