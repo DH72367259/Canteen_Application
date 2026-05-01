@@ -127,13 +127,88 @@ async function main() {
     bad(`expected ${placeBody.binCount} assignments, got ${wo.binAssignments?.length ?? 0}`);
   }
 
-  const txRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/status`, {
+  // ── New workflow: manager Accept first, then worker can act ──────────────
+  // Find a canteen_admin for this canteen so we can call Accept as a manager.
+  const { data: managerProfile } = await admin
+    .from("profiles").select("id").eq("canteen_id", CANTEEN_ID).eq("role", "canteen_admin").limit(1).single();
+  let managerEmail = null;
+  if (managerProfile) {
+    const u = await admin.auth.admin.getUserById(managerProfile.id);
+    managerEmail = u.data.user?.email ?? null;
+  }
+  // Use the manager if we found one, otherwise fall back to worker (also staff, also transitions OK).
+  let acceptToken = workerToken;
+  let acceptedAs = "worker (no manager found, falling back)";
+  if (managerEmail) {
+    try {
+      acceptToken = await loginAs(managerEmail, "Admin@12345");
+      acceptedAs = `manager ${managerEmail}`;
+    } catch {
+      // unknown password — keep worker token
+    }
+  }
+  const acceptRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/status`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+    headers: { "content-type": "application/json", Authorization: `Bearer ${acceptToken}` },
     body: JSON.stringify({ status: "preparing" }),
   });
-  if (!txRes.ok) bad(`worker placed->preparing transition failed: ${txRes.status} ${await txRes.text()}`);
-  else ok("worker successfully transitioned placed->preparing");
+  if (!acceptRes.ok) bad(`accept (placed->preparing) failed: ${acceptRes.status} ${await acceptRes.text()}`);
+  else ok(`accept by ${acceptedAs}: placed -> preparing`);
+
+  // Worker re-fetches: should now see the order in the ACTIVE queue.
+  const refetch = await fetch(`${APP}/api/orders?worker=true`, { headers: { Authorization: `Bearer ${workerToken}` } });
+  const wo2 = ((await refetch.json()).orders ?? []).find(o => o.id === placeBody.orderId);
+  if (!wo2 || wo2.rawStatus !== "preparing") bad(`worker should see preparing order after accept, got ${wo2?.rawStatus}`);
+  else ok(`worker dashboard sees order in preparing queue (rawStatus=${wo2.rawStatus})`);
+
+  // Worker progresses: preparing -> ready_for_placement -> placed_in_bin
+  for (const step of ["ready_for_placement", "placed_in_bin"]) {
+    const r = await fetch(`${APP}/api/orders/${placeBody.orderId}/status`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ status: step }),
+    });
+    if (!r.ok) bad(`worker transition ->${step} failed: ${r.status} ${await r.text()}`);
+    else ok(`worker transition -> ${step}`);
+  }
+
+  // Worker verifies OTP via the new /api/orders/[id]/verify-otp endpoint.
+  // First: a wrong OTP must be rejected with 400.
+  const badOtpRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/verify-otp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+    body: JSON.stringify({ otp: "0000" }),
+  });
+  if (badOtpRes.status !== 400) bad(`bad OTP should 400, got ${badOtpRes.status}`);
+  else ok(`worker OTP verify rejects invalid OTP (400)`);
+
+  // Then: real OTP from DB
+  const { data: orderRow } = await admin.from("orders").select("otp, status").eq("id", placeBody.orderId).single();
+  const otpRes = await fetch(`${APP}/api/orders/${placeBody.orderId}/verify-otp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+    body: JSON.stringify({ otp: orderRow.otp }),
+  });
+  if (!otpRes.ok) bad(`worker OTP verify failed: ${otpRes.status} ${await otpRes.text()}`);
+  else ok(`worker OTP verify succeeded -> order should be collected`);
+
+  // Confirm DB state: status=collected and all bins freed.
+  const { data: finalOrder } = await admin.from("orders").select("status").eq("id", placeBody.orderId).single();
+  if (finalOrder?.status !== "collected") bad(`expected collected, got ${finalOrder?.status}`);
+  else ok(`order status=collected after worker OTP verify`);
+
+  const { data: stillBound } = await admin.from("bins").select("id").or(`order_id.eq.${placeBody.orderId},assigned_order_id.eq.${placeBody.orderId}`);
+  if (stillBound && stillBound.length > 0) bad(`expected 0 bins still bound to order, got ${stillBound.length}`);
+  else ok(`all bins freed (no leftover order_id / assigned_order_id refs)`);
+
+  // Confirm cross-app sync: student fetch shows the order as collected.
+  const studentList = await fetch(`${APP}/api/orders`, { headers: { Authorization: `Bearer ${studentToken}` } });
+  const studentOrders = (await studentList.json()).orders ?? [];
+  const so = studentOrders.find(o => o.id === placeBody.orderId);
+  if (!so) bad(`student no longer sees their order`);
+  else if (!["collected", "completed"].includes(so.rawStatus ?? so.status)) {
+    bad(`student should see collected, got rawStatus=${so.rawStatus} status=${so.status}`);
+  } else ok(`student app reflects collected status (status=${so.status})`);
 
   const { data: scRow } = await admin.from("slot_control").select("max_bins").eq("canteen_id", CANTEEN_ID).single();
   const maxBins = Number(scRow?.max_bins) || 60;

@@ -117,7 +117,7 @@ function BottomNav({ tab, onChange }: { tab: string; onChange: (t: "orders" | "b
 // ─── ORDERS TAB ───────────────────────────────────────────────────────────────
 function OrdersTab({ session }: { session: { access_token: string } | null }) {
   const [currentOrder, setCurrent]    = useState<WorkerOrder | null>(null);
-  const [latePickup, setLatePickup]   = useState<WorkerOrder | null>(null);
+  const [awaitingOtp, setAwaitingOtp] = useState<WorkerOrder[]>([]);
   const [prepSlot, setPrepSlot]       = useState<string | null>(null);
   const [remaining, setRemaining]     = useState(0);
   const [updating, setUpdating]       = useState(false);
@@ -139,18 +139,23 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
       const all: WorkerOrder[] = data.orders ?? [];
       const slotLabel = computePrepSlot(new Date());
       setPrepSlot(slotLabel);
-      const isLate = (o: WorkerOrder) => {
-        const st = o.rawStatus ?? o.status;
-        return st === "placed_in_bin" || st === "ready_for_pickup";
-      };
-      const late = all.find(o => isLate(o));
-      setLatePickup(late ?? null);
-      const ACTIVE = ["confirmed", "preparing", "ready_for_placement"];
+      // Workers ONLY see orders the canteen manager has accepted (placed →
+      // preparing). `placed` is intentionally excluded so the worker queue
+      // mirrors the manager's intent. After placement the order moves to
+      // `placed_in_bin` / `ready_for_pickup` — those go in the awaiting-OTP
+      // list so the worker can still close them out if the manager isn't
+      // around. We no longer hijack the whole UI on those statuses.
+      const ACTIVE  = ["confirmed", "preparing", "ready_for_placement"];
+      const PICKUP  = ["placed_in_bin", "ready_for_pickup"];
       const pending = all
         .filter(o => ACTIVE.includes(o.rawStatus ?? o.status))
         .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
+      const pickup = all
+        .filter(o => PICKUP.includes(o.rawStatus ?? o.status))
+        .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
       setCurrent(pending[0] ?? null);
       setRemaining(pending.length);
+      setAwaitingOtp(pickup);
       // Reset progressive placement counter when active order changes.
       const newId = pending[0]?.id ?? null;
       if (newId !== lastOrderIdRef.current) {
@@ -182,34 +187,22 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
 
   if (fetching) return <LoadingState label="Loading orders…" />;
 
-  if (latePickup) {
-    const colorKey = latePickup.binColor ?? latePickup.bin_color ?? "orange";
-    const binColor = BIN_COLORS[colorKey] ?? "#f97316";
-    const binCode = latePickup.binLabel ?? latePickup.bin_code ?? latePickup.bin_number ?? "?";
-    return (
-      <div style={{ padding: "1rem" }}>
-        <SlotBanner label="⚠️ Late Pickup — Action Required" color="#ef4444" bg="#fef2f2" />
-        <OrderCard order={latePickup} binColor={binColor} binCode={binCode} footer={
-          <div style={{ padding: "0 0.75rem 0.75rem" }}>
-            <div style={{ fontSize: "0.8rem", color: "#64748b", marginBottom: "0.5rem", textAlign: "center" }}>Collect Item from Bin {binCode}</div>
-            <button onClick={() => updateStatus(latePickup.id, "grace_bin")} disabled={updating} style={{ width: "100%", background: "#ef4444", color: "#fff", border: "none", borderRadius: 12, padding: "0.85rem", fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(239,68,68,0.3)" }}>
-              {updating ? "Processing…" : "Removed (bin → grace bin)"}
-            </button>
-          </div>
-        } />
-      </div>
-    );
-  }
-
   if (!currentOrder) {
     return (
       <div style={{ padding: "1rem" }}>
         {prepSlot && <SlotBanner label={`Now Prepare ${prepSlot}`} />}
-        <div style={{ textAlign: "center", padding: "4rem 1rem", color: "#64748b" }}>
-          <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>✅</div>
-          <div style={{ fontWeight: 700, fontSize: "1rem" }}>All orders prepared!</div>
-          <div style={{ fontSize: "0.82rem", marginTop: "0.35rem" }}>Next orders will appear automatically.</div>
-        </div>
+        {awaitingOtp.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "4rem 1rem", color: "#64748b" }}>
+            <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>✅</div>
+            <div style={{ fontWeight: 700, fontSize: "1rem" }}>All orders prepared!</div>
+            <div style={{ fontSize: "0.82rem", marginTop: "0.35rem" }}>Waiting for the canteen manager to accept the next order.</div>
+          </div>
+        ) : (
+          <div style={{ textAlign: "center", padding: "1.5rem 1rem 0.75rem", color: "#64748b" }}>
+            <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>No new prep work — pickups awaiting OTP below.</div>
+          </div>
+        )}
+        <AwaitingOtpList orders={awaitingOtp} session={session} onUpdated={fetchOrders} />
       </div>
     );
   }
@@ -273,6 +266,8 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
         </div>
       } />
 
+      <AwaitingOtpList orders={awaitingOtp} session={session} onUpdated={fetchOrders} />
+
       {showConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1.5rem" }}>
           <div style={{ background: "#fff", borderRadius: 20, padding: "1.75rem 1.5rem", maxWidth: 340, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
@@ -303,6 +298,80 @@ function computePrepSlot(now: Date): string {
     return `${hh > 12 ? hh - 12 : hh || 12}:${String(mm).padStart(2, "0")}${ampm}`;
   };
   return `${fmt(slotStart)} to ${fmt(slotEnd)}`;
+}
+
+function AwaitingOtpList({ orders, session, onUpdated }: { orders: WorkerOrder[]; session: { access_token: string } | null; onUpdated: () => void | Promise<void> }) {
+  if (orders.length === 0) return null;
+  return (
+    <div style={{ marginTop: "1.25rem" }}>
+      <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748b", letterSpacing: "0.05em", margin: "0 0 0.5rem 0.25rem" }}>
+        AWAITING OTP PICKUP ({orders.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+        {orders.map(o => (
+          <AwaitingOtpRow key={o.id} order={o} session={session} onDone={onUpdated} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; session: { access_token: string } | null; onDone: () => void | Promise<void> }) {
+  const [otp, setOtp]     = useState("");
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const colorKey = order.binColor ?? order.bin_color ?? "orange";
+  const binBg    = BIN_COLORS[colorKey] ?? "#f97316";
+  const binCode  = order.binLabel ?? order.bin_code ?? `#${order.bin_number ?? "?"}`;
+  const binCount = order.binAssignments?.length ?? order.binCount ?? 1;
+
+  async function verify() {
+    if (!session || otp.length < 4) return;
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ otp }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Verification failed");
+      setOtp("");
+      await onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: binBg }}>
+        <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.05rem" }}>{binCode}{binCount > 1 ? ` +${binCount - 1}` : ""}</span>
+        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.72rem", flex: 1 }}>#{order.id.slice(-6).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}</span>
+        <span style={{ color: "#fff", fontSize: "0.7rem", background: "rgba(0,0,0,0.18)", padding: "0.15rem 0.45rem", borderRadius: 999, fontWeight: 700 }}>In bin</span>
+      </div>
+      <div style={{ padding: "0.6rem 0.75rem 0.75rem" }}>
+        <div style={{ fontSize: "0.78rem", color: "#475569", marginBottom: "0.45rem" }}>
+          {order.items.map(i => `${i.name}×${i.quantity}`).join(", ")}
+        </div>
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          <input
+            type="text" inputMode="numeric" maxLength={6} value={otp}
+            onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
+            placeholder="OTP"
+            style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center", border: "1.5px solid #e2e8f0", borderRadius: 10 }}
+          />
+          <button
+            onClick={verify} disabled={busy || otp.length < 4}
+            style={{ padding: "0 1rem", background: otp.length < 4 ? "#e5e7eb" : "#22c55e", color: otp.length < 4 ? "#94a3b8" : "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: otp.length < 4 ? "default" : "pointer" }}
+          >
+            {busy ? "…" : "Verify"}
+          </button>
+        </div>
+        {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
+      </div>
+    </div>
+  );
 }
 
 function SlotBanner({ label, color = "#f97316", bg = "#fff7ed" }: { label: string; color?: string; bg?: string }) {
