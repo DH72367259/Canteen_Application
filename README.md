@@ -1413,9 +1413,7 @@ Full schema SQL is in `supabase-setup.sql` at the root of this repo.
 | Auth redirects to wrong URL | Set NEXT_PUBLIC_APP_URL in Railway variables to your actual Railway domain |
 | iOS PWA: auth lost after minimising app | Auth state is persisted to localStorage — already implemented; session auto-refreshes every 5 min |
 | 429 Too Many Requests | Rate limiter triggered. Wait 60 seconds. For payment routes, the limit is 10/minute - this is intentional |
-| "SMS could not be delivered" / Twilio trial error | Twilio trial accounts only send to verified numbers. Upgrade your Twilio account, or use Email OTP as a fallback |
-| Student OTP never arrives | Check that TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID are all set in Railway |
-| WhatsApp OTP not sending | TWILIO_WHATSAPP_ENABLED is false by default. Set it to true in Railway after WhatsApp Business approval |
+| ~~SMS / WhatsApp OTP errors~~ | Phone OTP is **not used** in the current build. Authentication is email/password (canteen staff) and email-based for students. The `/api/auth/phone*` routes still exist for backward compatibility but the login UI never calls them; you can ignore all `TWILIO_*` env vars. |
 | Canteens not showing | Canteens need `lat`/`lng` set in Admin → Canteens — required for distance ranking |
 | All canteens filtered out (10 km) | Student's GPS is > 10 km from all canteens — use the manual area picker |
 | Location picker on every visit | `localStorage` blocked/cleared — check browser site settings |
@@ -1604,8 +1602,6 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 4 | Razorpay KYC + go-live | [dashboard.razorpay.com](https://dashboard.razorpay.com) → upload PAN/GSTIN/bank/director KYC; switch `RAZORPAY_KEY_ID` from `rzp_test_…` to `rzp_live_…` in Railway envs | You |
 | 8 | First Super Admin profile | After inviting via Supabase Auth, run `INSERT INTO profiles (id, role, name) VALUES ('<UUID>', 'super_admin', 'Your Name');` once | You |
 | 10 | Wallet top-up end-to-end smoke | Run after Razorpay KYC is live: `POST /api/wallet/topup` → `POST /api/wallet/topup/verify`; verify `wallet_transactions` row appears | You |
-| 13 | Twilio trial → paid | [Twilio Console](https://console.twilio.com) → Account → Upgrade (~$15-20 minimum top-up) so OTPs deliver to all numbers, not just verified ones | You |
-| — | DLT registration (TRAI) for SMS | [trai.gov.in](https://www.trai.gov.in) — required before sending bulk transactional SMS in India | You |
 | — | Off-site database backups | **Code is ready** — see [scripts/backup_to_s3.mjs](scripts/backup_to_s3.mjs) and [.github/workflows/nightly-backup.yml](.github/workflows/nightly-backup.yml). To activate: add 6 GitHub repo secrets (`BACKUP_DATABASE_URL`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`). See [Off-site Backup Setup](#off-site-backup-setup) below. | You (5 min) |
 
 ### Optional / future enhancements
@@ -1630,7 +1626,8 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 10 | Wallet top-up smoke test | ⏳ Needs Razorpay live |
 | 11 | Privacy / Terms substantive content | ✅ Done |
 | 12 | Delete My Account flow | ✅ Done (1 May 2026) |
-| 13 | Twilio trial → paid | ⏳ Ops — yours |
+| 13 | ~~Twilio trial → paid~~ | ⬜ N/A — phone OTP not used (email/password + email OTP only) |
+| — | ~~DLT registration (TRAI)~~ | ⬜ N/A — no SMS sent |
 | 14 | Push notifications | 🔵 Optional |
 
 **Code-side: 0 TODOs remaining.** Everything left in this section is either an operations action only you can perform (KYC, billing, DNS, etc.) or an explicitly optional enhancement.
