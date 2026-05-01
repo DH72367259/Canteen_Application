@@ -18,6 +18,12 @@ interface OrderDetail {
   pickup_slot?: string;
   items: { name: string; quantity: number; unit_price: number }[];
   created_at: string;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by_role?: string | null;
+  refund_status?: "processed" | "failed" | "pending" | "not_required" | null;
+  refund_id?: string | null;
+  payment_id?: string | null;
 }
 
 const STATUS_STEPS: { key: OrderStatus; label: string; emoji: string }[] = [
@@ -98,10 +104,28 @@ export default function OrderTrackingPage() {
       <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "5rem" }}>
 
         {isCancelled && (
-          <div style={{ background: "var(--red-light)", border: "1px solid var(--red)", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
-            <div style={{ fontSize: "2rem" }}>❌</div>
-            <div style={{ fontWeight: 700, color: "var(--red)" }}>Order Cancelled</div>
-            <div style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Refund will be processed within 5–7 business days.</div>
+          <div style={{ background: "var(--red-light)", border: "1px solid var(--red)", borderRadius: 12, padding: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "1.5rem" }}>❌</span>
+              <strong style={{ color: "var(--red)" }}>Order cancelled by canteen</strong>
+            </div>
+            {order.cancellation_reason && (
+              <div style={{ fontSize: "0.85rem", color: "var(--ink-2)", marginBottom: "0.5rem", lineHeight: 1.4 }}>
+                <strong>Reason:</strong> {order.cancellation_reason}
+              </div>
+            )}
+            <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
+              {order.refund_status === "processed" && "✅ Refund initiated — reflects in 5–7 business days."}
+              {order.refund_status === "failed"   && "⚠️ Auto-refund failed. Our team will process it manually within 24 hours."}
+              {order.refund_status === "pending"  && "⏳ Refund will be processed manually within 24 hours."}
+              {order.refund_status === "not_required" && "No payment was charged for this order."}
+              {!order.refund_status && order.payment_id && "Refund will be processed within 5–7 business days."}
+            </div>
+            {order.refund_id && (
+              <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", marginTop: "0.4rem", fontFamily: "monospace" }}>
+                Refund ref: {order.refund_id}
+              </div>
+            )}
           </div>
         )}
 

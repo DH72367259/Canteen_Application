@@ -63,33 +63,6 @@ export async function getTimeSlots(canteenId: string) {
   return data ?? []
 }
 
-
-export async function addRewardTransaction(
-  uid: string,
-  type: 'earned' | 'redeemed' | 'expired',
-  points: number,
-  orderId?: string,
-  reason?: string
-) {
-  const supabase = createAdminClient()
-
-  // Reward points expire 7 days after earning
-  const expiresAt =
-    type === 'earned'
-      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      : null
-
-  const { error } = await supabase.from('reward_transactions').insert({
-    user_id:    uid,
-    type,
-    points,
-    order_id:   orderId ?? null,
-    reason:     reason  ?? null,
-    expires_at: expiresAt,
-  })
-  if (error) throw error
-}
-
 // ============================================================
 // OTP verification
 // ============================================================

@@ -506,7 +506,7 @@ function CartContent() {
           </div>
         )}
 
-        {/* "Use Canteen Cash" tile removed per revised workflow. */}
+        {/* Wallet/Canteen-Cash UI removed — payments are direct via Razorpay UPI/Card. */}
 
         {/* ── NoQx Pro upsell (radio choice, non-Pro users only) ── */}
         {!isPro && (
@@ -601,7 +601,7 @@ function CartContent() {
               </div>
             )}
           </div>
-          {/* Canteen Cash bill row removed per revised workflow. */}
+          {/* Wallet/Canteen-Cash bill row removed. */}
           {proAddon > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#f97316" }}>
               <span>💎 NoQx Pro (1 month)</span><span>+₹{proAddon}</span>

@@ -153,6 +153,12 @@ create table if not exists orders (
   otp           text,
   notes         text,
   payment_id    text,
+  cancellation_reason text,
+  cancelled_by        uuid references profiles(id),
+  cancelled_by_role   text,
+  cancelled_at        timestamptz,
+  refund_id           text,
+  refund_status       text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );

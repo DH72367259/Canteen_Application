@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import CancelOrderModal from "@/components/CancelOrderModal";
 
-type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "analytics" | "payments" | "support" | "notifications" | "account";
+type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "orders" | "analytics" | "payments" | "support" | "notifications" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
@@ -13,6 +14,7 @@ const ADMIN_NAV = [
   { id: "workers",   icon: "🧑‍🍳", label: "Workers" },
   { id: "users",     icon: "👥", label: "All Users" },
   { id: "cities",    icon: "🏫", label: "Cities & Colleges" },
+  { id: "orders",    icon: "📦", label: "Orders" },
   { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "payments",  icon: "💳", label: "Payments" },
   { id: "support",   icon: "🎧", label: "Support" },
@@ -77,6 +79,7 @@ export default function SuperAdminDashboard() {
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments"  && <PaymentsSection />}
         {section === "cities"    && <CitiesSection />}
+        {section === "orders"    && <OrdersSection session={session} />}
         {section === "support"       && <SupportSection />}
         {section === "notifications" && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
         {section === "account"       && <AccountSection />}
@@ -2832,3 +2835,141 @@ function NotificationsSection({ session, isSuperAdmin }: { session: { access_tok
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Orders section — global order feed with cancel-with-refund capability.
+// Re-uses GET /api/orders (super_admin / co_admin without canteenId returns
+// the global recent feed) and POST /api/orders/[id]/cancel.
+// ─────────────────────────────────────────────────────────────────────────────
+type AdminOrder = {
+  id: string;
+  customerName?: string;
+  total?: number;
+  status: string;
+  rawStatus?: string;
+  createdAt: string;
+  canteenName?: string;
+  canteenId?: string;
+  paymentId?: string;
+  cancellation_reason?: string | null;
+  refund_status?: string | null;
+};
+
+function OrdersSection({ session }: { session: { access_token?: string } | null }) {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"active" | "cancelled" | "all">("active");
+  const [cancelTarget, setCancelTarget] = useState<AdminOrder | null>(null);
+
+  const load = useCallback(async () => {
+    if (!session?.access_token) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/orders", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.orders)) {
+        setOrders(data.orders as AdminOrder[]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const TERMINAL = new Set(["cancelled", "collected", "completed"]);
+  const visible = orders.filter(o => {
+    const s = (o.rawStatus ?? o.status ?? "").toLowerCase();
+    if (filter === "cancelled") return s === "cancelled";
+    if (filter === "active") return !TERMINAL.has(s);
+    return true;
+  });
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Orders</h2>
+        <button className="btn btn-ghost" onClick={load}>↻ Refresh</button>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        {(["active", "cancelled", "all"] as const).map(f => (
+          <button key={f} className={`btn ${filter === f ? "btn-primary" : "btn-ghost"}`} onClick={() => setFilter(f)}>
+            {f === "active" ? "Active" : f === "cancelled" ? "Cancelled" : "All"}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p style={{ color: "var(--ink-3)" }}>Loading orders…</p>
+      ) : visible.length === 0 ? (
+        <p style={{ color: "var(--ink-3)" }}>No orders to show.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Canteen</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Placed</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(o => {
+                const s = (o.rawStatus ?? o.status ?? "").toLowerCase();
+                const canCancel = !TERMINAL.has(s);
+                return (
+                  <tr key={o.id}>
+                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(0, 8)}</code></td>
+                    <td>{o.canteenName ?? "—"}</td>
+                    <td>{o.customerName ?? "—"}</td>
+                    <td>₹{(o.total ?? 0).toFixed(2)}</td>
+                    <td>
+                      <span style={{ fontSize: "0.75rem", padding: "0.15rem 0.5rem", borderRadius: 6,
+                        background: s === "cancelled" ? "#fee2e2" : s === "completed" || s === "collected" ? "#dcfce7" : "#fef3c7",
+                        color: s === "cancelled" ? "#991b1b" : s === "completed" || s === "collected" ? "#166534" : "#92400e",
+                        fontWeight: 600 }}>
+                        {s}
+                      </span>
+                      {s === "cancelled" && o.cancellation_reason && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", marginTop: "0.2rem", maxWidth: 220 }}>
+                          {o.cancellation_reason}
+                          {o.refund_status && <> · refund: {o.refund_status}</>}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{relativeTime(o.createdAt)}</td>
+                    <td>
+                      {canCancel ? (
+                        <button className="btn btn-ghost" style={{ color: "#dc2626", fontSize: "0.78rem" }} onClick={() => setCancelTarget(o)}>
+                          Cancel + refund
+                        </button>
+                      ) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {cancelTarget && session?.access_token && (
+        <CancelOrderModal
+          orderId={cancelTarget.id}
+          orderRef={cancelTarget.id.slice(0, 8)}
+          amount={cancelTarget.total ?? 0}
+          authToken={session.access_token}
+          onClose={() => setCancelTarget(null)}
+          onSuccess={() => { setCancelTarget(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}

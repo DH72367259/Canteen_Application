@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import type { CanteenOrder } from "@/types/canteen";
 import type { Session } from "@supabase/supabase-js";
+import CancelOrderModal from "@/components/CancelOrderModal";
 
 type BinStatus = "placed" | "preparing" | "completed" | "delayed" | "empty";
 
@@ -1514,6 +1515,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     status: string;
     bin_id: string | null;
     pickup_slot?: string | null;
+    total_amount?: number | null;
     profiles?: { name: string | null } | null;
     order_items?: Array<{ quantity: number; menu_items: { name: string; is_meal: boolean } | null }>;
   };
@@ -1522,6 +1524,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<{ bin: ApiBin; order: ApiOrder | null } | null>(null);
+  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
@@ -1702,6 +1705,13 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
                       </ul>
                     </div>
                   )}
+                  {selected.order.status !== "cancelled" && selected.order.status !== "collected" && selected.order.status !== "completed" && (
+                    <button
+                      onClick={() => { const id = selected.order!.id; setSelected(null); setCancelOrderId(id); }}
+                      style={{ marginTop: "0.75rem", width: "100%", padding: "0.55rem", background: "var(--red)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
+                      ❌ Cancel order (auto-refund)
+                    </button>
+                  )}
                 </>
               ) : selected.bin.is_occupied ? (
                 <p style={{ color: "var(--ink-3)" }}>Bin marked occupied but no active order is linked. It will free automatically when collected.</p>
@@ -1711,6 +1721,17 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
             </div>
           </div>
         </div>
+      )}
+
+      {cancelOrderId && session?.access_token && (
+        <CancelOrderModal
+          orderId={cancelOrderId}
+          orderRef={cancelOrderId.slice(0, 8).toUpperCase()}
+          amount={orders.find(o => o.id === cancelOrderId)?.total_amount ?? undefined}
+          authToken={session.access_token}
+          onClose={() => setCancelOrderId(null)}
+          onSuccess={() => { /* refetch handled by polling */ }}
+        />
       )}
     </div>
   );
