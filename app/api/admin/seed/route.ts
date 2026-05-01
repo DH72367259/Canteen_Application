@@ -210,7 +210,7 @@ async function runUsers(supabase: ReturnType<typeof createAdminClient>, students
     }
     await supabase.from("profiles").upsert({
       id: data.user.id, email, name, phone, role,
-      canteen_id: canteenId, wallet_balance: role === "user" ? 200 : 0,
+      canteen_id: canteenId,
     }, { onConflict: "id" });
     created++;
   }
@@ -546,7 +546,7 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
     const canteenId = u.canteenName ? canteenMap[u.canteenName] ?? null : null;
     const { error: profErr } = await supabase.from("profiles").upsert({
       id: userId, email: u.email, name: u.name, phone: u.phone, role: u.role,
-      canteen_id: canteenId, wallet_balance: 0,
+      canteen_id: canteenId,
     }, { onConflict: "id" });
     if (profErr) errors.push(`profile ${u.email}: ${profErr.message}`);
     else usersCreated++;

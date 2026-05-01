@@ -451,7 +451,6 @@ export default function OrderStatusPage() {
         {[
           { icon: "🏠", label: "Home",      href: "/dashboard" },
           { icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { icon: "🎁", label: "Rewards",   href: "/dashboard/rewards" },
           { icon: "👤", label: "Profile",   href: "/dashboard/profile" },
         ].map(item => (
           <Link key={item.href} href={item.href} className="bottom-nav-item">

@@ -133,7 +133,6 @@ export interface AuthUser {
   role: UserRole
   phone?: string | null
   username?: string | null
-  walletBalance: number
   mustChangePassword?: boolean
   hasPassword?: boolean
   /** Set for vendor / canteen_admin / worker; null for students. Without this,
@@ -183,7 +182,7 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Profile fetch timed out')), 4000)
     )
-    const query = supabase.from('profiles').select('name, role, wallet_balance, phone, username, canteen_id').eq('id', userId).maybeSingle()
+    const query = supabase.from('profiles').select('name, role, phone, username, canteen_id').eq('id', userId).maybeSingle()
     const { data, error } = await Promise.race([query, timeoutPromise])
     // Detect deleted user: row missing AND no error (PGRST116 — "no rows").
     // When this happens the JWT in localStorage is for a Supabase auth user
@@ -191,7 +190,7 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     // treat the session as invalid so the dashboard doesn't render a stale
     // cached profile for a user that's been wiped from the DB.
     if (!data && !error) {
-      return { walletBalance: 0, _resolved: true, _deleted: true } as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
+      return { _resolved: true, _deleted: true } as Partial<AuthUser> & { _resolved?: boolean; _deleted?: boolean }
     }
     let canteenId: string | null = data?.canteen_id ?? null
     const role = (data?.role as UserRole) ?? 'user'
@@ -217,7 +216,6 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     return {
       displayName: data?.name ?? null,
       role,
-      walletBalance: data?.wallet_balance ?? 0,
       phone: data?.phone ?? null,
       username: data?.username ?? null,
       canteenId,
@@ -229,7 +227,7 @@ async function fetchProfile(userId: string): Promise<Partial<AuthUser>> {
     // _resolved=false signals to the auth provider: do NOT trust this role.
     // It will be merged with whatever role we've already confirmed (roleRef)
     // or with the JWT user_metadata.role as a last-resort fallback.
-    return { walletBalance: 0, _resolved: false } as Partial<AuthUser> & { _resolved?: boolean }
+    return { _resolved: false } as Partial<AuthUser> & { _resolved?: boolean }
   }
 }
 
@@ -245,7 +243,6 @@ function buildAuthUser(
     role: profile.role ?? 'user',
     phone: profile.phone ?? null,
     username: profile.username ?? null,
-    walletBalance: profile.walletBalance ?? 0,
     mustChangePassword: profile.mustChangePassword ?? false,
     hasPassword: profile.hasPassword ?? false,
     canteenId: profile.canteenId ?? null,
@@ -632,7 +629,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured()) {
       const role = demoRoleFor(email)
       const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : 'Student (Demo)'
-      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100 }))
+      setUser(buildAuthUser('demo-user', email, { role, displayName: name }))
       return
     }
     const { error } = await withTimeout(
@@ -659,7 +656,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured()) {
       const role = demoRoleFor(email)
       const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : role === 'vendor' ? 'Vendor (Demo)' : 'Student (Demo)'
-      setUser(buildAuthUser('demo-user', email, { role, displayName: name, walletBalance: 100, hasPassword: true }))
+      setUser(buildAuthUser('demo-user', email, { role, displayName: name, hasPassword: true }))
       return
     }
     const { error } = await withTimeout(
@@ -677,7 +674,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const id = identifier.trim()
       const role = demoRoleFor(id.includes('@') ? id : null)
       const name = role === 'super_admin' ? 'Admin (Demo)' : role === 'canteen_admin' ? 'Canteen (Demo)' : 'Student (Demo)'
-      setUser(buildAuthUser('demo-user', id.includes('@') ? id : undefined, { role, displayName: name, walletBalance: 100, hasPassword: true }))
+      setUser(buildAuthUser('demo-user', id.includes('@') ? id : undefined, { role, displayName: name, hasPassword: true }))
       return
     }
     // Strip leading @ if user typed @username

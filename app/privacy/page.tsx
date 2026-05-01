@@ -55,7 +55,7 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>Process orders, generate pickup OTPs, and assign bins.</li>
           <li>Send transactional notifications (order placed / preparing / ready / collected) via in-app push, SMS or WhatsApp.</li>
-          <li>Calculate Canteen Cash rewards and NoQx Pro savings on your behalf.</li>
+          <li>Calculate NoQx Pro savings on your behalf.</li>
           <li>Detect duplicate / fraudulent payments via the audit ledger.</li>
           <li>Help our support team investigate disputes (only the order in question is opened).</li>
           <li>Anonymous, aggregated analytics to improve menu placement and slot capacity.</li>

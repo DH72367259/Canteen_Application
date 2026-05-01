@@ -88,18 +88,6 @@ export async function addRewardTransaction(
     expires_at: expiresAt,
   })
   if (error) throw error
-
-  // Atomically update wallet_balance (uses increment_wallet_balance SQL function)
-  const delta =
-    type === 'redeemed' || type === 'expired'
-      ? -Math.abs(points)
-      : Math.abs(points)
-
-  const { error: rpcError } = await supabase.rpc('increment_wallet_balance', {
-    p_user_id: uid,
-    p_delta:   delta,
-  })
-  if (rpcError) throw rpcError
 }
 
 // ============================================================

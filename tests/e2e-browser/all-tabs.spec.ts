@@ -162,7 +162,6 @@ test.describe("student: every dashboard route", () => {
         "/dashboard",
         "/dashboard/orders",
         "/dashboard/profile",
-        "/dashboard/rewards",
         "/dashboard/support",
       ];
       for (const r of routes) {

@@ -130,7 +130,7 @@ function OverviewSection() {
     { icon: "🏪", label: "Active Canteens",    value: String(stats?.counts.canteens_active ?? 0), sub: "live now",                       color: "var(--orange)" },
     { icon: "👥", label: "Total Users",        value: String(stats?.counts.users_total ?? 0),     sub: "profiles",                        color: "var(--blue)"   },
     { icon: "📦", label: "Orders Today",       value: String(stats?.today.orders ?? 0),           sub: `₹${(stats?.today.revenue ?? 0).toFixed(0)} revenue`, color: "var(--green)"  },
-    { icon: "💰", label: "Canteen Cash Given", value: `₹${(stats?.month.revenue ?? 0).toFixed(0)}`, sub: "this month gross",                color: "var(--yellow)" },
+    { icon: "💰", label: "Revenue (gross)", value: `₹${(stats?.month.revenue ?? 0).toFixed(0)}`, sub: "this month gross",                color: "var(--yellow)" },
     { icon: "⭐",  label: "Avg. Rating",         value: "—",                                          sub: "no ratings yet",                  color: "var(--orange)" },
     { icon: "📱", label: "App Users",          value: String(stats?.counts.users_total ?? 0),     sub: "installed",                       color: "var(--blue)"   },
   ];

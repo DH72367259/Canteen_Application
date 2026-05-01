@@ -16,7 +16,7 @@ export default function RefundPolicyPage() {
           <li>Order cut-off: orders close <strong>one slot-duration before slot start</strong> (e.g. for a 1:00 PM slot with 15-min slots, ordering closes at 12:45 PM).</li>
           <li>Cancellation while status is <strong>Placed</strong> (not yet preparing) → full refund.</li>
           <li>Once preparation has started → no refund (food has been made for you).</li>
-          <li>Canteen-side cancellation → full refund + Canteen Cash compensation.</li>
+          <li>Canteen-side cancellation → full refund to original payment method.</li>
           <li>Duplicate / failed payments → full refund within 7 working days.</li>
           <li>NoQx Pro: 7-day cooling-off refund if you have not used Pro savings.</li>
         </ul>
@@ -63,7 +63,7 @@ export default function RefundPolicyPage() {
           </tbody>
         </table>
         <p style={{ fontSize: "0.85rem", color: "var(--ink-3)", marginTop: "0.75rem" }}>
-          Refunds always go back to the original payment instrument by default. You may opt for Canteen Cash (instant credit) instead — see Section 4.
+          Refunds always go back to the original payment instrument — see Section 4 for processing timelines per payment method.
         </p>
       </section>
 
@@ -71,8 +71,7 @@ export default function RefundPolicyPage() {
         <h2>3. Cancellation by the Canteen</h2>
         <p>If a canteen cancels your order (item run-out, equipment failure, sudden closure, etc.):</p>
         <ul>
-          <li><strong>100% refund</strong> regardless of order status, processed automatically.</li>
-          <li>Plus <strong>₹5–₹20 of Canteen Cash</strong> as inconvenience compensation, decided by the support team.</li>
+          <li><strong>100% refund</strong> regardless of order status, processed automatically to your original payment method.</li>
           <li>You receive an in-app + push notification within seconds of the cancellation.</li>
         </ul>
       </section>
@@ -85,13 +84,6 @@ export default function RefundPolicyPage() {
           <li><strong>Debit / Credit card:</strong> 7–10 working days (bank-dependent).</li>
           <li><strong>Net banking:</strong> 5–7 working days.</li>
           <li><strong>Wallet (Razorpay):</strong> within 24 hours.</li>
-        </ul>
-        <h3>4.2 Canteen Cash (instant)</h3>
-        <ul>
-          <li>Credited to your in-app wallet within seconds.</li>
-          <li>Expires <strong>30 days</strong> from the credit date.</li>
-          <li>Usable at any NoQx canteen on any future order.</li>
-          <li>Cannot be transferred or withdrawn as cash.</li>
         </ul>
       </section>
 

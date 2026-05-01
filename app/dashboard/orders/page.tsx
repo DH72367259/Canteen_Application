@@ -350,7 +350,7 @@ function OrderCard({ order, onReorder, onInvoice, showReorder }: {
         <div style={{ fontWeight: 800, color: "var(--orange)", fontSize: "0.95rem" }}>₹{order.total}</div>
         {order.paymentId && (
           <span style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontFamily: "monospace" }}>
-            {order.paymentId === "WALLET" ? "Paid via wallet" : `ID:…${order.paymentId.slice(-8)}`}
+            {order.paymentId === "FREE" ? "Free order" : `ID:…${order.paymentId.slice(-8)}`}
           </span>
         )}
       </div>

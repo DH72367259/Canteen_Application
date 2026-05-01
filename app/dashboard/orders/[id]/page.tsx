@@ -175,7 +175,6 @@ export default function OrderTrackingPage() {
       <div className="bottom-nav">
         <button className="nav-item" onClick={() => router.push("/dashboard")}>🏠<span>Home</span></button>
         <button className="nav-item active">📦<span>Orders</span></button>
-        <button className="nav-item" onClick={() => router.push("/dashboard/rewards")}>💰<span>Rewards</span></button>
         <button className="nav-item" onClick={() => router.push("/dashboard/profile")}>👤<span>Profile</span></button>
       </div>
     </div>

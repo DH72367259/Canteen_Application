@@ -13,9 +13,6 @@ const RATE_LIMITS: { pattern: RegExp; limit: number; windowMs: number }[] = [
   { pattern: /^\/api\/auth\/setup-account/,     limit: 10,  windowMs: 60_000 },
   { pattern: /^\/api\/auth\/change-password/,   limit: 10,  windowMs: 60_000 },
   { pattern: /^\/api\/auth\/session/,           limit: 60,  windowMs: 60_000 },
-  // Wallet withdraw — very sensitive money movement
-  { pattern: /^\/api\/wallet\/withdraw/,        limit: 10,  windowMs: 60_000 },
-  { pattern: /^\/api\/wallet\//,                limit: 30,  windowMs: 60_000 },
   // Order placement
   { pattern: /^\/api\/orders\/place/,           limit: 30,  windowMs: 60_000 },
   // Payment endpoints — 10 requests per minute per IP

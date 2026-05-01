@@ -141,7 +141,7 @@ All 133 tests in 11 suites pass; production build is clean.
 Sized for **600 k orders / month → 2 M orders / month with 50 k DAU**:
 
 - **Index pack** in [supabase/migrations/phase6_scaling_indexes.sql](supabase/migrations/phase6_scaling_indexes.sql) — composite indexes on `(user_id, created_at DESC)`, `(canteen_id, status, created_at DESC)`, `(canteen_id, created_at DESC)`, `(canteen_id, slot_id)`, `order_items.order_id`, `orders.bin_id`, `payments(user_id, captured_at DESC)`. All `CONCURRENTLY` so they roll out without blocking writes. Year-2 partitioning recipe included as a comment.
-- **In-memory rate limiter** [lib/rateLimit.ts](lib/rateLimit.ts) wired into the highest-risk POSTs: `/api/orders/place` (10 / min / user), `/api/payments/razorpay-order` (20 / min / IP), `/api/wallet/topup` (5 / min / IP). Returns 429 + `Retry-After`. Drop-in swappable for Upstash Redis when scaling horizontally.
+- **In-memory rate limiter** [lib/rateLimit.ts](lib/rateLimit.ts) wired into the highest-risk POSTs: `/api/orders/place` (10 / min / user), `/api/payments/razorpay-order` (20 / min / IP). Returns 429 + `Retry-After`. Drop-in swappable for Upstash Redis when scaling horizontally.
 - **Edge cache headers** on the public read endpoints students poll the most: `/api/canteens` (`max-age=30, swr=60`) and `/api/canteens/[id]/menu` (`max-age=60, swr=120`). Cuts repeat-visit egress by ~95 %.
 - New unit tests [__tests__/rateLimit.test.ts](__tests__/rateLimit.test.ts) cover under-limit, over-limit, window reset, key isolation, and `clientKey` fallback.
 
@@ -251,8 +251,7 @@ npx playwright test tests/e2e-browser/campus-scale-load.spec.ts --reporter=line
 7. [Security](#security)
 8. [NoQx Pro Subscription](#noqx-pro-subscription)
 8. [Order Tracking Flow](#order-tracking-flow)
-9. [Rewards (NoQx Cash)](#rewards-noqx-cash)
-10. [Settlement & Finance — Admin Payments Module](#settlement--finance--admin-payments-module)
+9. [Settlement & Finance — Admin Payments Module](#settlement--finance--admin-payments-module)
 11. [Vendor Earnings View](#vendor-earnings-view)
 12. [Supabase Setup](#supabase-setup)
 13. [Razorpay Setup](#razorpay-setup)
@@ -570,7 +569,7 @@ Try Priority Pickup, Every Time →          ₹69/mo →
 - `GET /api/subscriptions` — check current user's Pro status
 - `POST /api/subscriptions` — upsert active subscription with 30-day expiry
 - Pro status cached in `localStorage("noqx_pro_active")` for instant UI
-- Bottom nav: **Rewards 🎁** tab (NoQx Cash balance, earn history, expiry warnings)
+- Bottom nav: **Orders 📜**, **Profile 👤**, **Support 💬** (rewards/wallet feature removed — payments are direct via Razorpay UPI/Card)
 
 ---
 
@@ -614,39 +613,6 @@ Hope you enjoyed your meal.
 Returning home in 3s…
 ```
 Auto-redirects to `/dashboard` and clears the active order from storage.
-
----
-
-## Rewards (NoQx Cash)
-
-`/dashboard/rewards` is a full Rewards page showing:
-- **Balance card**: NoQx Cash balance, expiry warning (⚡ "₹X expiring in Y days"), total saved
-- **How it works**: Order → Earn rewards; Pickup → Earn more; Use on next order
-- **Expiry notice**: Rewards expire 7 days from earning (ℹ icon explains this)
-- **Transaction history**: earn / redeem entries with timestamps
-- **Pro upgrade link**: Banner linking students who aren't on Pro to `/dashboard/pro`
-
-NoQx Cash flow:
-- Earned after successful order collection (stored in `canteen_reward_transactions` via localStorage for demo; persisted in `wallet_transactions` Supabase table in full integration)
-- Checkout nudge: "Use ₹X before it expires" if balance about to expire
-- Redeem at checkout via "Use Canteen Cash" toggle
-
-### Top-up
-
-- Minimum: ₹100
-- Via Razorpay (UPI / Card / Net Banking / Wallet)
-- Balance credited to `wallet_transactions` on success
-
-### Withdrawal
-
-- Minimum: ₹100, only to the same payment method used for the last top-up
-- Processed via Razorpay refund API
-
-### Concurrent Session Enforcement
-
-Only one active session per student is permitted. A second login from a new device
-triggers `/api/auth/session` which invalidates the older session — the first device
-sees "You have been signed in from another device."
 
 ---
 
@@ -1182,7 +1148,7 @@ Access control:
 6.  Add items to cart - cart bar appears at bottom showing total
 7.  Tap cart bar -> Checkout page loads with items pre-filled
 8.  Choose a pickup time slot
-9.  (Optional) toggle on Canteen Cash wallet balance
+9.  Pay via Razorpay (UPI / debit/credit card / net banking)
 10. Tap "Pay Rs X via Razorpay" -> Razorpay popup opens
 11. Pay via UPI / Card / Net Banking / Wallet
 12. Razorpay calls our webhook -> we verify HMAC-SHA256 signature
@@ -1294,15 +1260,6 @@ Razorpay webhook (payment.failed)
 |--------|------|-------------|
 | GET | `/api/subscriptions` | Check current user's Pro status |
 | POST | `/api/subscriptions` | Activate Pro after Razorpay payment |
-
-### Wallet
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/wallet` | Get balance + transactions |
-| POST | `/api/wallet/topup` | Create top-up Razorpay order |
-| POST | `/api/wallet/topup/verify` | Verify top-up payment |
-| POST | `/api/wallet/withdraw` | Initiate withdrawal |
 
 ### Admin — Settlements & Finance
 
@@ -1601,7 +1558,6 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 |---|------|--------|-------|
 | 4 | Razorpay KYC + go-live | [dashboard.razorpay.com](https://dashboard.razorpay.com) → upload PAN/GSTIN/bank/director KYC; switch `RAZORPAY_KEY_ID` from `rzp_test_…` to `rzp_live_…` in Railway envs | You |
 | 8 | First Super Admin profile | After inviting via Supabase Auth, run `INSERT INTO profiles (id, role, name) VALUES ('<UUID>', 'super_admin', 'Your Name');` once | You |
-| 10 | Wallet top-up end-to-end smoke | Run after Razorpay KYC is live: `POST /api/wallet/topup` → `POST /api/wallet/topup/verify`; verify `wallet_transactions` row appears | You |
 | — | Off-site database backups | **Code is ready** — see [scripts/backup_to_s3.mjs](scripts/backup_to_s3.mjs) and [.github/workflows/nightly-backup.yml](.github/workflows/nightly-backup.yml). To activate: add 6 GitHub repo secrets (`BACKUP_DATABASE_URL`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`). See [Off-site Backup Setup](#off-site-backup-setup) below. | You (5 min) |
 
 ### Optional / future enhancements
@@ -1623,7 +1579,6 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 7 | `platform_charges` seed row | ✅ Auto-seeded |
 | 8 | First super_admin profile | ⏳ Ops — yours |
 | 9 | Vendor / canteen-admin real orders | ✅ Done |
-| 10 | Wallet top-up smoke test | ⏳ Needs Razorpay live |
 | 11 | Privacy / Terms substantive content | ✅ Done |
 | 12 | Delete My Account flow | ✅ Done (1 May 2026) |
 | 13 | ~~Twilio trial → paid~~ | ⬜ N/A — phone OTP not used (email/password + email OTP only) |

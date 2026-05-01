@@ -173,12 +173,8 @@ function CartContent() {
   const convFee    = (isPro || proSelectedNow) ? 0 : 4;
   const proAddon   = proSelectedNow ? 69 : 0;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  // Wallet / Canteen-cash payments were removed from the user app per the
-  // revised workflow. Keep the state hook + computed value harmless (always 0)
-  // so existing references compile, but never apply a discount.
-  const walletDisc = 0;
   const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
-  const payable    = Math.max(0, subtotal + convFee + extraBinFee + proAddon - walletDisc);
+  const payable    = Math.max(0, subtotal + convFee + extraBinFee + proAddon);
 
   function updateQty(id: string, delta: number) {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
@@ -297,7 +293,7 @@ function CartContent() {
     setBusy(true);
     setError(null);
 
-    if (payable === 0) { await finaliseOrder("WALLET"); return; }
+    if (payable === 0) { await finaliseOrder("FREE"); return; }
 
     // 1. Create the Razorpay (or test-mode) order FIRST. The server tells us
     //    whether we're in test mode — if we are, we skip loading the SDK
