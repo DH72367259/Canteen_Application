@@ -4,8 +4,8 @@
  * Staff-initiated order cancellation with mandatory reason and
  * automatic Razorpay refund.
  *
- * Roles allowed: super_admin | co_admin | canteen_admin (own canteen
- * only) | vendor (own canteen only).
+ * Roles allowed: super_admin | co_admin | canteen_admin | vendor | worker
+ * (canteen staff are restricted to their own canteen).
  *
  * Side-effects:
  *   1. Validates order is still cancellable (not collected / not already cancelled).
@@ -42,12 +42,13 @@ export async function POST(
   }
   if (!auth) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  // Worker is intentionally excluded — cancellation is a managerial decision.
+  // Worker, canteen_admin, vendor, super_admin and co_admin can cancel orders.
+  // Anyone else (regular users) is rejected.
   const role = auth.role ?? "";
   const isPlatformAdmin = role === "super_admin" || role === "co_admin";
-  const isCanteenAdmin  = role === "canteen_admin" || role === "vendor";
-  if (!isPlatformAdmin && !isCanteenAdmin) {
-    return NextResponse.json({ error: "Only canteen managers and platform admins can cancel orders." }, { status: 403 });
+  const isCanteenStaff  = role === "canteen_admin" || role === "vendor" || role === "worker";
+  if (!isPlatformAdmin && !isCanteenStaff) {
+    return NextResponse.json({ error: "Only canteen staff and platform admins can cancel orders." }, { status: 403 });
   }
   if (!canManageOrders(role)) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -86,8 +87,8 @@ export async function POST(
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  // Canteen staff can only cancel their own canteen's orders.
-  if (isCanteenAdmin && auth.canteenId && order.canteen_id !== auth.canteenId) {
+  // Canteen staff (worker / vendor / canteen_admin) can only cancel orders for their own canteen.
+  if (isCanteenStaff && auth.canteenId && order.canteen_id !== auth.canteenId) {
     return NextResponse.json({ error: "You can only cancel orders for your own canteen." }, { status: 403 });
   }
 
@@ -205,7 +206,7 @@ export async function POST(
     await supabase.from("notifications").insert({
       title: "Order cancelled by canteen",
       body:  `Reason: ${reasonRaw}. ${refundLine}`,
-      type:  "warning",
+      type:  "order",
       recipient_type: "user",
       recipient_id:   order.user_id,
       target_role:    "user",
@@ -217,7 +218,7 @@ export async function POST(
   await supabase.from("notifications").insert({
     title: "Order cancelled",
     body:  `Order ${orderId.slice(0, 8).toUpperCase()} cancelled by ${role}. Reason: ${reasonRaw}`,
-    type:  "warning",
+    type:  "order",
     recipient_type: "canteen",
     recipient_id:   order.canteen_id,
     target_role:    "canteen_admin",

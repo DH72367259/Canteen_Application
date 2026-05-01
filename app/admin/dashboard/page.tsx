@@ -2859,6 +2859,7 @@ function OrdersSection({ session }: { session: { access_token?: string } | null 
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"active" | "cancelled" | "all">("active");
   const [cancelTarget, setCancelTarget] = useState<AdminOrder | null>(null);
+  const [refundingId, setRefundingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!session?.access_token) return;
@@ -2878,6 +2879,27 @@ function OrdersSection({ session }: { session: { access_token?: string } | null 
   }, [session?.access_token]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function retryRefund(orderId: string) {
+    if (!session?.access_token) return;
+    if (!confirm("Issue a manual Razorpay refund for this order? The amount will be debited from the merchant balance and credited back to the student.")) return;
+    setRefundingId(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(`Refund failed: ${data.error ?? "Unknown error"}`);
+      } else {
+        alert(`Refund processed. Razorpay refund id: ${data.refund?.id ?? "—"}`);
+      }
+    } finally {
+      setRefundingId(null);
+      load();
+    }
+  }
 
   const TERMINAL = new Set(["cancelled", "collected", "completed"]);
   const visible = orders.filter(o => {
@@ -2949,6 +2971,15 @@ function OrdersSection({ session }: { session: { access_token?: string } | null 
                       {canCancel ? (
                         <button className="btn btn-ghost" style={{ color: "#dc2626", fontSize: "0.78rem" }} onClick={() => setCancelTarget(o)}>
                           Cancel + refund
+                        </button>
+                      ) : s === "cancelled" && o.refund_status !== "processed" && o.refund_status !== "not_required" ? (
+                        <button
+                          className="btn btn-ghost"
+                          style={{ color: "#7c3aed", fontSize: "0.78rem" }}
+                          onClick={() => retryRefund(o.id)}
+                          disabled={refundingId === o.id}
+                        >
+                          {refundingId === o.id ? "Processing…" : "↻ Retry refund"}
                         </button>
                       ) : "—"}
                     </td>

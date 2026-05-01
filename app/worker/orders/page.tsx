@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import CancelOrderModal from "@/components/CancelOrderModal";
 
 interface WorkerOrder {
   id: string;
@@ -13,6 +14,7 @@ interface WorkerOrder {
   bin_color?: string | null;
   pickup_slot?: string | null;
   items: { name: string; quantity: number }[];
+  total_amount?: number | null;
   /** Per-bin breakdown for multi-bin orders (Phase 7). */
   bin_assignments?: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number; isMeal?: boolean }[] }[];
 }
@@ -29,6 +31,7 @@ export default function WorkerOrdersPage() {
   const [fetching, setFetching]     = useState(true);
   const [updating, setUpdating]     = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
+  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -61,6 +64,7 @@ export default function WorkerOrdersPage() {
             slotLabel?: string | null;
             pickupSlot?: string | null;
             items?: { name: string; quantity: number }[];
+            total?: number;
             binAssignments?: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number; isMeal?: boolean }[] }[];
           };
           const mapped: WorkerOrder[] = ((data.orders ?? []) as ApiCanteenOrder[])
@@ -75,6 +79,7 @@ export default function WorkerOrdersPage() {
               bin_color: o.binColor ?? null,
               pickup_slot: o.slotLabel ?? o.pickupSlot ?? null,
               items: o.items ?? [],
+              total_amount: o.total ?? null,
               bin_assignments: o.binAssignments,
             }));
           setOrders(mapped);
@@ -204,6 +209,11 @@ export default function WorkerOrdersPage() {
                       ✅ In Bin — awaiting OTP pickup
                     </div>
                   )}
+                  {!(["collected", "completed", "cancelled"].includes(order.status)) && (
+                    <button onClick={() => setCancelOrderId(order.id)} style={{ background: "#fff", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "0.55rem", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
+                      ❌ Cancel order (auto-refund)
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -217,6 +227,23 @@ export default function WorkerOrdersPage() {
         <button className="nav-item" onClick={() => router.push("/worker/bins")}>🧺<span>Bins</span></button>
         <button className="nav-item" onClick={() => router.push("/worker/otp-verify")}>🔐<span>OTP Verify</span></button>
       </div>
+
+      {cancelOrderId && session?.access_token && (() => {
+        const target = orders.find(o => o.id === cancelOrderId);
+        return (
+          <CancelOrderModal
+            orderId={cancelOrderId}
+            orderRef={cancelOrderId.slice(-6).toUpperCase()}
+            amount={target?.total_amount ?? 0}
+            authToken={session.access_token}
+            onClose={() => setCancelOrderId(null)}
+            onSuccess={() => {
+              setCancelOrderId(null);
+              setOrders(prev => prev.filter(o => o.id !== cancelOrderId));
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
