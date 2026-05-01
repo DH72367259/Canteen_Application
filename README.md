@@ -1558,7 +1558,7 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 |---|------|--------|-------|--------|
 | 4 | Razorpay KYC + go-live | [dashboard.razorpay.com](https://dashboard.razorpay.com) → upload PAN/GSTIN/bank/director KYC; switch `RAZORPAY_KEY_ID` from `rzp_test_…` to `rzp_live_…` in Railway envs | You | 🔵 Deferred until production launch — only needed when you start accepting real money |
 | 8 | First Super Admin profile | After inviting via Supabase Auth, run `INSERT INTO profiles (id, role, name) VALUES ('<UUID>', 'super_admin', 'Your Name');` once | You | 🔵 Deferred until production Supabase project is provisioned |
-| — | Off-site database backups | Run `bash scripts/setup_backup_secrets.sh` (interactive helper) — prompts for the 6 values and pushes them to GitHub via `gh secret set`. See [Off-site Backup Setup](#off-site-backup-setup) below for full walkthrough. | You (5 min) | ⏳ Action required |
+| — | Off-site database backups | Run `bash scripts/setup_backup_secrets.sh` (interactive helper) — prompts for the 6 values and pushes them to GitHub via `gh secret set`. See [Off-site Backup Setup](#off-site-backup-setup) below for full walkthrough. | You (5 min) | 🔵 Deferred until production launch — only meaningful once real user/order data exists |
 
 ### Optional / future enhancements
 
