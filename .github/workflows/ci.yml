@@ -1,0 +1,112 @@
+name: CI
+
+# Runs on every push and pull request. Three independent jobs so a failure
+# in one (e.g. a flaky e2e) doesn't block the others from reporting.
+#
+# Required secrets (configured in GitHub → Settings → Secrets):
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   SUPABASE_SERVICE_ROLE_KEY
+#   (optional) RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET — only needed by jobs
+#   that actually exercise Razorpay; jest mocks them away.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Type-check + lint ───────────────────────────────────────────────
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  # ── 2. Backend regression (Jest) ──────────────────────────────────────
+  jest:
+    name: Backend regression (Jest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+      - run: npm ci
+      - name: Run Jest suites
+        env:
+          NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx jest --runInBand --forceExit --testTimeout=30000 --ci
+
+  # ── 3. Headless E2E (Playwright) ──────────────────────────────────────
+  # Boots `next dev` against the live Supabase project, then runs the full
+  # tests/e2e-browser suite headless. Skip with `[skip-e2e]` in the commit
+  # subject if you need an emergency hotfix.
+  e2e:
+    name: Headless E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: "!contains(github.event.head_commit.message, '[skip-e2e]')"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+      - run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Write .env.local for dev server + helpers
+        env:
+          NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          cat > .env.local <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+          SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+          EOF
+      - name: Boot dev server
+        run: |
+          nohup npm run dev > /tmp/dev.log 2>&1 &
+          echo "Waiting for http://localhost:3000 …"
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:3000; then
+              echo "Server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to start"; tail -50 /tmp/dev.log; exit 1
+      - name: Run Playwright suites
+        env:
+          APP_BASE_URL: http://localhost:3000
+        run: npx playwright test --reporter=list
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload dev server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-server-log
+          path: /tmp/dev.log
+          if-no-files-found: ignore
