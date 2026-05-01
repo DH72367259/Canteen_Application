@@ -1554,11 +1554,11 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 ### Operations / external (cannot be done in code — requires you to act)
 
-| # | Item | Action | Owner |
-|---|------|--------|-------|
-| 4 | Razorpay KYC + go-live | [dashboard.razorpay.com](https://dashboard.razorpay.com) → upload PAN/GSTIN/bank/director KYC; switch `RAZORPAY_KEY_ID` from `rzp_test_…` to `rzp_live_…` in Railway envs | You |
-| 8 | First Super Admin profile | After inviting via Supabase Auth, run `INSERT INTO profiles (id, role, name) VALUES ('<UUID>', 'super_admin', 'Your Name');` once | You |
-| — | Off-site database backups | **Code is ready** — see [scripts/backup_to_s3.mjs](scripts/backup_to_s3.mjs) and [.github/workflows/nightly-backup.yml](.github/workflows/nightly-backup.yml). To activate: add 6 GitHub repo secrets (`BACKUP_DATABASE_URL`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`). See [Off-site Backup Setup](#off-site-backup-setup) below. | You (5 min) |
+| # | Item | Action | Owner | Status |
+|---|------|--------|-------|--------|
+| 4 | Razorpay KYC + go-live | [dashboard.razorpay.com](https://dashboard.razorpay.com) → upload PAN/GSTIN/bank/director KYC; switch `RAZORPAY_KEY_ID` from `rzp_test_…` to `rzp_live_…` in Railway envs | You | 🔵 Deferred until production launch — only needed when you start accepting real money |
+| 8 | First Super Admin profile | After inviting via Supabase Auth, run `INSERT INTO profiles (id, role, name) VALUES ('<UUID>', 'super_admin', 'Your Name');` once | You | 🔵 Deferred until production Supabase project is provisioned |
+| — | Off-site database backups | Run `bash scripts/setup_backup_secrets.sh` (interactive helper) — prompts for the 6 values and pushes them to GitHub via `gh secret set`. See [Off-site Backup Setup](#off-site-backup-setup) below for full walkthrough. | You (5 min) | ⏳ Action required |
 
 ### Optional / future enhancements
 
@@ -1573,11 +1573,11 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 | 1 | `username` column in setup SQL | ✅ Done |
 | 2 | Real canteen data on student dashboard | ✅ Done |
 | 3 | Real menu data on menu page | ✅ Done |
-| 4 | Razorpay KYC + go live | ⏳ Ops — yours |
+| 4 | Razorpay KYC + go live | 🔵 Deferred — prod-only |
 | 5 | Analytics from real DB queries | ✅ Done |
 | 6 | Overview stats from real DB | ✅ Done |
 | 7 | `platform_charges` seed row | ✅ Auto-seeded |
-| 8 | First super_admin profile | ⏳ Ops — yours |
+| 8 | First super_admin profile | 🔵 Deferred — prod-only |
 | 9 | Vendor / canteen-admin real orders | ✅ Done |
 | 11 | Privacy / Terms substantive content | ✅ Done |
 | 12 | Delete My Account flow | ✅ Done (1 May 2026) |
@@ -1604,20 +1604,36 @@ Supabase Pro retains backups for only 7 days. For multi-year retention (DPDPA / 
    - **Cloudflare R2** — 10 GB free, no egress fees, ~$0.015/GB above. Recommended.
    - **Backblaze B2** — 10 GB free, $0.005/GB above, $0.01/GB egress.
    - **AWS S3** — pay-as-you-go, $0.023/GB.
-2. **Create a bucket** named e.g. `noqx-backups`. Create an IAM key with **`PutObject`, `GetObject`, `ListBucket`, `DeleteObject`** on that bucket only.
+2. **Create a bucket** named e.g. `noqx-backups`. Create an IAM/API key with **`PutObject`, `GetObject`, `ListBucket`, `DeleteObject`** on that bucket only.
 3. **Get your Supabase pooler URL.** Supabase dashboard → Project Settings → Database → Connection string → **Session mode** (port 5432), URI form. (Use the direct URL, not transaction-pooler — `pg_dump` needs session-level access.)
-4. **Add 6 GitHub Actions secrets** (Repo → Settings → Secrets and variables → Actions → New repository secret):
+4. **Install GitHub CLI once** (only step you do manually):
+   ```bash
+   brew install gh
+   gh auth login        # follow the browser flow, pick this repo
+   ```
+5. **Run the helper** — it asks for the 6 values one-by-one (secret-looking inputs are hidden) and pushes them all to GitHub:
+   ```bash
+   bash scripts/setup_backup_secrets.sh
+   ```
+   That single script replaces all 6 manual "New repository secret" clicks. Re-running it overwrites existing values, so it's safe to use for rotation.
 
-   | Secret | Example value |
-   |---|---|
-   | `BACKUP_DATABASE_URL` | `postgres://postgres.<ref>:<pwd>@aws-0-...supabase.com:5432/postgres` |
-   | `BACKUP_S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` (R2) or `https://s3.amazonaws.com` (AWS) |
-   | `BACKUP_S3_REGION` | `auto` (R2) or `us-east-1` (AWS) |
-   | `BACKUP_S3_BUCKET` | `noqx-backups` |
-   | `BACKUP_S3_ACCESS_KEY_ID` | from step 2 |
-   | `BACKUP_S3_SECRET_ACCESS_KEY` | from step 2 |
+6. **Smoke-test** the workflow without waiting for 02:30 UTC:
+   ```bash
+   gh workflow run nightly-backup.yml
+   gh run watch
+   ```
+   Should complete in 1-3 minutes for a fresh DB and produce an object at `s3://<bucket>/noqx/<YYYY-MM-DD>/noqx-<timestamp>.sql.gz`.
 
-5. **Smoke-test** by clicking **Actions → Nightly DB Backup → Run workflow** in GitHub. Should complete in 1-3 minutes for a fresh DB and produce an object at `s3://noqx-backups/noqx/<YYYY-MM-DD>/noqx-<timestamp>.sql.gz`.
+#### Reference: the 6 secrets the helper sets
+
+| Secret | Example value |
+|---|---|
+| `BACKUP_DATABASE_URL` | `postgresql://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres` |
+| `BACKUP_S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` (R2) or `https://s3.<region>.amazonaws.com` (AWS) |
+| `BACKUP_S3_REGION` | `auto` (R2) or `ap-south-1` (AWS) |
+| `BACKUP_S3_BUCKET` | `noqx-backups` |
+| `BACKUP_S3_ACCESS_KEY_ID` | from step 2 |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | from step 2 |
 
 ### Restoring a backup
 

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * What it does (in order, all server-side via service-role key):
  *   1. Anonymises personally identifiable fields on the user's profile row
  *      (name, username, phone, email, fcm_token) so historical orders /
- *      payments / wallet transactions remain linkable for legally-required
+ *      payments remain linkable for legally-required
  *      financial audit retention but contain no personal data.
  *   2. Marks the profile as deleted (`deleted_at`, role -> 'deleted') so
  *      RLS-protected reads can filter the user out of normal listings.
