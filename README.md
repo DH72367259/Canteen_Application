@@ -1587,6 +1587,33 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 **Code-side: 0 TODOs remaining.** Everything left in this section is either an operations action only you can perform (KYC, billing, DNS, etc.) or an explicitly optional enhancement.
 
+### Production launch checklist (owner: you)
+
+> Code is shipping-ready. The items below are the only things that block flipping a real "noqx.app" URL on for paying users. Razorpay KYC has the longest lead time (3–7 working days for approval) — start it first; everything else is 5–15 minutes on launch day.
+
+#### Hard blockers (must be done before going live)
+
+| # | When | Item | Effort | Notes |
+|---|------|------|--------|-------|
+| P1 | **Start now** | **Razorpay KYC** — upload PAN / GSTIN / cancelled cheque / director KYC at [dashboard.razorpay.com](https://dashboard.razorpay.com) | 30 min upload + 3-7 day wait | Without this you cannot accept real money. Test mode keeps working in the meantime. |
+| P2 | Launch day | Create production **Supabase project** + run [supabase-setup.sql](supabase-setup.sql) once | 10 min | Use a different project from dev so test data never mixes with prod. |
+| P3 | Launch day | Create production **Railway project**, connect this repo, paste env vars (Supabase URL/keys, Razorpay live keys, `NEXT_PUBLIC_APP_URL`) | 10 min | See [Environment Variables](#environment-variables) below for the full list. |
+| P4 | Launch day | **Buy a domain** (e.g. `noqx.app`) and point a CNAME to the Railway hostname | 15 min | Required for Razorpay live mode (they reject `*.railway.app` callback URLs). |
+| P5 | Launch day | Flip Razorpay env from `rzp_test_…` to `rzp_live_…` in Railway and redeploy | 30 sec | Only do this AFTER P1 is approved. |
+| P6 | First login | Invite yourself via Supabase Auth → grab UUID → run once: `INSERT INTO profiles (id, role, name) VALUES ('<uuid>', 'super_admin', 'Your Name');` | 1 min | Bootstraps the first super-admin. All subsequent admins can be created via the in-app admin UI. |
+| P7 | First login | Run `bash scripts/setup_backup_secrets.sh` after creating a Cloudflare R2 bucket (free up to 10 GB) | 5 min | Activates the nightly off-site backup pipeline. See [Off-site Backup Setup](#off-site-backup-setup). |
+
+#### Soft / strongly-recommended (no hard deadline)
+
+| # | Item | Why |
+|---|------|-----|
+| S1 | **Real-device smoke test** — open the deployed URL on an actual phone, place a ₹1 test order through Razorpay test mode, verify worker OTP collection flow | Catches viewport / keyboard / touch-target issues that desktop testing misses. |
+| S2 | **One canteen-manager walkthrough** — get one canteen owner to click through the canteen-admin dashboard for 10 min and tell you what's confusing | Real users will surface UX problems you can't see anymore. |
+| S3 | **Decide pricing** — confirm convenience fee + Pro subscription price at launch (current defaults: ₹4 / ₹69 per month). Edit via admin dashboard or [supabase-setup.sql](supabase-setup.sql) `platform_charges` row | These are policy decisions, not code. |
+| S4 | **Lawyer review** of [app/privacy/page.tsx](app/privacy/page.tsx) + [app/terms/page.tsx](app/terms/page.tsx) before onboarding real users | Drafts are solid (DPDPA-aligned) but a one-hour review is cheap insurance. |
+| S5 | **Set up uptime monitoring** — UptimeRobot (free) pinging `/api/health` every 5 min, alert to email/Slack on down | Catches Railway sleeps, DB outages, deploy failures. |
+| S6 | **First-week monitoring plan** — keep an eye on Supabase dashboard (DB CPU, connection count) and Razorpay dashboard (failed payments) every few hours for the first 7 days | Catches scaling issues before they become outages. |
+
 ---
 
 ## Off-site Backup Setup
