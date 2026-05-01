@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { user, loading, logout, session } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [proInfo, setProInfo] = useState<{ isActive: boolean; daysLeft: number; savingsPaise: number; ordersSincePro: number } | null>(null);
 
   // Auth guard
@@ -42,6 +43,35 @@ export default function ProfilePage() {
       router.replace("/login");
     } catch {
       setSigningOut(false);
+    }
+  };
+
+  // DPDPA 2023 / GDPR right-to-erasure. Calls DELETE /api/auth/account which
+  // anonymises PII on the profile and revokes login. Two confirmations are
+  // required because this is irreversible.
+  const handleDeleteAccount = async () => {
+    if (!session?.access_token) return;
+    if (!window.confirm("Delete your account? This will anonymise your personal data and you will be logged out. This cannot be undone.")) return;
+    if (!window.confirm("Are you absolutely sure? Type OK on the next prompt to confirm.")) return;
+    const typed = window.prompt("Type DELETE to confirm permanent account deletion.");
+    if (typed !== "DELETE") return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/auth/account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        window.alert(j.error || "Failed to delete account. Please try again or contact support.");
+        setDeleting(false);
+        return;
+      }
+      await logout().catch(() => {});
+      router.replace("/login");
+    } catch {
+      window.alert("Network error. Please try again.");
+      setDeleting(false);
     }
   };
 
@@ -251,6 +281,29 @@ export default function ProfilePage() {
         >
           {signingOut ? "Signing out…" : "🚪 Sign Out"}
         </button>
+
+        {/* Delete account (DPDPA 2023 right-to-erasure) */}
+        <button
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          style={{
+            width: "100%",
+            padding: "0.75rem",
+            borderRadius: 14,
+            border: "1.5px solid #dc2626",
+            background: "#dc2626",
+            color: "white",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            cursor: deleting ? "wait" : "pointer",
+            marginTop: "0.5rem",
+          }}
+        >
+          {deleting ? "Deleting…" : "Delete My Account"}
+        </button>
+        <p style={{ textAlign: "center", color: "var(--ink-3, #9b9b94)", fontSize: "0.7rem", marginTop: "-0.25rem" }}>
+          Personal data is anonymised; transaction history is retained for legal compliance.
+        </p>
       </div>
 
       {/* Bottom navigation */}
