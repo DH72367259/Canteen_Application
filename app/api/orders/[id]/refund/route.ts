@@ -11,7 +11,9 @@
  *   - The order was cancelled before the migration ran so refund_status
  *     is null/pending.
  *
- * Roles allowed: super_admin | co_admin only — manual financial action.
+ * Roles allowed: super_admin only — manual financial action requires
+ * the highest privilege tier. Co-admins, canteen managers, and workers
+ * cannot issue refunds even though they can cancel orders.
  */
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
@@ -29,8 +31,8 @@ export async function POST(
   if (!auth) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const role = auth.role ?? "";
-  if (role !== "super_admin" && role !== "co_admin") {
-    return NextResponse.json({ error: "Only platform admins can issue manual refunds." }, { status: 403 });
+  if (role !== "super_admin") {
+    return NextResponse.json({ error: "Only the super admin can issue manual refunds." }, { status: 403 });
   }
 
   const { id: orderId } = await context.params;

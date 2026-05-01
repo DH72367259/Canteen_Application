@@ -79,7 +79,7 @@ export default function SuperAdminDashboard() {
         {section === "analytics" && <AnalyticsSection />}
         {section === "payments"  && <PaymentsSection />}
         {section === "cities"    && <CitiesSection />}
-        {section === "orders"    && <OrdersSection session={session} />}
+        {section === "orders"    && <OrdersSection session={session} isSuperAdmin={isSuperAdmin} />}
         {section === "support"       && <SupportSection />}
         {section === "notifications" && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
         {section === "account"       && <AccountSection />}
@@ -2854,7 +2854,7 @@ type AdminOrder = {
   refund_status?: string | null;
 };
 
-function OrdersSection({ session }: { session: { access_token?: string } | null }) {
+function OrdersSection({ session, isSuperAdmin }: { session: { access_token?: string } | null; isSuperAdmin: boolean }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"active" | "cancelled" | "all">("active");
@@ -2972,7 +2972,7 @@ function OrdersSection({ session }: { session: { access_token?: string } | null 
                         <button className="btn btn-ghost" style={{ color: "#dc2626", fontSize: "0.78rem" }} onClick={() => setCancelTarget(o)}>
                           Cancel + refund
                         </button>
-                      ) : s === "cancelled" && o.refund_status !== "processed" && o.refund_status !== "not_required" ? (
+                      ) : s === "cancelled" && o.refund_status !== "processed" && o.refund_status !== "not_required" && isSuperAdmin ? (
                         <button
                           className="btn btn-ghost"
                           style={{ color: "#7c3aed", fontSize: "0.78rem" }}
