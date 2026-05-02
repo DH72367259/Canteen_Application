@@ -6,6 +6,7 @@ import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
+import { claimFreeBinsAtomic } from "@/lib/atomicBinClaim";
 
 export const dynamic = "force-dynamic";
 
@@ -299,7 +300,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── ATOMIC BIN CLAIMING ──────────────────────────────────────────────────
+  // We'll claim bins AFTER creating the order so we have a real order_id.
+  // First, create order with placeholder bin info (will update after claiming).
+  
   // Create the order using the server-calculated total
+  // (Note: bin_id, bin_label, bin_color are provisional from first allocated bin;
+  //  we'll update them after atomically claiming the actual physical bins)
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .insert({
@@ -325,6 +332,33 @@ export async function POST(req: NextRequest) {
 
   if (orderError || !order) {
     return Response.json({ error: "Failed to create order" }, { status: 500 });
+  }
+
+  // Step 2: Atomically claim N free bins for this order using the real order_id.
+  // This uses a single UPDATE with WHERE is_occupied=false to prevent race conditions
+  // where two concurrent requests could claim the same bin.
+  const allocatedIds = allocated.map(b => b.id).filter((x): x is string => !!x);
+  let claimedBinIds: string[] = [];
+  
+  if (allocatedIds.length > 0) {
+    const claimResult = await claimFreeBinsAtomic(canteenId, allocatedIds, order.id, binsNeeded);
+    if (!claimResult.success) {
+      // Race condition: not enough bins available anymore
+      // The order is created but bins couldn't be claimed.
+      // Mark order as failed and return 409.
+      await supabase
+        .from("orders")
+        .update({ status: "failed" })
+        .eq("id", order.id);
+      
+      return Response.json({
+        error: claimResult.message || "Not enough free bins available. Please try a different slot.",
+      }, { status: 409 });
+    }
+    claimedBinIds = claimResult.claimedIds;
+  } else if (binsNeeded === 1) {
+    // Synthetic bin (test data) — no need to claim
+    claimedBinIds = [""]; 
   }
 
   // Insert order items with server-verified prices
@@ -361,25 +395,6 @@ export async function POST(req: NextRequest) {
       // already paid for. Single-bin (legacy) data is still on `orders` columns.
       console.error("[orders/place] order_bins insert failed:", obErr.message);
     }
-  }
-
-  // Mark every allocated bin as occupied + linked to this order
-  const allocatedIds = allocated.map(b => b.id).filter((x): x is string => !!x);
-  if (allocatedIds.length > 0) {
-    // Phase 8: also stamp `assigned_order_id` and set status='reserved' so
-    // the rack UI shows the bin as taken even before the worker has placed
-    // the food. The worker dashboard flips status='occupied' when each part
-    // is physically placed.
-    await supabase
-      .from("bins")
-      .update({
-        is_occupied: true,
-        order_id: order.id,
-        assigned_order_id: order.id,
-        status: "reserved",
-        updated_at: new Date().toISOString(),
-      })
-      .in("id", allocatedIds);
   }
 
   // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
