@@ -1,9 +1,8 @@
 import { test, expect, Browser, BrowserContext } from "@playwright/test";
 import {
-  loginAs,
   provisionStaff,
   provisionStudent,
-  waitForOrder,
+  loginViaPasswordTab,
 } from "./_helpers";
 
 test.describe("Bin Allocation Permutations", () => {
@@ -14,28 +13,25 @@ test.describe("Bin Allocation Permutations", () => {
   test("1-user-multi-dish same canteen = 1 order 1 bin 1 OTP", async ({
     browser,
   }) => {
-    const canteen = { name: "Dorm A", id: "c1" };
-    let adminCtx: BrowserContext | null = null;
+    const canteenId = "c1";
     let studentCtx: BrowserContext | null = null;
 
     try {
-      // Setup: Create canteen and provision admin, worker, student
-      adminCtx = await browser.newContext();
-      const adminPage = await adminCtx.newPage();
-      const admin = await provisionStaff(
-        adminPage,
-        "admin@test.local",
-        "Admin User",
-        "admin",
-        canteen
-      );
-
+      // Setup: Provision student
       studentCtx = await browser.newContext();
       const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(
+      const student = await provisionStudent(canteenId, "student1");
+      await loginViaPasswordTab(
         studentPage,
-        "student1@test.local",
-        "Student 1"
+        student.email,
+        student.password,
+        /\/dashboard/
+      );
+      await loginViaPasswordTab(
+        studentPage,
+        `e2e-student1-${Date.now()}@noqx.test`,
+        "Student@12345",
+        /\/dashboard/
       );
 
       // Navigate to cart, add multiple dishes (mix meals/snacks)
@@ -74,7 +70,6 @@ test.describe("Bin Allocation Permutations", () => {
         `✓ P1: ${order.bin_count} bin(s), OTP=${otp}, 1 order created`
       );
     } finally {
-      await adminCtx?.close();
       await studentCtx?.close();
     }
   });
@@ -86,16 +81,18 @@ test.describe("Bin Allocation Permutations", () => {
   test("1-user-2-orders same canteen = 2 orders 2 bins 2 OTPs", async ({
     browser,
   }) => {
-    const canteen = { name: "Dorm B", id: "c2" };
+    const canteenId = "c2";
     let studentCtx: BrowserContext | null = null;
 
     try {
       studentCtx = await browser.newContext();
       const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(
+      const student = await provisionStudent(canteenId, "student2");
+      await loginViaPasswordTab(
         studentPage,
-        "student2@test.local",
-        "Student 2"
+        student.email,
+        student.password,
+        /\/dashboard/
       );
 
       const otps: string[] = [];
@@ -103,7 +100,7 @@ test.describe("Bin Allocation Permutations", () => {
 
       // Place 2 separate orders
       for (let i = 0; i < 2; i++) {
-        await studentPage.goto("/canteen/c2");
+        await studentPage.goto(`/canteen/${canteenId}`);
         await studentPage.click('button[data-testid="add-item"][data-meal="true"]');
         await studentPage.goto("/checkout");
         await studentPage.click('button:has-text("Place Order")');
@@ -141,10 +138,12 @@ test.describe("Bin Allocation Permutations", () => {
     try {
       studentCtx = await browser.newContext();
       const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(
+      const student = await provisionStudent("c1", "student3");
+      await loginViaPasswordTab(
         studentPage,
-        "student3@test.local",
-        "Student 3"
+        student.email,
+        student.password,
+        /\/dashboard/
       );
 
       const otps: string[] = [];
@@ -183,7 +182,7 @@ test.describe("Bin Allocation Permutations", () => {
   test("2-users-1-canteen concurrent = 2 orders 2 bins 2 OTPs", async ({
     browser,
   }) => {
-    const canteen = { name: "Dorm C", id: "c3" };
+    const canteenId = "c3";
     let student1Ctx: BrowserContext | null = null;
     let student2Ctx: BrowserContext | null = null;
 
@@ -191,25 +190,29 @@ test.describe("Bin Allocation Permutations", () => {
       // Setup both students
       student1Ctx = await browser.newContext();
       const student1Page = await student1Ctx.newPage();
-      const student1 = await provisionStudent(
+      const student1 = await provisionStudent(canteenId, "student4");
+      await loginViaPasswordTab(
         student1Page,
-        "student4@test.local",
-        "Student 4"
+        student1.email,
+        student1.password,
+        /\/dashboard/
       );
 
       student2Ctx = await browser.newContext();
       const student2Page = await student2Ctx.newPage();
-      const student2 = await provisionStudent(
+      const student2 = await provisionStudent(canteenId, "student5");
+      await loginViaPasswordTab(
         student2Page,
-        "student5@test.local",
-        "Student 5"
+        student2.email,
+        student2.password,
+        /\/dashboard/
       );
 
       // Both students add items
-      await student1Page.goto("/canteen/c3");
+      await student1Page.goto(`/canteen/${canteenId}`);
       await student1Page.click('button[data-testid="add-item"]');
 
-      await student2Page.goto("/canteen/c3");
+      await student2Page.goto(`/canteen/${canteenId}`);
       await student2Page.click('button[data-testid="add-item"]');
 
       // Both proceed to checkout
@@ -268,9 +271,9 @@ test.describe("Bin Allocation Permutations", () => {
 
       // Provision 3 students across 2 canteens
       const config = [
-        { email: "student6@test.local", name: "Student 6", canteen: "c1" },
-        { email: "student7@test.local", name: "Student 7", canteen: "c2" },
-        { email: "student8@test.local", name: "Student 8", canteen: "c1" },
+        { suffix: "student6", canteen: "c1" },
+        { suffix: "student7", canteen: "c2" },
+        { suffix: "student8", canteen: "c1" },
       ];
 
       for (const cfg of config) {
@@ -278,7 +281,13 @@ test.describe("Bin Allocation Permutations", () => {
         contexts.push(ctx);
         const page = await ctx.newPage();
 
-        const student = await provisionStudent(page, cfg.email, cfg.name);
+        const student = await provisionStudent(cfg.canteen, cfg.suffix);
+        await loginViaPasswordTab(
+          page,
+          student.email,
+          student.password,
+          /\/dashboard/
+        );
 
         // Add various items (different meal/snack combos)
         await page.goto(`/canteen/${cfg.canteen}`);
@@ -295,7 +304,7 @@ test.describe("Bin Allocation Permutations", () => {
         const binCount = parseInt(binCountText?.match(/\d+/)?.[0] || "1");
 
         results.push({
-          student: cfg.name,
+          student: cfg.suffix,
           otp: otp!,
           binCount,
         });
@@ -327,8 +336,8 @@ test.describe("Bin Allocation Permutations", () => {
    * Expected: Admin only sees orders for their canteen
    */
   test("Admin visibility scoped by canteen", async ({ browser }) => {
-    const canteen1 = { name: "Dorm A", id: "c1" };
-    const canteen2 = { name: "Dorm B", id: "c2" };
+    const canteen1Id = "c1";
+    const canteen2Id = "c2";
 
     let admin1Ctx: BrowserContext | null = null;
     let admin2Ctx: BrowserContext | null = null;
@@ -339,33 +348,46 @@ test.describe("Bin Allocation Permutations", () => {
       admin1Ctx = await browser.newContext();
       const admin1Page = await admin1Ctx.newPage();
       const admin1 = await provisionStaff(
+        "canteen_admin",
+        canteen1Id,
+        "admin1"
+      );
+      await loginViaPasswordTab(
         admin1Page,
-        "admin1@test.local",
-        "Admin 1",
-        "admin",
-        canteen1
+        admin1.email,
+        admin1.password,
+        /\/canteen\/dashboard/
       );
 
       admin2Ctx = await browser.newContext();
       const admin2Page = await admin2Ctx.newPage();
       const admin2 = await provisionStaff(
+        "canteen_admin",
+        canteen2Id,
+        "admin2"
+      );
+      await loginViaPasswordTab(
         admin2Page,
-        "admin2@test.local",
-        "Admin 2",
-        "admin",
-        canteen2
+        admin2.email,
+        admin2.password,
+        /\/canteen\/dashboard/
       );
 
       studentCtx = await browser.newContext();
       const studentPage = await studentCtx.newPage();
       const student = await provisionStudent(
+        canteen1Id,
+        "student9"
+      );
+      await loginViaPasswordTab(
         studentPage,
-        "student9@test.local",
-        "Student 9"
+        student.email,
+        student.password,
+        /\/dashboard/
       );
 
       // Student places order in canteen1
-      await studentPage.goto("/canteen/c1");
+      await studentPage.goto(`/canteen/${canteen1Id}`);
       await studentPage.click('button[data-testid="add-item"]');
       await studentPage.goto("/checkout");
       await studentPage.click('button:has-text("Place Order")');
@@ -399,10 +421,12 @@ test.describe("Bin Allocation Permutations", () => {
     try {
       studentCtx = await browser.newContext();
       const page = await studentCtx.newPage();
-      const student = await provisionStudent(
+      const student = await provisionStudent("c1", "student10");
+      await loginViaPasswordTab(
         page,
-        "student10@test.local",
-        "Student 10"
+        student.email,
+        student.password,
+        /\/dashboard/
       );
 
       const otps = new Set<string>();
