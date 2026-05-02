@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { latestActiveOrder, readActiveOrders, removeActiveOrder, upsertActiveOrder, writeActiveOrders } from "@/lib/activeOrdersClient";
 
 interface OrderData {
   id: string;
@@ -53,6 +54,7 @@ export default function OrderStatusPage() {
   const router = useRouter();
   const { session } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
+  const [activeOrders, setActiveOrders] = useState<OrderData[]>([]);
   const [phase, setPhase] = useState<Phase>("preparing");
   const [countdown, setCountdown] = useState(3);
   const [readyTime] = useState(() => {
@@ -64,18 +66,13 @@ export default function OrderStatusPage() {
   // Load active order from localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("canteen_active_order");
-      if (!raw) { router.replace("/dashboard"); return; }
-      const data = JSON.parse(raw) as OrderData & { uid?: string };
-      // Bug fix: a banner for a different user (e.g. deleted/wiped account)
-      // must not be rendered just because it sat in localStorage.
-      if (data.uid && session?.user?.id && data.uid !== session.user.id) {
-        localStorage.removeItem("canteen_active_order");
-        router.replace("/dashboard");
-        return;
-      }
-      setOrder(data);
-      setPhase(toPhase(data.status || "preparing"));
+      const all = readActiveOrders(session?.user?.id ?? null) as OrderData[];
+      writeActiveOrders(all);
+      const latest = latestActiveOrder(session?.user?.id ?? null) as OrderData | null;
+      if (!latest) { router.replace("/dashboard"); return; }
+      setActiveOrders(all);
+      setOrder(latest);
+      setPhase(toPhase(latest.status || "preparing"));
     } catch {
       router.replace("/dashboard");
     }
@@ -111,7 +108,8 @@ export default function OrderStatusPage() {
             : order.binCode,
         };
         setOrder(updated);
-        localStorage.setItem("canteen_active_order", JSON.stringify(updated));
+        upsertActiveOrder(updated);
+        setActiveOrders(readActiveOrders(session?.user?.id ?? null) as OrderData[]);
         setPhase(newPhase);
 
         if (newPhase === "collected") {
@@ -132,7 +130,15 @@ export default function OrderStatusPage() {
   useEffect(() => {
     if (phase !== "collected") return;
     if (countdown <= 0) {
-      localStorage.removeItem("canteen_active_order");
+      const rest = removeActiveOrder(order.id, session?.user?.id ?? null) as OrderData[];
+      setActiveOrders(rest);
+      if (rest.length > 0) {
+        const next = rest[0];
+        setOrder(next);
+        setPhase(toPhase(next.status || "preparing"));
+        setCountdown(3);
+        return;
+      }
       router.replace("/dashboard");
       return;
     }
@@ -155,7 +161,7 @@ export default function OrderStatusPage() {
       }).catch(() => {});
     }
     const updated = { ...order, status: "collected" };
-    localStorage.setItem("canteen_active_order", JSON.stringify(updated));
+    upsertActiveOrder(updated);
     setOrder(updated);
     setPhase("collected");
   }, [order, session?.access_token]);
@@ -209,6 +215,33 @@ export default function OrderStatusPage() {
         </div>
 
         <div style={{ padding: "1.25rem 1rem", display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "2rem" }}>
+          {activeOrders.length > 1 && (
+            <div className="card" style={{ padding: "0.65rem", display: "flex", gap: "0.4rem", overflowX: "auto" }}>
+              {activeOrders.map((o) => {
+                const isActive = o.id === order.id;
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => { setOrder(o); setPhase(toPhase(o.status || "preparing")); }}
+                    style={{
+                      border: "none",
+                      borderRadius: 999,
+                      padding: "0.35rem 0.7rem",
+                      background: isActive ? "var(--orange)" : "#f1f5f9",
+                      color: isActive ? "#fff" : "var(--ink-2)",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {`#${o.id.slice(-6).toUpperCase()} · ${o.slot || "Slot"}`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* "Your order is ready" heading */}
           <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
@@ -433,7 +466,7 @@ export default function OrderStatusPage() {
                 alert(j.error || "Could not cancel order.");
                 return;
               }
-              localStorage.removeItem("canteen_active_order");
+              removeActiveOrder(order.id, session?.user?.id ?? null);
               router.replace("/dashboard");
             } catch {
               alert("Network error. Try again.");

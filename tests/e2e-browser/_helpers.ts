@@ -54,7 +54,7 @@ export async function loginWorkerUI(page: Page) {
   await page.locator('input[type="text"]').first().fill(WHITELIST.worker.email);
   await page.locator('input[type="password"]').first().fill(WHITELIST.worker.password);
   await page.locator('button[type="submit"]').first().click();
-  await page.waitForURL(/\/worker\/dashboard/, { timeout: 20_000 });
+  await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 }
 
 /** Provisions a student via admin SDK and returns its credentials + id. */

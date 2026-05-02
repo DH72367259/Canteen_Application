@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { upsertActiveOrder } from "@/lib/activeOrdersClient";
 
 declare global {
   interface Window {
@@ -253,7 +254,7 @@ function CartContent() {
       uid: user?.uid ?? null,
     };
 
-    localStorage.setItem("canteen_active_order", JSON.stringify(orderData));
+    upsertActiveOrder(orderData);
 
     const txns = JSON.parse(localStorage.getItem("canteen_transactions") || "[]");
     txns.unshift({

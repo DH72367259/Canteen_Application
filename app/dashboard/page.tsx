@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { latestActiveOrder, readActiveOrders, writeActiveOrders } from "@/lib/activeOrdersClient";
 
 interface ActiveOrder {
   id: string;
@@ -123,22 +124,12 @@ export default function UserHomePage() {
     // bfcache and the component itself doesn't re-mount).
     const readActive = () => {
       try {
-        const order = localStorage.getItem("canteen_active_order");
-        if (!order) { setActiveOrder(null); return; }
-        const parsed = JSON.parse(order);
-        // Only honour the cached active order if it belongs to the currently
-        // signed-in user. A stale banner for a previous (or deleted) account
-        // would otherwise render on this device after re-login. If user is
-        // still loading (uid=undefined) we accept the entry tentatively rather
-        // than hiding the banner — the next render with the real uid will
-        // re-validate via this same path.
-        if (!parsed?.uid || !user?.uid || parsed.uid === user.uid) {
-          setActiveOrder(parsed);
-        } else {
-          localStorage.removeItem("canteen_active_order");
-          setActiveOrder(null);
-        }
-      } catch { localStorage.removeItem("canteen_active_order"); setActiveOrder(null); }
+        // Cleanup + select latest active order for this user.
+        const all = readActiveOrders(user?.uid ?? null);
+        writeActiveOrders(all);
+        const latest = latestActiveOrder(user?.uid ?? null);
+        setActiveOrder((latest as typeof activeOrder) ?? null);
+      } catch { setActiveOrder(null); }
     };
     readActive();
     const onStorage = (e: StorageEvent) => { if (e.key === "canteen_active_order" || e.key === null) readActive(); };

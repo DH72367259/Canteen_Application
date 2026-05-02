@@ -30,12 +30,10 @@ test.describe("multi-role headless smoke", () => {
     await expect(page.locator("body")).toContainText(/Live Orders|Prep Summary|Vendor|Dashboard/i, { timeout: 20_000 });
   });
 
-  test("worker lands on /worker/dashboard", async ({ page }) => {
+  test("worker lands on /worker/orders", async ({ page }) => {
     await loginWorkerUI(page);
     await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
-    // The worker dashboard always renders SOMETHING after auth — either an
-    // active-orders panel, awaiting-OTP list, or empty-state copy.
-    await expect(page.locator("body")).toContainText(/ORDERS|OTP|No active|Worker|Pickup|Bin/i, { timeout: 20_000 });
+    await expect(page.locator("body")).toContainText(/Orders|No orders|Preparing|Ready|Bin/i, { timeout: 20_000 });
   });
 
   test("student logs in, lands on /dashboard, sees canteen list", async ({ page }) => {

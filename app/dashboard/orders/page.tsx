@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { latestActiveOrder, readActiveOrders, writeActiveOrders } from "@/lib/activeOrdersClient";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -113,14 +114,11 @@ export default function MyOrdersPage() {
   const [hasActiveOrder, setHasActiveOrder] = useState<{ id: string; slot: string } | null>(null);
   useEffect(() => {
     try {
-      const ao = localStorage.getItem("canteen_active_order");
-      if (!ao) return;
-      const parsed = JSON.parse(ao);
-      if (parsed?.uid && user?.uid && parsed.uid !== user.uid) {
-        localStorage.removeItem("canteen_active_order");
-        return;
-      }
-      setHasActiveOrder({ id: parsed.id, slot: parsed.slot });
+      const all = readActiveOrders(user?.uid ?? null);
+      writeActiveOrders(all);
+      const latest = latestActiveOrder(user?.uid ?? null);
+      if (!latest) { setHasActiveOrder(null); return; }
+      setHasActiveOrder({ id: latest.id, slot: latest.slot ?? "Upcoming" });
     } catch { /* ignore */ }
   }, [user?.uid]);
 

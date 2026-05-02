@@ -88,14 +88,20 @@ export async function GET(request: Request) {
     bins!orders_bin_id_fkey(bin_code, color),
     order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
+  const legacyItemProj: ProjBuilder = (sc) => `
+    id, status, bin_id, ${sc}, total_amount, created_at,
+    profiles!orders_user_id_fkey(name),
+    bins!orders_bin_id_fkey(bin_code, color),
+    order_items(id, menu_item_id, quantity, unit_price, menu_items(name, is_meal))
+  `;
   const minimalProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, created_at,
-    order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
+    order_items(id, menu_item_id, quantity, unit_price, menu_items(name, is_meal))
   `;
   let orders: unknown[] | null = null;
   let orderErr: { message: string } | null = null;
   outer: for (const sc of slotCols) {
-    for (const proj of [richProj, baseProj, minimalProj]) {
+    for (const proj of [richProj, baseProj, legacyItemProj, minimalProj]) {
       let q = supabase
         .from("orders")
         .select(proj(sc))

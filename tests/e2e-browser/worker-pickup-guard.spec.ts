@@ -1,5 +1,5 @@
 /**
- * Headless-browser E2E for the worker pickup flow + per-customer guard.
+ * Headless-browser E2E for the worker pickup flow (manager-only OTP policy).
  *
  * Scenario:
  *   1. Provision a fresh student via Supabase admin SDK.
@@ -9,12 +9,9 @@
  *      worker whitelist account, walk order #1 to placed_in_bin via the
  *      actual UI buttons (Accept proxy = transition Placed→Preparing →
  *      Ready to Place → Placed).
- *   4. Assert the inline "Awaiting OTP Pickup" row renders for order #1.
- *   5. Type the order #1 OTP into the inline input, click Verify, expect
- *      the 409 message about the sibling order.
- *   6. Walk order #2 to placed_in_bin via API, refresh worker UI, retry
- *      the OTP — both orders should clear.
- *   7. Cleanup all rows.
+ *   4. Assert worker UI does not render OTP verification controls.
+ *   5. Assert worker role is rejected by manager-only OTP verify endpoint.
+ *   6. Cleanup all rows.
  */
 import { test, expect, request as pwRequest, Page } from "@playwright/test";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
@@ -41,7 +38,6 @@ let studentId = "";
 let order1Id = "";
 let order2Id = "";
 let order1Otp = "";
-let order2Otp = "";
 let slotName = "";
 let slotIdSeeded: string | null = null;
 
@@ -117,7 +113,6 @@ test.beforeAll(async () => {
   const p2 = await place2.json();
   if (!place2.ok) throw new Error(`place2: ${JSON.stringify(p2)}`);
   order2Id = p2.orderId;
-  order2Otp = p2.otp;
 
   // Walk ONLY order #1 to placed_in_bin via API (worker UI clicks would
   // do the same but driving 3 PATCHes via REST is faster + deterministic).
@@ -151,76 +146,23 @@ async function loginWorkerUI(page: Page) {
   await page.locator('input[type="text"]').first().fill(WORKER_EMAIL);
   await page.locator('input[type="password"]').first().fill(WORKER_PASS);
   await page.locator('button[type="submit"]').first().click();
-  await page.waitForURL(/\/worker\/dashboard/, { timeout: 15_000 });
+  await page.waitForURL(/\/worker\/orders/, { timeout: 15_000 });
 }
 
-test("worker dashboard shows awaiting-OTP row + per-customer guard blocks then releases", async ({ page }) => {
+test("worker UI has no OTP verification and worker API verify-otp is forbidden", async ({ page }) => {
   await loginWorkerUI(page);
+  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
-  // 1. Awaiting-OTP row should appear with the inline OTP input.
-  const otpHeader = page.getByText(/AWAITING OTP PICKUP/);
-  await expect(otpHeader).toBeVisible({ timeout: 20_000 });
-  const otpInputs = page.locator('input[inputmode="numeric"]');
-  await expect(otpInputs.first()).toBeVisible();
+  // Worker pages should not show OTP verification controls.
+  await expect(page.locator("body")).not.toContainText(/OTP Verify|Verify OTP/i);
+  await expect(page.locator('input[inputmode="numeric"]').first()).not.toBeVisible({ timeout: 5_000 }).catch(() => {});
 
-  // 2. Type the real OTP for order #1 — the guard must block (sibling order
-  //    #2 is still in `placed`, not yet in a bin). We listen for the API
-  //    response and assert it returned 409.
-  const verifyPromise = page.waitForResponse(
-    r => r.url().includes(`/api/orders/${order1Id}/verify-otp`) && r.request().method() === "POST",
-    { timeout: 15_000 },
-  );
-  await otpInputs.first().fill(order1Otp);
-  await page.getByRole("button", { name: /Verify/i }).first().click();
-  const blocked = await verifyPromise;
-  expect(blocked.status()).toBe(409);
-  const body = await blocked.json();
-  expect(body.error).toMatch(/other order/i);
-
-  // 3. Walk order #2 to placed_in_bin via API so the guard clears.
+  // Manager-only OTP verification endpoint must reject worker role.
   const workerToken = await loginToken(WORKER_EMAIL, WORKER_PASS);
-  for (const step of ["preparing", "ready_for_placement", "placed_in_bin"]) {
-    const r = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order2Id}/status`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
-      data: { status: step },
-    }));
-    expect(r.status()).toBeLessThan(400);
-  }
-
-  // 4. Worker UI polls every 15s — force a reload to pull the fresh state
-  //    quickly (faster than waiting for the next interval).
-  await page.reload();
-  await expect(page.getByText(/AWAITING OTP PICKUP/)).toBeVisible({ timeout: 20_000 });
-
-  // 5. Retry order #1 OTP — should now succeed (200).
-  const verify2 = page.waitForResponse(
-    r => r.url().includes(`/api/orders/${order1Id}/verify-otp`) && r.request().method() === "POST",
-    { timeout: 15_000 },
-  );
-  // Find the row whose label contains the order's bin code (order #1 first).
-  const inputs = page.locator('input[inputmode="numeric"]');
-  await inputs.first().fill(order1Otp);
-  await page.getByRole("button", { name: /Verify/i }).first().click();
-  const r2 = await verify2;
-  expect(r2.status()).toBe(200);
-
-  // 6. Verify order #2 too — also expected 200 now (sibling is collected).
-  const verify3 = page.waitForResponse(
-    r => r.url().includes(`/api/orders/${order2Id}/verify-otp`) && r.request().method() === "POST",
-    { timeout: 15_000 },
-  );
-  await page.reload();
-  await expect(page.getByText(/AWAITING OTP PICKUP/)).toBeVisible({ timeout: 20_000 });
-  const inputs2 = page.locator('input[inputmode="numeric"]');
-  await inputs2.first().fill(order2Otp);
-  await page.getByRole("button", { name: /Verify/i }).first().click();
-  const r3 = await verify3;
-  expect(r3.status()).toBe(200);
-
-  // 7. DB state assertions
-  const { data: o1 } = await admin.from("orders").select("status").eq("id", order1Id).single();
-  const { data: o2 } = await admin.from("orders").select("status").eq("id", order2Id).single();
-  expect(o1?.status).toBe("collected");
-  expect(o2?.status).toBe("collected");
+  const forbidden = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
+    data: { otp: order1Otp },
+  }));
+  expect(forbidden.status()).toBe(403);
 });

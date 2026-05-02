@@ -227,6 +227,7 @@ test.describe("end-to-end: full order lifecycle", () => {
 
       // Walk worker state machine.
       const wTok = await loginToken(WHITELIST.worker.email, WHITELIST.worker.password);
+      const mTok = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
       for (const status of ["preparing", "ready_for_placement", "placed_in_bin"]) {
         const r = await apiFetch(`${APP_URL}/api/orders/${orderId}/status`, {
           method: "PATCH",
@@ -239,7 +240,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       // Wrong OTP must 400.
       const wrong = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
-        headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
+        headers: { "content-type": "application/json", Authorization: `Bearer ${mTok}` },
         body: JSON.stringify({ otp: "000000" }),
       });
       expect(wrong.status).toBe(400);
@@ -247,7 +248,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       // Real OTP collects the order.
       const ok = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
-        headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
+        headers: { "content-type": "application/json", Authorization: `Bearer ${mTok}` },
         body: JSON.stringify({ otp }),
       });
       expect(ok.status, await ok.text()).toBe(200);
@@ -261,7 +262,7 @@ test.describe("end-to-end: full order lifecycle", () => {
       // Re-verifying a collected order must fail (idempotency).
       const repeat = await apiFetch(`${APP_URL}/api/orders/${orderId}/verify-otp`, {
         method: "POST",
-        headers: { "content-type": "application/json", Authorization: `Bearer ${wTok}` },
+        headers: { "content-type": "application/json", Authorization: `Bearer ${mTok}` },
         body: JSON.stringify({ otp }),
       });
       expect(repeat.status).toBeGreaterThanOrEqual(400);
