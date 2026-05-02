@@ -128,7 +128,7 @@ export default function OrderStatusPage() {
 
   // Countdown after "collected" → redirect home
   useEffect(() => {
-    if (phase !== "collected") return;
+    if (phase !== "collected" || !order) return;
     if (countdown <= 0) {
       const rest = removeActiveOrder(order.id, session?.user?.id ?? null) as OrderData[];
       setActiveOrders(rest);
@@ -144,7 +144,7 @@ export default function OrderStatusPage() {
     }
     const t = setTimeout(() => setCountdown(c => c - 1), 1_000);
     return () => clearTimeout(t);
-  }, [phase, countdown, router]);
+  }, [phase, countdown, order, router, session?.user?.id]);
 
   const handleMarkCollected = useCallback(async () => {
     if (!order) return;
