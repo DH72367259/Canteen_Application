@@ -1883,6 +1883,7 @@ function PaymentsSection() {
 
   // ── Settlements tab ──
   const [data,    setData]    = useState<SettlementRow[] | null>(null);
+  const [summaryStats, setSummaryStats] = useState<SettlementSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [err,     setErr]     = useState<string | null>(null);
   const [settle,  setSettle]  = useState<SettlementRow | null>(null); // pay modal
@@ -1932,6 +1933,7 @@ function PaymentsSection() {
       const d = await res.json();
       if (!res.ok) { setErr(d.error ?? "Failed to load"); return; }
       setData(d.canteens ?? []);
+      setSummaryStats(d.summary_stats ?? null);
     } catch { setErr("Network error"); } finally { setLoading(false); }
   };
   useEffect(() => { loadSettlements(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2063,10 +2065,16 @@ function PaymentsSection() {
   };
 
   // ── Summary stats ──
-  const total_gross   = (data ?? []).reduce((s, r) => s + r.gross_amount, 0);
-  const total_net     = (data ?? []).reduce((s, r) => s + r.net_payable, 0);
-  const total_paid    = (data ?? []).reduce((s, r) => s + r.amount_paid, 0);
-  const total_pending = (data ?? []).reduce((s, r) => s + r.amount_remaining, 0);
+  const total_gross   = summaryStats?.total_collected ?? (data ?? []).reduce((s, r) => s + r.gross_amount, 0);
+  const total_net     = summaryStats?.total_net_payable ?? (data ?? []).reduce((s, r) => s + r.net_payable, 0);
+  const total_paid    = summaryStats?.total_paid ?? (data ?? []).reduce((s, r) => s + r.amount_paid, 0);
+  const total_pending = summaryStats?.total_remaining ?? (data ?? []).reduce((s, r) => s + r.amount_remaining, 0);
+  const total_platform_fee = summaryStats?.total_platform_fees ?? (data ?? []).reduce((s, r) => s + (r.platform_fee_amount ?? 0), 0);
+  const total_gst_on_fee = summaryStats?.total_gst_on_fees ?? (data ?? []).reduce((s, r) => s + (r.gst_on_charge ?? 0), 0);
+  const total_extra_bin = summaryStats?.total_extra_bin_charges ?? (data ?? []).reduce((s, r) => s + (r.extra_bin_charge_amount ?? 0), 0);
+  const total_convenience = summaryStats?.total_convenience_and_other_charges ?? (data ?? []).reduce((s, r) => s + (r.convenience_charge_amount ?? 0), 0);
+  const total_pro = summaryStats?.total_pro_revenue ?? 0;
+  const total_admin_earnings = summaryStats?.total_admin_earnings ?? (data ?? []).reduce((s, r) => s + (r.total_admin_earnings ?? r.platform_charge_amount), 0);
 
   const statusTag: Record<string, string>   = { paid: "tag-green", partial: "tag-orange", pending: "tag-yellow" };
   const statusLabel: Record<string, string> = { paid: "Settled",   partial: "Partial",    pending: "Pending" };
@@ -2106,7 +2114,12 @@ function PaymentsSection() {
             <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
               {[
                 { label: "Gross Collected",   value: fmt(total_gross),              color: "var(--ink)"    },
-                { label: "Platform Earnings", value: fmt(total_gross - total_net),  color: "var(--blue)"   },
+                { label: "Platform Fee",      value: fmt(total_platform_fee),       color: "var(--blue)"   },
+                { label: "GST on Fee",        value: fmt(total_gst_on_fee),         color: "var(--ink-2)"  },
+                { label: "Extra-bin Charges", value: fmt(total_extra_bin),          color: "#7c2d12"       },
+                { label: "Convenience Fee",   value: fmt(total_convenience),        color: "#7c3aed"       },
+                { label: "Pro Revenue",       value: fmt(total_pro),                color: "#0f766e"       },
+                { label: "Total Admin Earnings", value: fmt(total_admin_earnings),  color: "var(--primary)" },
                 { label: "Net Payable",       value: fmt(total_net),                color: "var(--orange)" },
                 { label: "Paid Out",          value: fmt(total_paid),               color: "var(--green)"  },
                 { label: "Pending Payout",    value: fmt(total_pending),            color: "var(--red)"    },
@@ -2127,7 +2140,7 @@ function PaymentsSection() {
                 <thead>
                   <tr>
                     <th>CANTEEN</th><th>ORDERS</th><th>GROSS</th>
-                    <th>PLATFORM FEE</th><th>NET PAYABLE</th>
+                    <th>PLATFORM / ADMIN CHARGES</th><th>NET PAYABLE</th>
                     <th>PAID</th><th>PENDING</th><th>BANK / UPI</th><th>STATUS</th><th>ACTION</th>
                   </tr>
                 </thead>
@@ -2141,7 +2154,13 @@ function PaymentsSection() {
                         </td>
                         <td style={{ fontSize: "0.82rem" }}>{r.completed_orders} / {r.total_orders}</td>
                         <td style={{ fontWeight: 600 }}>{fmt(r.gross_amount)}</td>
-                        <td style={{ color: "var(--red)" }}>{fmt(r.platform_charge_amount)}</td>
+                        <td style={{ color: "var(--red)", fontSize: "0.78rem" }}>
+                          <div>Platform Fee: {fmt(r.platform_fee_amount ?? 0)}</div>
+                          <div>GST: {fmt(r.gst_on_charge ?? 0)}</div>
+                          <div>Extra-bin: {fmt(r.extra_bin_charge_amount ?? 0)}</div>
+                          <div>Convenience/Other: {fmt(r.convenience_charge_amount ?? 0)}</div>
+                          <div style={{ fontWeight: 700, marginTop: "0.2rem" }}>Total: {fmt(r.total_admin_earnings ?? r.platform_charge_amount)}</div>
+                        </td>
                         <td style={{ fontWeight: 700 }}>{fmt(r.net_payable)}</td>
                         <td style={{ color: "var(--green)" }}>{fmt(r.amount_paid)}</td>
                         <td style={{ color: r.amount_remaining > 0 ? "var(--red)" : "var(--ink-3)" }}>{fmt(r.amount_remaining)}</td>
@@ -2293,7 +2312,11 @@ function PaymentsSection() {
                   { label: "Gross Collected",    value: fmt(report.totals.gross         ?? 0), color: "var(--ink)"    },
                   { label: "Platform Fees",      value: fmt(report.totals.platform_fee  ?? 0), color: "var(--blue)"   },
                   { label: "GST on Fees",        value: fmt(report.totals.gst_on_fee    ?? 0), color: "var(--ink-2)"  },
+                  { label: "Extra-bin Charges",  value: fmt(report.totals.extra_bin_charge ?? 0), color: "#7c2d12" },
+                  { label: "Convenience Fee",    value: fmt(report.totals.convenience_and_other_charge ?? 0), color: "#7c3aed" },
+                  { label: "Pro Revenue",        value: fmt(report.totals.pro_revenue ?? 0), color: "#0f766e" },
                   { label: "Total Platform Rev", value: fmt(report.totals.total_platform_earnings ?? 0), color: "var(--primary)" },
+                  { label: "Total Admin Earnings", value: fmt(report.totals.total_admin_earnings ?? 0), color: "#1d4ed8" },
                   { label: "Net Payable",        value: fmt(report.totals.net_payable   ?? 0), color: "var(--orange)" },
                   { label: "Amount Paid",        value: fmt(report.totals.amount_paid   ?? 0), color: "var(--green)"  },
                   { label: "Pending",            value: fmt(report.totals.amount_pending ?? 0), color: "var(--red)"  },
@@ -2310,7 +2333,7 @@ function PaymentsSection() {
                   <thead>
                     <tr>
                       <th>WEEK</th><th>ORDERS</th><th>GROSS</th><th>PLATFORM FEE</th>
-                      <th>GST</th><th>TOTAL PLATFORM REV</th><th>NET PAYABLE</th><th>PAID</th><th>PENDING</th>
+                      <th>GST</th><th>EXTRA-BIN</th><th>CONVENIENCE</th><th>PRO</th><th>TOTAL PLATFORM REV</th><th>TOTAL ADMIN EARNINGS</th><th>NET PAYABLE</th><th>PAID</th><th>PENDING</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2325,14 +2348,18 @@ function PaymentsSection() {
                         <td>{fmt(w.gross)}</td>
                         <td style={{ color: "var(--red)" }}>{fmt(w.platform_fee)}</td>
                         <td style={{ color: "var(--ink-2)", fontSize: "0.82rem" }}>{fmt(w.gst_on_fee)}</td>
+                        <td style={{ color: "#7c2d12", fontSize: "0.82rem" }}>{fmt((w as WeekRow & { extra_bin_charge?: number }).extra_bin_charge ?? 0)}</td>
+                        <td style={{ color: "#7c3aed", fontSize: "0.82rem" }}>{fmt((w as WeekRow & { convenience_and_other_charge?: number }).convenience_and_other_charge ?? 0)}</td>
+                        <td style={{ color: "#0f766e", fontSize: "0.82rem" }}>{fmt((w as WeekRow & { pro_revenue?: number }).pro_revenue ?? 0)}</td>
                         <td style={{ fontWeight: 700, color: "var(--primary)" }}>{fmt(w.total_platform_earnings)}</td>
+                        <td style={{ fontWeight: 700, color: "#1d4ed8" }}>{fmt((w as WeekRow & { total_admin_earnings?: number }).total_admin_earnings ?? w.total_platform_earnings)}</td>
                         <td>{fmt(w.net_payable)}</td>
                         <td style={{ color: "var(--green)" }}>{fmt(w.amount_paid)}</td>
                         <td style={{ color: w.amount_pending > 0 ? "var(--red)" : "var(--ink-3)" }}>{fmt(w.amount_pending)}</td>
                       </tr>
                     ))}
                     {report.weeks.length === 0 && (
-                      <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-3)", padding: "1.5rem" }}>No data yet.</td></tr>
+                      <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--ink-3)", padding: "1.5rem" }}>No data yet.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2510,7 +2537,11 @@ interface BankDetails {
 interface SettlementRow {
   canteen_id: string; canteen_name: string; city: string;
   total_orders: number; completed_orders: number;
+  platform_fee_amount?: number;
   gross_amount: number; platform_charge_amount: number; gst_on_charge: number;
+  extra_bin_charge_amount?: number;
+  convenience_charge_amount?: number;
+  total_admin_earnings?: number;
   net_payable: number; amount_paid: number; amount_remaining: number;
   payment_status: string; payments: PaymentRecord[];
   bank_details: BankDetails | null;
@@ -2522,7 +2553,21 @@ interface PaymentRecord {
 interface WeekRow {
   week_start: string; week_end: string; total_orders: number; completed_orders: number;
   gross: number; platform_fee: number; gst_on_fee: number;
-  total_platform_earnings: number; net_payable: number; amount_paid: number; amount_pending: number;
+  extra_bin_charge?: number; convenience_and_other_charge?: number; pro_revenue?: number;
+  total_platform_earnings: number; total_admin_earnings?: number;
+  net_payable: number; amount_paid: number; amount_pending: number;
+}
+interface SettlementSummaryStats {
+  total_collected: number;
+  total_platform_fees?: number;
+  total_gst_on_fees?: number;
+  total_extra_bin_charges?: number;
+  total_convenience_and_other_charges?: number;
+  total_pro_revenue?: number;
+  total_admin_earnings?: number;
+  total_net_payable: number;
+  total_paid: number;
+  total_remaining: number;
 }
 interface FeeConfig { id?: string; charge_pct: number; flat_charge: number; gst_pct: number; }
 

@@ -106,6 +106,7 @@ export default function VendorDashboard() {
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [canteenOpen, setCanteenOpen] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
@@ -387,6 +388,12 @@ export default function VendorDashboard() {
     setOtpSuccess(false);
   };
 
+  useEffect(() => {
+    if (!selectedBin || otpSuccess) return;
+    const t = setTimeout(() => otpRefs.current[0]?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [selectedBin, otpSuccess]);
+
   const handleOtpVerify = async () => {
     if (!selectedBin) return;
     if (otpInput !== selectedBin.otp) {
@@ -481,6 +488,18 @@ export default function VendorDashboard() {
     return true;
   });
 
+  const filteredSlotBins = slotBins
+    .filter(b => b.status !== "empty" && !!b.orderId)
+    .filter(b => {
+      if (statusFilter === "all") return true;
+      if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
+      if (statusFilter === "occupied") return b.status === "completed";
+      if (statusFilter === "late")     return b.status === "delayed";
+      return true;
+    });
+
+  const showFullRack = activeSlot === "all" && statusFilter === "all";
+
   // ── Phase 8: rack-style colour rows ───────────────────────────────────
   // Split the bins into the 6 colour zones in the same order as the physical
   // rack (red→orange) so the manager sees one row per colour. Distribution
@@ -505,7 +524,9 @@ export default function VendorDashboard() {
       const row: RackBin[] = [];
       for (let n = 1; n <= count; n++) {
         const flatIdx = cursor + n; // 1-based across the whole rack
-        const src = filteredFullGrid.find(b => b.number === flatIdx) ?? fullBinGrid[flatIdx - 1];
+        const src = showFullRack
+          ? (filteredFullGrid.find(b => b.number === flatIdx) ?? fullBinGrid[flatIdx - 1])
+          : filteredSlotBins.find(b => b.number === flatIdx);
         if (!src) continue;
         row.push({
           ...src,
@@ -896,16 +917,33 @@ export default function VendorDashboard() {
                     {[0, 1, 2, 3].map(i => (
                       <input
                         key={i}
+                        ref={el => { otpRefs.current[i] = el; }}
                         className="otp-digit"
                         type="text"
+                        inputMode="numeric"
                         maxLength={1}
                         value={otpInput[i] || ""}
                         onChange={e => {
-                          const val = e.target.value.replace(/\D/g, "");
+                          const val = e.target.value.replace(/\D/g, "").slice(-1);
                           const next = otpInput.split("");
                           next[i] = val;
                           setOtpInput(next.join("").slice(0, 4));
                           setOtpError(null);
+                          if (val && i < 3) otpRefs.current[i + 1]?.focus();
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === "Backspace" && !otpInput[i] && i > 0) {
+                            otpRefs.current[i - 1]?.focus();
+                          }
+                        }}
+                        onPaste={e => {
+                          const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4);
+                          if (!text) return;
+                          e.preventDefault();
+                          setOtpInput(text);
+                          setOtpError(null);
+                          const focusIdx = Math.min(text.length, 3);
+                          otpRefs.current[focusIdx]?.focus();
                         }}
                       />
                     ))}

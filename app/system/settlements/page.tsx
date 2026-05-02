@@ -43,8 +43,12 @@ interface CanteenSettlement {
   gross_amount: number;
   charge_pct: number;
   flat_charge: number;
+  platform_fee_amount?: number;
   platform_charge_amount: number;
   gst_on_charge: number;
+  extra_bin_charge_amount?: number;
+  convenience_charge_amount?: number;
+  total_admin_earnings?: number;
   net_payable: number;
   amount_paid: number;
   amount_remaining: number;
@@ -55,7 +59,13 @@ interface CanteenSettlement {
 
 interface SummaryStats {
   total_collected: number;
+  total_platform_fees?: number;
+  total_gst_on_fees?: number;
+  total_extra_bin_charges?: number;
+  total_convenience_and_other_charges?: number;
+  total_pro_revenue?: number;
   total_platform_earnings: number;
+  total_admin_earnings?: number;
   total_net_payable: number;
   total_paid: number;
   total_remaining: number;
@@ -273,7 +283,13 @@ export default function SettlementsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
             {[
               { label: "Collected",           value: `₹${fmt(stats.total_collected)}`,         color: "#15803d", bg: "#f0fdf4" },
-              { label: "Platform Earnings",   value: `₹${fmt(stats.total_platform_earnings)}`, color: "#7c3aed", bg: "#f5f3ff" },
+              { label: "Platform Fee",        value: `₹${fmt(stats.total_platform_fees ?? 0)}`, color: "#2563eb", bg: "#eff6ff" },
+              { label: "GST on Fee",          value: `₹${fmt(stats.total_gst_on_fees ?? 0)}`,   color: "#334155", bg: "#f1f5f9" },
+              { label: "Extra-bin Charges",   value: `₹${fmt(stats.total_extra_bin_charges ?? 0)}`, color: "#9a3412", bg: "#fff7ed" },
+              { label: "Convenience Fee",     value: `₹${fmt(stats.total_convenience_and_other_charges ?? 0)}`, color: "#7c3aed", bg: "#f5f3ff" },
+              { label: "Pro Revenue",         value: `₹${fmt(stats.total_pro_revenue ?? 0)}`, color: "#0f766e", bg: "#ecfeff" },
+              { label: "Platform (Order) Total", value: `₹${fmt(stats.total_platform_earnings)}`, color: "#0f766e", bg: "#ecfeff" },
+              { label: "Total Admin Earnings", value: `₹${fmt(stats.total_admin_earnings ?? stats.total_platform_earnings)}`, color: "#1d4ed8", bg: "#eff6ff" },
               { label: "Net Payable",         value: `₹${fmt(stats.total_net_payable)}`,       color: "#0369a1", bg: "#eff6ff" },
               { label: "Paid Out",            value: `₹${fmt(stats.total_paid)}`,              color: "#d97706", bg: "#fffbeb" },
               { label: "Still Pending",       value: `₹${fmt(stats.total_remaining)}`,         color: "#dc2626", bg: "#fef2f2" },
@@ -339,9 +355,16 @@ export default function SettlementsPage() {
                     <div style={{ fontSize: "0.92rem", fontWeight: 800 }}>₹{fmt(canteen.gross_amount)}</div>
                   </div>
                   <div style={{ background: "#fff7ed", borderRadius: 10, padding: "0.5rem 0.65rem" }}>
-                    <div style={{ fontSize: "0.66rem", color: "#9a3412", fontWeight: 600 }}>PLATFORM ({canteen.charge_pct}%)</div>
-                    <div style={{ fontSize: "0.92rem", fontWeight: 800, color: "#9a3412" }}>-₹{fmt(canteen.platform_charge_amount)}</div>
-                    <div style={{ fontSize: "0.62rem", color: "#9a3412" }}>incl. ₹{fmt(canteen.gst_on_charge)} GST</div>
+                    <div style={{ fontSize: "0.66rem", color: "#9a3412", fontWeight: 600 }}>ADMIN-RETAINED CHARGES</div>
+                    <div style={{ fontSize: "0.64rem", color: "#7c2d12", lineHeight: 1.35 }}>
+                      <div>Platform: ₹{fmt(canteen.platform_fee_amount ?? 0)}</div>
+                      <div>GST: ₹{fmt(canteen.gst_on_charge ?? 0)}</div>
+                      <div>Extra-bin: ₹{fmt(canteen.extra_bin_charge_amount ?? 0)}</div>
+                      <div>Convenience/Other: ₹{fmt(canteen.convenience_charge_amount ?? 0)}</div>
+                    </div>
+                    <div style={{ fontSize: "0.86rem", fontWeight: 800, color: "#9a3412", marginTop: "0.2rem" }}>
+                      -₹{fmt(canteen.total_admin_earnings ?? canteen.platform_charge_amount)}
+                    </div>
                   </div>
                   <div style={{ background: "#eff6ff", borderRadius: 10, padding: "0.5rem 0.65rem" }}>
                     <div style={{ fontSize: "0.66rem", color: "#1d4ed8", fontWeight: 600 }}>NET PAYABLE</div>
