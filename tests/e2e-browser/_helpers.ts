@@ -74,6 +74,32 @@ export async function provisionStudent(canteenId: string, suffix: string) {
   return { id, email, password };
 }
 
+/** Provisions a worker/admin via admin SDK and returns credentials + id. */
+export async function provisionStaff(
+  role: "worker" | "canteen_admin",
+  canteenId: string,
+  suffix: string,
+) {
+  const admin = adminClient();
+  const email = `e2e-${role}-${suffix}-${Date.now()}@noqx.test`;
+  const password = role === "worker" ? "Worker@12345" : "Canteen@12345";
+  const create = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { name: `E2E ${role} ${suffix}` },
+  });
+  if (create.error) throw create.error;
+  const id = create.data.user.id;
+  await admin.from("profiles").upsert({
+    id,
+    name: `E2E ${role} ${suffix}`,
+    role,
+    canteen_id: canteenId,
+  });
+  return { id, email, password };
+}
+
 export async function deleteUser(id: string) {
   if (!id) return;
   const admin = adminClient();
