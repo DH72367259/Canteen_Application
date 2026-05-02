@@ -20,6 +20,9 @@ export async function POST(
   if (!canManageOrders(auth.role)) {
     return NextResponse.json({ error: "Access denied." }, { status: 403 });
   }
+  if (!["canteen_admin", "vendor", "co_admin", "super_admin"].includes(auth.role)) {
+    return NextResponse.json({ error: "OTP verification is manager-only." }, { status: 403 });
+  }
 
   const body = (await request.json().catch(() => null)) as { otp?: string } | null;
   const otp = body?.otp?.toString().trim();

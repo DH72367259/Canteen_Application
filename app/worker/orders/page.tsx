@@ -12,6 +12,7 @@ interface WorkerOrder {
   bin_label?: string | null;
   bin_color?: string | null;
   pickup_slot?: string | null;
+  customer_name?: string | null;
   items: { name: string; quantity: number }[];
   /** Per-bin breakdown for multi-bin orders (Phase 7). */
   bin_assignments?: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number; isMeal?: boolean }[] }[];
@@ -54,6 +55,7 @@ export default function WorkerOrdersPage() {
           // header (bin_number was always undefined).
           type ApiCanteenOrder = {
             id: string;
+            customerName?: string;
             status?: string;
             rawStatus?: string;
             binLabel?: string | null;
@@ -74,6 +76,7 @@ export default function WorkerOrdersPage() {
               bin_label: o.binLabel ?? null,
               bin_color: o.binColor ?? null,
               pickup_slot: o.slotLabel ?? o.pickupSlot ?? null,
+              customer_name: o.customerName ?? null,
               items: o.items ?? [],
               bin_assignments: o.binAssignments,
             }));
@@ -152,6 +155,9 @@ export default function WorkerOrdersPage() {
                 </div>
               )}
               <div style={{ padding: "0.75rem" }}>
+                <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 700, marginBottom: "0.35rem" }}>
+                  Student: {order.customer_name || "Unknown"} · Dishes: {order.items.reduce((sum, i) => sum + i.quantity, 0)}
+                </div>
                 {/* Items — for multi-bin orders show the per-bin breakdown so
                     the worker knows what to put in each physical bin. */}
                 {multiBin ? (
@@ -201,7 +207,7 @@ export default function WorkerOrdersPage() {
                   )}
                   {["placed_in_bin", "ready_for_pickup"].includes(order.status) && (
                     <div style={{ background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem", fontSize: "0.82rem", color: "var(--green)", fontWeight: 600, textAlign: "center" }}>
-                      ✅ In Bin — awaiting OTP pickup
+                      ✅ In Bin — ready for pickup (manager verifies OTP)
                     </div>
                   )}
                 </div>
@@ -215,7 +221,6 @@ export default function WorkerOrdersPage() {
       <div className="bottom-nav">
         <button className="nav-item active">📦<span>Orders</span></button>
         <button className="nav-item" onClick={() => router.push("/worker/bins")}>🧺<span>Bins</span></button>
-        <button className="nav-item" onClick={() => router.push("/worker/otp-verify")}>🔐<span>OTP Verify</span></button>
       </div>
     </div>
   );

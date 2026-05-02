@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import CancelOrderModal from "@/components/CancelOrderModal";
 
-type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "orders" | "analytics" | "payments" | "support" | "notifications" | "account";
+type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "orders" | "refunds" | "analytics" | "payments" | "support" | "notifications" | "account";
 
 const ADMIN_NAV = [
   { id: "overview",  icon: "📊", label: "Dashboard" },
@@ -15,6 +15,7 @@ const ADMIN_NAV = [
   { id: "users",     icon: "👥", label: "All Users" },
   { id: "cities",    icon: "🏫", label: "Cities & Colleges" },
   { id: "orders",    icon: "📦", label: "Orders" },
+  { id: "refunds",   icon: "↩️", label: "Refunds" },
   { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "payments",  icon: "💳", label: "Payments" },
   { id: "support",   icon: "🎧", label: "Support" },
@@ -80,6 +81,7 @@ export default function SuperAdminDashboard() {
         {section === "payments"  && <PaymentsSection />}
         {section === "cities"    && <CitiesSection />}
         {section === "orders"    && <OrdersSection session={session} isSuperAdmin={isSuperAdmin} />}
+        {section === "refunds"   && <RefundsSection session={session} isSuperAdmin={isSuperAdmin} />}
         {section === "support"       && <SupportSection />}
         {section === "notifications" && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
         {section === "account"       && <AccountSection />}
@@ -2896,7 +2898,9 @@ type AdminOrder = {
   canteenId?: string;
   paymentId?: string;
   cancellation_reason?: string | null;
+  cancelled_at?: string | null;
   refund_status?: string | null;
+  refund_id?: string | null;
 };
 
 function OrdersSection({ session, isSuperAdmin }: { session: { access_token?: string } | null; isSuperAdmin: boolean }) {
@@ -3045,6 +3049,132 @@ function OrdersSection({ session, isSuperAdmin }: { session: { access_token?: st
           onClose={() => setCancelTarget(null)}
           onSuccess={() => { setCancelTarget(null); load(); }}
         />
+      )}
+    </div>
+  );
+}
+
+function RefundsSection({ session, isSuperAdmin }: { session: { access_token?: string } | null; isSuperAdmin: boolean }) {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "processed" | "pending" | "failed" | "not_required">("all");
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!session?.access_token) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/orders", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.orders)) {
+        setOrders((data.orders as AdminOrder[]).filter((o) => (o.rawStatus ?? o.status ?? "").toLowerCase() === "cancelled"));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function retryRefund(orderId: string) {
+    if (!session?.access_token) return;
+    if (!confirm("Issue manual refund now?")) return;
+    setRefundingId(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) alert(`Refund failed: ${data.error ?? "Unknown error"}`);
+      else alert(`Refund processed. Razorpay refund id: ${data.refund?.id ?? "—"}`);
+    } finally {
+      setRefundingId(null);
+      load();
+    }
+  }
+
+  const visible = orders.filter((o) => {
+    const status = (o.refund_status ?? "pending") as "processed" | "pending" | "failed" | "not_required";
+    return filter === "all" ? true : status === filter;
+  });
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Refunds</h2>
+        <button className="btn btn-ghost" onClick={load}>↻ Refresh</button>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+        {(["all", "processed", "pending", "failed", "not_required"] as const).map((f) => (
+          <button key={f} className={`btn ${filter === f ? "btn-primary" : "btn-ghost"}`} onClick={() => setFilter(f)}>
+            {f === "not_required" ? "No refund needed" : f[0].toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p style={{ color: "var(--ink-3)" }}>Loading refunds…</p>
+      ) : visible.length === 0 ? (
+        <p style={{ color: "var(--ink-3)" }}>No cancelled orders for this filter.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Canteen</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Cancelled</th>
+                <th>Reason</th>
+                <th>Refund</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((o) => {
+                const refundStatus = (o.refund_status ?? "pending").toLowerCase();
+                const canRetry = isSuperAdmin && !["processed", "not_required"].includes(refundStatus);
+                return (
+                  <tr key={o.id}>
+                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(0, 8)}</code></td>
+                    <td>{o.canteenName ?? "—"}</td>
+                    <td>{o.customerName ?? "—"}</td>
+                    <td>₹{(o.total ?? 0).toFixed(2)}</td>
+                    <td style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{o.cancelled_at ? relativeTime(o.cancelled_at) : relativeTime(o.createdAt)}</td>
+                    <td style={{ fontSize: "0.78rem", maxWidth: 240 }}>{o.cancellation_reason ?? "—"}</td>
+                    <td>
+                      <span style={{ fontSize: "0.75rem", padding: "0.15rem 0.5rem", borderRadius: 6,
+                        background: refundStatus === "processed" ? "#dcfce7" : refundStatus === "failed" ? "#fee2e2" : "#fef3c7",
+                        color: refundStatus === "processed" ? "#166534" : refundStatus === "failed" ? "#991b1b" : "#92400e",
+                        fontWeight: 600 }}>
+                        {refundStatus}
+                      </span>
+                      {o.refund_id && <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>{o.refund_id}</div>}
+                    </td>
+                    <td>
+                      {canRetry ? (
+                        <button
+                          className="btn btn-ghost"
+                          style={{ color: "#7c3aed", fontSize: "0.78rem" }}
+                          onClick={() => retryRefund(o.id)}
+                          disabled={refundingId === o.id}
+                        >
+                          {refundingId === o.id ? "Processing…" : "↻ Retry refund"}
+                        </button>
+                      ) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

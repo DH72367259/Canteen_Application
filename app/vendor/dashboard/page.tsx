@@ -24,6 +24,7 @@ interface Bin {
   rawStatus?: string;
   placedAt?: string | null;
   binCount?: number;
+  totalAmount?: number;
 }
 
 
@@ -106,6 +107,7 @@ export default function VendorDashboard() {
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; amount?: number } | null>(null);
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [canteenOpen, setCanteenOpen] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
@@ -293,6 +295,7 @@ export default function VendorDashboard() {
           rawStatus: o.rawStatus,
           placedAt: o.createdAt ?? null,
           binCount: o.binCount ?? slices.length,
+          totalAmount: Number(o.total ?? 0),
         }));
       });
       // Only show bins that have an assigned order (no empty filler bins)
@@ -779,25 +782,51 @@ export default function VendorDashboard() {
                                   </div>
                                 )}
                                 {bin.status === "placed" && bin.rawOrderId && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
-                                    style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                  >
-                                    ✓ Accept
-                                  </button>
+                                  <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
+                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                    >
+                                      ✓ Accept
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                    >
+                                      ✕ Cancel
+                                    </button>
+                                  </div>
                                 )}
                                 {bin.status === "preparing" && bin.rawOrderId && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
-                                    style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                  >
-                                    ✓ Mark Ready
-                                  </button>
+                                  <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
+                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                    >
+                                      ✓ Mark Ready
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                    >
+                                      ✕ Cancel
+                                    </button>
+                                  </div>
                                 )}
                                 {bin.status === "completed" && (
-                                  <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
-                                    Ready for pickup — tap to verify OTP
-                                  </div>
+                                  <>
+                                    <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
+                                      Ready for pickup — tap to verify OTP
+                                    </div>
+                                    {bin.rawOrderId && (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                                        style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                                      >
+                                        ✕ Cancel
+                                      </button>
+                                    )}
+                                  </>
                                 )}
                               </>
                             ) : (
@@ -846,25 +875,51 @@ export default function VendorDashboard() {
                         </div>
                       )}
                       {bin.status === "placed" && bin.rawOrderId && (
-                        <button
-                          onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
-                          style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                        >
-                          ✓ Accept
-                        </button>
+                        <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
+                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                          >
+                            ✓ Accept
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                          >
+                            ✕ Cancel
+                          </button>
+                        </div>
                       )}
                       {bin.status === "preparing" && bin.rawOrderId && (
-                        <button
-                          onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
-                          style={{ marginTop: "0.4rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                        >
-                          ✓ Mark Ready
-                        </button>
+                        <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
+                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                          >
+                            ✓ Mark Ready
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                          >
+                            ✕ Cancel
+                          </button>
+                        </div>
                       )}
                       {bin.status === "completed" && (
-                        <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
-                          Ready for pickup — tap to verify OTP
-                        </div>
+                        <>
+                          <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
+                            Ready for pickup — tap to verify OTP
+                          </div>
+                          {bin.rawOrderId && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
+                              style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
+                            >
+                              ✕ Cancel
+                            </button>
+                          )}
+                        </>
                       )}
                     </>
                   ) : (
@@ -957,6 +1012,17 @@ export default function VendorDashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {cancelTarget && session?.access_token && (
+        <CancelOrderModal
+          orderId={cancelTarget.id}
+          orderRef={cancelTarget.id.slice(0, 8).toUpperCase()}
+          amount={cancelTarget.amount}
+          authToken={session.access_token}
+          onClose={() => setCancelTarget(null)}
+          onSuccess={() => { setCancelTarget(null); void fetchOrders(); }}
+        />
       )}
     </div>
   );
@@ -1555,7 +1621,14 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     pickup_slot?: string | null;
     total_amount?: number | null;
     profiles?: { name: string | null } | null;
-    order_items?: Array<{ quantity: number; menu_items: { name: string; is_meal: boolean } | null }>;
+    order_items?: Array<{
+      id: string;
+      menu_item_id?: string;
+      quantity: number;
+      cancelled_quantity?: number | null;
+      unit_price?: number | null;
+      menu_items: { name: string; is_meal: boolean } | null;
+    }>;
   };
 
   const [bins, setBins] = useState<ApiBin[]>([]);
@@ -1563,6 +1636,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<{ bin: ApiBin; order: ApiOrder | null } | null>(null);
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
+  const [cancellingItemId, setCancellingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
@@ -1604,6 +1678,48 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  async function cancelItem(orderId: string, item: NonNullable<ApiOrder["order_items"]>[number]) {
+    const token = session?.access_token;
+    if (!token) return;
+    const remaining = Math.max(0, Number(item.quantity ?? 0) - Number(item.cancelled_quantity ?? 0));
+    if (remaining <= 0) return;
+    const itemName = item.menu_items?.name ?? "item";
+    const reason = prompt(`Reason to cancel ${itemName}?`);
+    if (!reason || !reason.trim()) return;
+    setCancellingItemId(item.id);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/items/${item.id}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: reason.trim(), quantity: remaining }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Failed to cancel item.");
+        return;
+      }
+      if (data?.all_items_cancelled) {
+        alert("All items cancelled. Full order refund initiated.");
+      } else if (data?.refund?.status === "processed") {
+        const amt = Number(data?.refund?.amount_paise ?? 0) / 100;
+        alert(`Item cancelled. Refund initiated: ₹${amt.toFixed(2)}`);
+      } else if (data?.refund?.status === "failed") {
+        alert(`Item cancelled, but refund failed: ${data?.refund?.error ?? "Unknown error"}`);
+      } else if (data?.refund?.status === "pending") {
+        alert("Item cancelled. Refund queued for manual processing.");
+      } else {
+        alert("Item cancelled.");
+      }
+      setSelected(null);
+      await refresh();
+    } finally {
+      setCancellingItemId(null);
+    }
+  }
 
   const orderByBinId = useMemo(() => {
     const m = new Map<string, ApiOrder>();
@@ -1737,9 +1853,29 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
                     <div>
                       <strong>Items:</strong>
                       <ul style={{ margin: "0.25rem 0 0 1rem", padding: 0 }}>
-                        {selected.order.order_items.map((it, i) => (
-                          <li key={i}>{it.menu_items?.name ?? "Item"} × {it.quantity}</li>
-                        ))}
+                        {selected.order.order_items.map((it, i) => {
+                          const cancelledQty = Number(it.cancelled_quantity ?? 0);
+                          const remaining = Math.max(0, Number(it.quantity ?? 0) - cancelledQty);
+                          return (
+                            <li key={i} style={{ marginBottom: "0.35rem" }}>
+                              <span>{it.menu_items?.name ?? "Item"} × {it.quantity}</span>
+                              {cancelledQty > 0 && (
+                                <span style={{ color: "var(--red)", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
+                                  (cancelled {cancelledQty})
+                                </span>
+                              )}
+                              {remaining > 0 && selected.order && selected.order.status !== "cancelled" && selected.order.status !== "collected" && selected.order.status !== "completed" && (
+                                <button
+                                  onClick={() => cancelItem(selected.order!.id, it)}
+                                  disabled={cancellingItemId === it.id}
+                                  style={{ marginLeft: "0.5rem", fontSize: "0.72rem", fontWeight: 700, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca", borderRadius: 6, padding: "0.1rem 0.45rem", cursor: cancellingItemId === it.id ? "not-allowed" : "pointer" }}
+                                >
+                                  {cancellingItemId === it.id ? "Cancelling…" : "Cancel item"}
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}

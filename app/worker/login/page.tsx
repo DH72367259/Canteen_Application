@@ -15,7 +15,7 @@ export default function WorkerLoginPage() {
   // Redirect if already logged in as worker
   useEffect(() => {
     if (!loading && user) {
-      if (user.role === "worker") router.replace("/worker/dashboard");
+      if (user.role === "worker") router.replace("/worker/orders");
       else router.replace("/");
     }
   }, [user, loading, router]);

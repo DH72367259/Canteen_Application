@@ -153,4 +153,18 @@ describe("PATCH /api/orders/[id]/status — standard", () => {
     const res = await PATCH(req, ctx);
     expect(res.status).toBe(400);
   });
+
+  it("worker cannot set collected directly", async () => {
+    mockGetRequestContext.mockResolvedValue(WORKER_CTX);
+    const { req, ctx } = makeReq({ status: "collected" });
+    const res = await PATCH(req, ctx);
+    expect(res.status).toBe(403);
+  });
+
+  it("worker cannot set completed directly", async () => {
+    mockGetRequestContext.mockResolvedValue(WORKER_CTX);
+    const { req, ctx } = makeReq({ status: "completed" });
+    const res = await PATCH(req, ctx);
+    expect(res.status).toBe(403);
+  });
 });

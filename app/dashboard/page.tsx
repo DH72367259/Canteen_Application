@@ -112,7 +112,7 @@ export default function UserHomePage() {
     }
     if (user.role === "super_admin" || user.role === "co_admin") { router.replace("/admin/dashboard"); return; }
     if (user.role === "vendor" || user.role === "canteen_admin") { router.replace("/vendor/dashboard"); return; }
-    if (user.role === "worker") { router.replace("/worker/dashboard"); return; }
+    if (user.role === "worker") { router.replace("/worker/orders"); return; }
   }, [user, loading, router]);
 
   useEffect(() => {

@@ -109,6 +109,52 @@ describe("POST /api/bins/[id]/mark-picked", () => {
     expect(body.error).toMatch(/empty/i);
   });
 
+  it("returns 400 for worker when order reference is missing", async () => {
+    mockGetRequestContext.mockResolvedValue(WORKER_CTX);
+    mockFromBins = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: { id: "bin-123", order_id: "order-456", assigned_order_id: null, canteen_id: "canteen-1", is_occupied: true },
+        error: null,
+      }),
+    });
+
+    const { ctx } = makeRequest();
+    const req = new Request("http://localhost/api/bins/bin-123/mark-picked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer token" },
+      body: JSON.stringify({}),
+    });
+    const res = await markPicked(req, ctx);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/reference/i);
+  });
+
+  it("returns 400 for worker when order reference does not match", async () => {
+    mockGetRequestContext.mockResolvedValue(WORKER_CTX);
+    mockFromBins = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: { id: "bin-123", order_id: "order-456", assigned_order_id: null, canteen_id: "canteen-1", is_occupied: true },
+        error: null,
+      }),
+    });
+
+    const { ctx } = makeRequest();
+    const req = new Request("http://localhost/api/bins/bin-123/mark-picked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer token" },
+      body: JSON.stringify({ orderRef: "WRONG1" }),
+    });
+    const res = await markPicked(req, ctx);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/does not match/i);
+  });
+
   it("marks bin as picked successfully", async () => {
     mockGetRequestContext.mockResolvedValue(WORKER_CTX);
     mockFromBins.mockReturnValue({
@@ -131,7 +177,7 @@ describe("POST /api/bins/[id]/mark-picked", () => {
           select: jest.fn().mockReturnThis(),
           eq: jest.fn().mockReturnThis(),
           single: jest.fn().mockResolvedValue({
-            data: { id: "bin-123", order_id: "order-456", canteen_id: "canteen-1", is_occupied: true },
+            data: { id: "bin-123", order_id: "order-456", assigned_order_id: null, canteen_id: "canteen-1", is_occupied: true },
             error: null,
           }),
         };
@@ -153,7 +199,12 @@ describe("POST /api/bins/[id]/mark-picked", () => {
       }),
     });
 
-    const { req, ctx } = makeRequest();
+    const { ctx } = makeRequest();
+    const req = new Request("http://localhost/api/bins/bin-123/mark-picked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer token" },
+      body: JSON.stringify({ orderRef: "ER-456" }),
+    });
     const res = await markPicked(req, ctx);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -191,7 +242,12 @@ describe("POST /api/bins/[id]/mark-picked", () => {
         eq: jest.fn().mockResolvedValue({ error: null }),
       });
 
-    const { req, ctx } = makeRequest();
+    const { ctx } = makeRequest();
+    const req = new Request("http://localhost/api/bins/bin-123/mark-picked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer token" },
+      body: JSON.stringify({}),
+    });
     const res = await markPicked(req, ctx);
     // Should not be blocked by canteen restriction (ADMIN_CTX has no canteenId)
     expect(res.status).not.toBe(403);

@@ -39,6 +39,10 @@ export type CanteenOrder = {
   paymentId?: string;
   slotName?: string;
   rawStatus?: string;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
+  refund_status?: string | null;
+  refund_id?: string | null;
   // Bin & OTP fields (set when order is placed via /api/orders/place)
   otp?: string;
   binLabel?: string;

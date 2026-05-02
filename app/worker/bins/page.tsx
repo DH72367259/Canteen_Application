@@ -10,6 +10,8 @@ interface Bin {
   color: string;
   status: "empty" | "occupied" | "overdue" | "grace_expired";
   order_count: number;
+  active_order_ref?: string | null;
+  customer_name?: string | null;
 }
 
 const BIN_COLORS: Record<string, string> = {
@@ -23,7 +25,7 @@ export default function WorkerBinsPage() {
   const [bins, setBins]         = useState<Bin[]>([]);
   const [fetching, setFetching] = useState(true);
   const [selected, setSelected] = useState<Bin | null>(null);
-  const [otp, setOtp]           = useState("");
+  const [orderRef, setOrderRef] = useState("");
   const [busy, setBusy]         = useState(false);
   const [msg, setMsg]           = useState<string | null>(null);
 
@@ -49,19 +51,19 @@ export default function WorkerBinsPage() {
     return () => { aborted = true; clearInterval(iv); };
   }, [session]);
 
-  async function handleVerifyOtp() {
-    if (!selected || otp.length < 4 || !session) return;
+  async function handleMarkPicked() {
+    if (!selected || !session || orderRef.trim().length < 4) return;
     setBusy(true); setMsg(null);
     try {
-      const res  = await fetch(`/api/bins/${selected.id}/verify-otp`, {
+      const res  = await fetch(`/api/bins/${selected.id}/mark-picked`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ otp }),
+        body: JSON.stringify({ orderRef: orderRef.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "OTP verification failed.");
-      setMsg("✅ OTP verified — order marked collected!");
-      setOtp("");
+      if (!res.ok) throw new Error(data.error ?? "Failed to mark picked.");
+      setMsg("✅ Handover confirmed — bin cleared.");
+      setOrderRef("");
       setSelected(null);
       setBins(prev => prev.map(b => b.id === selected.id ? { ...b, status: "empty" as const, order_count: 0 } : b));
     } catch (e: unknown) {
@@ -87,7 +89,7 @@ export default function WorkerBinsPage() {
           {normalBins.map(bin => {
             const bgColor = bin.status === "empty" ? "#e5e7eb" : (BIN_COLORS[bin.color] ?? "#f97316");
             return (
-              <button key={bin.id} onClick={() => { if (bin.status !== "empty") { setSelected(bin); setMsg(null); setOtp(""); } }} style={{ background: bgColor, borderRadius: 14, padding: "0.75rem 0.5rem", textAlign: "center", border: "none", cursor: bin.status !== "empty" ? "pointer" : "default", opacity: bin.status === "empty" ? 0.5 : 1, boxShadow: "0 2px 6px rgba(0,0,0,0.12)" }}>
+              <button key={bin.id} onClick={() => { if (bin.status !== "empty") { setSelected(bin); setMsg(null); setOrderRef(""); } }} style={{ background: bgColor, borderRadius: 14, padding: "0.75rem 0.5rem", textAlign: "center", border: "none", cursor: bin.status !== "empty" ? "pointer" : "default", opacity: bin.status === "empty" ? 0.5 : 1, boxShadow: "0 2px 6px rgba(0,0,0,0.12)" }}>
                 <div style={{ color: bin.status === "empty" ? "var(--ink-3)" : "#fff", fontWeight: 900, fontSize: "1.75rem", lineHeight: 1 }}>{bin.bin_code}</div>
                 {bin.order_count > 0 && <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.7rem", marginTop: "0.2rem" }}>{bin.order_count} orders</div>}
               </button>
@@ -101,7 +103,7 @@ export default function WorkerBinsPage() {
             <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--red)", marginBottom: "0.75rem" }}>⚠️ OVERDUE / GRACE-EXPIRED ({overdueBins.length})</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem", marginBottom: "1.5rem" }}>
               {overdueBins.map(bin => (
-                <button key={bin.id} onClick={() => { setSelected(bin); setMsg(null); setOtp(""); }} style={{ background: "#ef4444", borderRadius: 14, padding: "0.75rem 0.5rem", textAlign: "center", border: "2px solid #fca5a5", cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.12)" }}>
+                <button key={bin.id} onClick={() => { setSelected(bin); setMsg(null); setOrderRef(""); }} style={{ background: "#ef4444", borderRadius: 14, padding: "0.75rem 0.5rem", textAlign: "center", border: "2px solid #fca5a5", cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.12)" }}>
                   <div style={{ color: "#fff", fontWeight: 900, fontSize: "1.75rem", lineHeight: 1 }}>{bin.bin_code}</div>
                   <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.65rem", marginTop: "0.2rem" }}>OVERDUE</div>
                 </button>
@@ -110,26 +112,32 @@ export default function WorkerBinsPage() {
           </>
         )}
 
-        {/* OTP modal */}
+        {/* Handover confirmation modal (manager-absent fallback) */}
         {selected && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
             <div style={{ background: "#fff", borderRadius: 20, padding: "1.5rem", width: "100%", maxWidth: 360 }}>
-              <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Bin {selected.bin_code} — OTP Verify</h3>
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Bin {selected.bin_code} — Handover</h3>
               <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginBottom: "1rem" }}>No. of items: {selected.order_count}</p>
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginBottom: "0.35rem" }}>
+                Student: <strong>{selected.customer_name || "Unknown"}</strong>
+              </p>
+              <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+                Expected Order Ref: <strong>{selected.active_order_ref || "N/A"}</strong>
+              </p>
               <input
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
                 maxLength={6}
-                value={otp}
-                onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
-                placeholder="Enter OTP"
+                value={orderRef}
+                onChange={e => setOrderRef(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                placeholder="Enter order ref"
                 style={{ width: "100%", padding: "0.85rem", fontSize: "1.5rem", textAlign: "center", letterSpacing: "0.3rem", fontWeight: 700, border: "2px solid var(--border)", borderRadius: 12, marginBottom: "0.75rem", boxSizing: "border-box" }}
               />
               {msg && <p style={{ fontSize: "0.82rem", color: msg.startsWith("✅") ? "var(--green)" : "var(--red)", marginBottom: "0.75rem", textAlign: "center" }}>{msg}</p>}
-              <button onClick={handleVerifyOtp} disabled={busy || otp.length < 4} style={{ width: "100%", padding: "0.85rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "1rem", cursor: "pointer", marginBottom: "0.5rem" }}>
-                {busy ? "Verifying..." : "Verify OTP"}
+              <button onClick={handleMarkPicked} disabled={busy || orderRef.trim().length < 4} style={{ width: "100%", padding: "0.85rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "1rem", cursor: "pointer", marginBottom: "0.5rem" }}>
+                {busy ? "Verifying..." : "Confirm Order Ref & Mark Picked"}
               </button>
-              <button onClick={() => { setSelected(null); setMsg(null); setOtp(""); }} style={{ width: "100%", padding: "0.6rem", background: "none", border: "none", color: "var(--ink-3)", cursor: "pointer", fontSize: "0.88rem" }}>
+              <button onClick={() => { setSelected(null); setMsg(null); setOrderRef(""); }} style={{ width: "100%", padding: "0.6rem", background: "none", border: "none", color: "var(--ink-3)", cursor: "pointer", fontSize: "0.88rem" }}>
                 Cancel
               </button>
             </div>
@@ -140,7 +148,6 @@ export default function WorkerBinsPage() {
       <div className="bottom-nav">
         <button className="nav-item" onClick={() => router.push("/worker/orders")}>📦<span>Orders</span></button>
         <button className="nav-item active">🧺<span>Bins</span></button>
-        <button className="nav-item" onClick={() => router.push("/worker/otp-verify")}>🔐<span>OTP Verify</span></button>
       </div>
     </div>
   );

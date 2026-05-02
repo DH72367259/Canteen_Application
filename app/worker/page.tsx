@@ -17,7 +17,7 @@ export default function WorkerPage() {
       <section className="panel">
         <h2>🔧 Workflow Hub</h2>
         <nav className="nav-grid">
-          <Link href="/worker/dashboard" className="nav-card">
+          <Link href="/worker/orders" className="nav-card">
             <h2>Dashboard</h2>
             <p>View your tasks and workload</p>
           </Link>

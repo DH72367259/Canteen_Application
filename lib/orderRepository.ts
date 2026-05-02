@@ -32,6 +32,10 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
     total:        Number(row.total_amount ?? 0),
     status:       rawStatusMap[rawSt] ?? "received",
     rawStatus:    rawSt,
+    cancellation_reason: row.cancellation_reason ? String(row.cancellation_reason) : null,
+    cancelled_at:        row.cancelled_at ? String(row.cancelled_at) : null,
+    refund_status:       row.refund_status ? String(row.refund_status) : null,
+    refund_id:           row.refund_id ? String(row.refund_id) : null,
     createdAt:    String(row.created_at ?? new Date().toISOString()),
     canteenId:    row.canteen_id ? String(row.canteen_id) : undefined,
     canteenName:  (row.canteens as Record<string, unknown> | null)?.name

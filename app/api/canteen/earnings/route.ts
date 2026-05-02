@@ -126,14 +126,15 @@ export async function GET(request: Request) {
     { data: subscriptionsRows },
   ] = await Promise.all([
     orderIds.length > 0
-      ? supabase.from("order_items").select("order_id, quantity, unit_price").in("order_id", orderIds)
-      : Promise.resolve({ data: [] as Array<{ order_id: string; quantity: number | null; unit_price: number | null }> }),
+      ? supabase.from("order_items").select("order_id, quantity, cancelled_quantity, unit_price").in("order_id", orderIds)
+      : Promise.resolve({ data: [] as Array<{ order_id: string; quantity: number | null; cancelled_quantity: number | null; unit_price: number | null }> }),
     supabase.from("noqx_pro_subscriptions").select("user_id, payment_id, amount_paid, started_at, expires_at, status"),
   ]);
 
   const foodGrossByOrder = new Map<string, number>();
   for (const row of orderItems ?? []) {
-    const lineTotal = Number(row.quantity ?? 0) * Number(row.unit_price ?? 0);
+    const qty = Math.max(0, Number(row.quantity ?? 0) - Number(row.cancelled_quantity ?? 0));
+    const lineTotal = qty * Number(row.unit_price ?? 0);
     foodGrossByOrder.set(row.order_id, (foodGrossByOrder.get(row.order_id) ?? 0) + lineTotal);
   }
 

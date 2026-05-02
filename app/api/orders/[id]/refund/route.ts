@@ -23,6 +23,23 @@ export const dynamic = "force-dynamic";
 
 const PAYMENT_ID_RE = /^pay_[A-Za-z0-9]{14,}$/;
 
+async function resolveRefundAmountPaise(
+  supabase: ReturnType<typeof createAdminClient>,
+  paymentId: string,
+  fallbackRupees: number,
+): Promise<number> {
+  const fallback = Math.max(0, Math.round(Number(fallbackRupees || 0) * 100));
+  const { data: p } = await supabase
+    .from("payments")
+    .select("amount_paise, refunded_amount_paise")
+    .eq("razorpay_payment_id", paymentId)
+    .maybeSingle<{ amount_paise: number | null; refunded_amount_paise: number | null }>();
+  if (!p) return fallback;
+  const gross = Number(p.amount_paise ?? fallback) || fallback;
+  const refunded = Number(p.refunded_amount_paise ?? 0) || 0;
+  return Math.max(0, gross - refunded);
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -79,7 +96,12 @@ export async function POST(
   }
 
   const rzpAuth = Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
-  const refundBody = {
+  const refundAmountPaise = await resolveRefundAmountPaise(supabase, paymentId, Number(order.total_amount));
+  const refundBody: {
+    speed: string;
+    amount?: number;
+    notes: { reason: string; order_id: string; retried_by_role: string };
+  } = {
     speed: "optimum",
     notes: {
       reason: "manual_admin_refund",
@@ -87,6 +109,7 @@ export async function POST(
       retried_by_role: role,
     },
   };
+  if (refundAmountPaise > 0) refundBody.amount = refundAmountPaise;
 
   let refund_status: "processed" | "failed" = "failed";
   let refund_id: string | null = null;
@@ -102,6 +125,23 @@ export async function POST(
     if (resp.ok && data?.id) {
       refund_status = "processed";
       refund_id     = data.id;
+      const { data: payRow } = await supabase
+        .from("payments")
+        .select("amount_paise, refunded_amount_paise")
+        .eq("razorpay_payment_id", paymentId)
+        .maybeSingle<{ amount_paise: number | null; refunded_amount_paise: number | null }>();
+      const grossPaise = Math.max(0, Number(payRow?.amount_paise ?? refundAmountPaise) || 0);
+      const oldRefunded = Math.max(0, Number(payRow?.refunded_amount_paise ?? 0) || 0);
+      const newRefunded = Math.min(grossPaise, oldRefunded + refundAmountPaise);
+      await supabase
+        .from("payments")
+        .update({
+          status: newRefunded >= grossPaise ? "refunded" : "partial_refund",
+          refunded_amount_paise: newRefunded,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("razorpay_payment_id", paymentId)
+        .then(() => {}, () => {});
     } else {
       refund_error  = data?.error?.description || `Razorpay returned status ${resp.status}.`;
     }

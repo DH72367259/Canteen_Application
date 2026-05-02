@@ -45,6 +45,9 @@ export async function PATCH(
     if (!STAFF_STATUSES.includes(status) && !isPseudo) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     }
+    if (auth.role === "worker" && (status === "collected" || status === "completed")) {
+      return NextResponse.json({ error: "Workers cannot complete pickup from this action." }, { status: 403 });
+    }
   } else if (!STUDENT_STATUSES.includes(status)) {
     return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   }

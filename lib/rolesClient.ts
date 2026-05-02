@@ -25,7 +25,7 @@ export function getDashboardUrl(role: UserRole): string {
     case "vendor":
       return "/vendor/dashboard";
     case "worker":
-      return "/worker/dashboard";
+      return "/worker/orders";
     case "user":
     default:
       return "/dashboard";

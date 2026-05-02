@@ -14,7 +14,7 @@ export default function AdminDashboardPage() {
       // Redirect to correct dashboard based on role
       if (user.role === "super_admin") router.replace("/admin/dashboard");
       else if (user.role === "canteen_admin" || user.role === "vendor") router.replace("/vendor/dashboard");
-      else if (user.role === "worker") router.replace("/worker/dashboard");
+      else if (user.role === "worker") router.replace("/worker/orders");
       else router.replace("/dashboard");
     }
   }, [user, loading, router]);

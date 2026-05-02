@@ -175,7 +175,7 @@ function LoginContent() {
     const role = user.role;
     if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
     else if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
-    else if (role === "worker")                        router.replace("/worker/dashboard");
+    else if (role === "worker")                        router.replace("/worker/orders");
     else                                               router.replace("/dashboard");
   }, [user, loading, router, params, showSetup, registerMode]);
 
@@ -285,7 +285,7 @@ function LoginContent() {
       const role = user?.role;
       if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
       else if (role === "super_admin") router.replace("/admin/dashboard");
-      else if (role === "worker") router.replace("/worker/dashboard");
+      else if (role === "worker") router.replace("/worker/orders");
       else router.replace("/dashboard");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create account. Please try again.");

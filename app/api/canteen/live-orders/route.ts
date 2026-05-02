@@ -80,17 +80,17 @@ export async function GET(request: Request) {
     id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
     profiles!orders_user_id_fkey(name),
     bins!orders_bin_id_fkey(bin_code, color),
-    order_items(quantity, menu_items(name, is_meal))
+    order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const baseProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
     profiles!orders_user_id_fkey(name),
     bins!orders_bin_id_fkey(bin_code, color),
-    order_items(quantity, menu_items(name, is_meal))
+    order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const minimalProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, created_at,
-    order_items(quantity, menu_items(name, is_meal))
+    order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   let orders: unknown[] | null = null;
   let orderErr: { message: string } | null = null;
