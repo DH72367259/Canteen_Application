@@ -15,6 +15,18 @@ export const dynamic = "force-dynamic";
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
+function isValidDateOnly(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  return parsed.toISOString().slice(0, 10) === value;
+}
+
 type SubscriptionRow = {
   user_id: string | null;
   payment_id: string | null;
@@ -48,6 +60,14 @@ export async function GET(request: Request) {
   const defaultEnd   = now.toISOString().slice(0, 10);
   const period_start = searchParams.get("period_start") || defaultStart;
   const period_end   = searchParams.get("period_end")   || defaultEnd;
+
+  if (!isValidDateOnly(period_start) || !isValidDateOnly(period_end)) {
+    return Response.json({ error: "Invalid period_start or period_end. Use YYYY-MM-DD." }, { status: 400 });
+  }
+
+  if (period_start > period_end) {
+    return Response.json({ error: "period_start must be on or before period_end." }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 

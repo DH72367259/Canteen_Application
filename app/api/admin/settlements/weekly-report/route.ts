@@ -46,8 +46,14 @@ export async function GET(request: Request) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const numWeeks = Math.min(52, Math.max(1, Number(searchParams.get("weeks") ?? 8)));
+  const rawWeeks = searchParams.get("weeks");
+  const parsedWeeks = rawWeeks === null ? 8 : Number(rawWeeks);
 
+  if (!Number.isInteger(parsedWeeks) || parsedWeeks < 1 || parsedWeeks > 52) {
+    return Response.json({ error: "weeks must be an integer between 1 and 52." }, { status: 400 });
+  }
+
+  const numWeeks = parsedWeeks;
   const supabase = createAdminClient();
 
   // Build week boundaries (latest first)

@@ -18,7 +18,7 @@ interface QB {
 
 function makeQB(defaultResult: { data: unknown; error: unknown } = { data: [], error: null }): QB {
   const qb: Partial<QB> = {};
-  let result = defaultResult;
+  const result = defaultResult;
   qb.select = jest.fn(() => qb as QB);
   qb.eq = jest.fn(() => qb as QB);
   qb.gte = jest.fn(() => qb as QB);
@@ -79,6 +79,22 @@ beforeEach(() => {
 });
 
 describe("settlement accounting regressions", () => {
+  it("admin settlements rejects malformed or reversed date ranges", async () => {
+    mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
+
+    const malformed = await settlementsGET(new Request("http://localhost/api/admin/settlements?period_start=bad&period_end=2026-05-02"));
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/period_start|period_end/i),
+    });
+
+    const reversed = await settlementsGET(new Request("http://localhost/api/admin/settlements?period_start=2026-05-03&period_end=2026-05-02"));
+    expect(reversed.status).toBe(400);
+    await expect(reversed.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/on or before/i),
+    });
+  });
+
   it("admin settlements pays canteen from food-only gross and separates extra-bin, convenience, and pro buckets", async () => {
     mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
 
@@ -147,6 +163,19 @@ describe("settlement accounting regressions", () => {
     expect(json.canteens[0].extra_bin_charge_amount).toBe(2);
   });
 
+  it("weekly report rejects invalid week counts", async () => {
+    mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
+
+    const malformed = await weeklyReportGET(new Request("http://localhost/api/admin/settlements/weekly-report?weeks=abc"));
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/weeks/i),
+    });
+
+    const outOfRange = await weeklyReportGET(new Request("http://localhost/api/admin/settlements/weekly-report?weeks=0"));
+    expect(outOfRange.status).toBe(400);
+  });
+
   it("weekly report preserves historical charge snapshots instead of current platform settings", async () => {
     mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
 
@@ -182,6 +211,19 @@ describe("settlement accounting regressions", () => {
     expect(json.totals.gst_on_fee).toBe(0.36);
     expect(json.totals.total_platform_earnings).toBe(2.36);
     expect(json.totals.net_payable).toBe(97.64);
+  });
+
+  it("canteen earnings rejects malformed or reversed date ranges", async () => {
+    mockGetRequestContext.mockResolvedValue({ uid: "vendor-1", role: "vendor", canteenId: "c-1" });
+
+    const malformed = await canteenEarningsGET(new Request("http://localhost/api/canteen/earnings?period_start=bad&period_end=2026-05-02"));
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/period_start|period_end/i),
+    });
+
+    const reversed = await canteenEarningsGET(new Request("http://localhost/api/canteen/earnings?period_start=2026-05-03&period_end=2026-05-02"));
+    expect(reversed.status).toBe(400);
   });
 
   it("canteen earnings shows food-only gross and excludes admin-only charges from net earnings", async () => {
