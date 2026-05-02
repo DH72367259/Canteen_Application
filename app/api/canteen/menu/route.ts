@@ -6,6 +6,13 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_AVAIL = ["slot_based", "batched_prepared"] as const;
 
+function missingColumn(errorMessage: string): string | null {
+  const m = errorMessage.match(/column\s+"?([a-zA-Z0-9_\.]+)"?\s+does not exist/i);
+  if (!m) return null;
+  const raw = m[1].split(".").pop() ?? m[1];
+  return raw.replace(/"/g, "");
+}
+
 function canEdit(role: string): boolean {
   return role === "canteen_admin" || role === "vendor" ||
          role === "co_admin" || role === "super_admin";
@@ -28,16 +35,16 @@ export async function GET(request: Request) {
   if (!canteenId) return NextResponse.json({ error: "canteenId required." }, { status: 400 });
 
   const supabase = createAdminClient();
-  // Resilient select: prod databases that haven't yet had every Phase-1
-  // column applied would fail the whole query (single missing column =
-  // PostgREST 400) and surface as "Failed to load menu" in the vendor UI.
-  // Try the full set first; on missing-column error, retry with the base set.
-  const fullCols = "id, canteen_id, name, description, price, category, image_url, is_available, availability_type, quantity_per_slot, total_per_day, is_meal, is_hidden, is_sold_out, created_at, updated_at";
-  const midCols  = "id, canteen_id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out, created_at";
-  const baseCols = "id, canteen_id, name, description, price, category, image_url, is_available";
+  const selectedCols = [
+    "id", "canteen_id", "name", "description", "price", "category", "image_url", "is_available",
+    "availability_type", "quantity_per_slot", "total_per_day", "is_meal",
+    "is_hidden", "is_sold_out", "created_at", "updated_at",
+  ];
   let data: unknown[] | null = null;
   let lastError: string | null = null;
-  for (const cols of [fullCols, midCols, baseCols]) {
+
+  for (let attempt = 0; attempt < 12 && selectedCols.length > 0; attempt++) {
+    const cols = selectedCols.join(", ");
     const q = supabase
       .from("menu_items")
       .select(cols)
@@ -50,7 +57,11 @@ export async function GET(request: Request) {
       : q.order("name", { ascending: true }));
     if (!r.error) { data = r.data ?? []; break; }
     lastError = r.error.message;
-    if (!/column .* does not exist/i.test(r.error.message)) break;
+    const miss = missingColumn(r.error.message);
+    if (!miss) break;
+    const idx = selectedCols.findIndex((c) => c === miss);
+    if (idx < 0) break;
+    selectedCols.splice(idx, 1);
   }
   if (data === null) {
     return NextResponse.json({ error: lastError ?? "Failed to load menu." }, { status: 500 });
@@ -99,18 +110,13 @@ export async function POST(request: Request) {
   };
 
   const supabase = createAdminClient();
-  // Resilient insert: if the prod DB hasn't yet had every Phase-1 column
-  // (availability_type / quantity_per_slot / total_per_day / is_meal),
-  // strip them and retry. Otherwise the vendor's Save would silently fail
-  // and the saved item would never appear in the list.
-  const phase1Cols = ["availability_type", "quantity_per_slot", "total_per_day", "is_meal"];
-  const tryInsert = async (row: Record<string, unknown>) =>
-    supabase.from("menu_items").insert(row).select("*").single();
-  let inserted = await tryInsert(insertRow);
-  if (inserted.error && /column .* does not exist/i.test(inserted.error.message)) {
-    const fallback = { ...insertRow };
-    for (const c of phase1Cols) delete fallback[c];
-    inserted = await tryInsert(fallback);
+  let row = { ...insertRow };
+  let inserted = await supabase.from("menu_items").insert(row).select("*").single();
+  for (let attempt = 0; attempt < 8 && inserted.error; attempt++) {
+    const miss = missingColumn(inserted.error.message);
+    if (!miss || !(miss in row)) break;
+    delete row[miss];
+    inserted = await supabase.from("menu_items").insert(row).select("*").single();
   }
   if (inserted.error || !inserted.data) {
     return NextResponse.json({ error: inserted.error?.message ?? "Failed to create item." }, { status: 500 });

@@ -6,6 +6,13 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_AVAIL = ["slot_based", "batched_prepared"] as const;
 
+function missingColumn(errorMessage: string): string | null {
+  const m = errorMessage.match(/column\s+"?([a-zA-Z0-9_\.]+)"?\s+does not exist/i);
+  if (!m) return null;
+  const raw = m[1].split(".").pop() ?? m[1];
+  return raw.replace(/"/g, "");
+}
+
 function canEdit(role: string): boolean {
   return role === "canteen_admin" || role === "vendor" ||
          role === "co_admin" || role === "super_admin";
@@ -64,12 +71,26 @@ export async function PATCH(
     return NextResponse.json({ error: "No editable fields." }, { status: 400 });
   }
 
-  const { data, error } = await supabase
+  let patch = { ...updates };
+  let result = await supabase
     .from("menu_items")
-    .update(updates)
+    .update(patch)
     .eq("id", id)
     .select("*")
     .single();
+  for (let attempt = 0; attempt < 8 && result.error; attempt++) {
+    const miss = missingColumn(result.error.message);
+    if (!miss || !(miss in patch)) break;
+    delete patch[miss];
+    if (Object.keys(patch).length === 0) break;
+    result = await supabase
+      .from("menu_items")
+      .update(patch)
+      .eq("id", id)
+      .select("*")
+      .single();
+  }
+  const { data, error } = result;
   if (error || !data) {
     console.error("[PATCH /api/canteen/menu/:id] update failed:", error);
     return NextResponse.json({ error: error?.message || "Failed to update item." }, { status: 500 });

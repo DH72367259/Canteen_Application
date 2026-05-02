@@ -5,12 +5,20 @@ import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
+import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
 
 export const dynamic = "force-dynamic";
 
 const MAX_CART_ITEMS = 20; // prevent DoS via oversized payloads
 const RZP_PAYMENT_RE = /^pay_[A-Za-z0-9]{14,}$/;
 const RZP_ORDER_RE   = /^order_[A-Za-z0-9]{14,}$/;
+
+function missingColumn(errorMessage: string): string | null {
+  const m = errorMessage.match(/column\s+"?([a-zA-Z0-9_\.]+)"?\s+does not exist/i);
+  if (!m) return null;
+  const raw = m[1].split(".").pop() ?? m[1];
+  return raw.replace(/"/g, "");
+}
 
 export async function POST(req: NextRequest) {
   // Authenticate caller
@@ -69,11 +77,30 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: `Invalid item id "${id}"` }, { status: 400 });
     }
   }
-  const { data: menuRows, error: menuErr } = await supabase
-    .from("menu_items")
-    .select("id, name, price, is_available, is_meal, canteen_id")
-    .in("id", itemIds)
-    .eq("canteen_id", canteenId);
+  const selectCols = [
+    "id", "name", "price", "is_available", "is_meal", "canteen_id",
+    "availability_type", "quantity_per_slot", "total_per_day",
+  ];
+  let menuRows: Array<Record<string, unknown>> | null = null;
+  let menuErr: { message: string; code?: string } | null = null;
+  for (let attempt = 0; attempt < 8 && selectCols.length > 0; attempt++) {
+    const q = await supabase
+      .from("menu_items")
+      .select(selectCols.join(", "))
+      .in("id", itemIds)
+      .eq("canteen_id", canteenId);
+    if (!q.error) {
+      menuRows = (q.data ?? []) as unknown as Array<Record<string, unknown>>;
+      menuErr = null;
+      break;
+    }
+    menuErr = { message: q.error.message, code: (q.error as { code?: string }).code };
+    const miss = missingColumn(q.error.message);
+    if (!miss) break;
+    const idx = selectCols.findIndex((c) => c === miss);
+    if (idx < 0) break;
+    selectCols.splice(idx, 1);
+  }
 
   if (menuErr) {
     // Postgres invalid_text_representation (22P02) means the client sent a
@@ -86,7 +113,17 @@ export async function POST(req: NextRequest) {
   }
 
   const menuMap = new Map(
-    (menuRows ?? []).map((m: { id: string; name: string; price: number; is_available: boolean; is_meal: boolean | null; canteen_id: string }) => [m.id, m])
+    (menuRows ?? []).map((m) => [String(m.id), {
+      id: String(m.id),
+      name: String(m.name ?? ""),
+      price: Number(m.price ?? 0),
+      is_available: Boolean(m.is_available),
+      is_meal: (m.is_meal as boolean | null) ?? null,
+      canteen_id: String(m.canteen_id ?? ""),
+      availability_type: (m.availability_type as string | null) ?? null,
+      quantity_per_slot: m.quantity_per_slot == null ? null : Number(m.quantity_per_slot),
+      total_per_day: m.total_per_day == null ? null : Number(m.total_per_day),
+    }])
   );
 
   // Build verified order items and compute server-authoritative subtotal
@@ -106,6 +143,47 @@ export async function POST(req: NextRequest) {
     verifiedItems.push({ menu_item_id: item.id, quantity: qty, unit_price: menuItem.price });
     cartLines.push({ itemId: item.id, name: menuItem.name, quantity: qty, isMeal: !!menuItem.is_meal });
     serverSubtotal += menuItem.price * qty;
+  }
+
+  // Find matching time slot
+  const slotName = slotLabel ? String(slotLabel).split(" ")[0] : "";
+  const { data: slotRows } = slotName
+    ? await supabase
+        .from("time_slots")
+        .select("id, start_time")
+        .eq("canteen_id", canteenId)
+        .ilike("slot_name", `%${slotName}%`)
+        .limit(1)
+    : { data: null };
+  const slotId = slotRows?.[0]?.id ?? null;
+  const slotStart = slotRows?.[0]?.start_time as string | undefined;
+
+  // Enforce per-item caps (slot-based or daily-batch) before allocating bins.
+  const usage = await getMenuItemUsageForToday(supabase, {
+    canteenId,
+    menuItemIds: itemIds,
+    slotId,
+    slotLabel: slotLabel ? String(slotLabel) : null,
+  });
+  for (const item of cartItems as Array<{ id: string; qty: number }>) {
+    const menuItem = menuMap.get(item.id);
+    if (!menuItem) continue;
+    const qty = Number(item.qty);
+    const avail = menuItem.availability_type ?? "slot_based";
+    const slotCap = Number(menuItem.quantity_per_slot ?? 0);
+    const dayCap = Number(menuItem.total_per_day ?? 0);
+    const slotUsed = usage.slotUsed.get(item.id) ?? 0;
+    const dayUsed = usage.dayUsed.get(item.id) ?? 0;
+    if (avail === "slot_based" && slotCap > 0 && slotUsed + qty > slotCap) {
+      return Response.json({
+        error: `${menuItem.name} limit reached for this slot (${slotCap}).`,
+      }, { status: 409 });
+    }
+    if (avail === "batched_prepared" && dayCap > 0 && dayUsed + qty > dayCap) {
+      return Response.json({
+        error: `${menuItem.name} is sold out for today (${dayCap}).`,
+      }, { status: 409 });
+    }
   }
 
   // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
@@ -195,19 +273,6 @@ export async function POST(req: NextRequest) {
   const firstBinId    = firstBin.id || null;
   const firstBinLabel = firstBin.bin_code;
   const firstBinColor = firstBin.color ?? "blue";
-
-  // Find matching time slot
-  const slotName = slotLabel ? String(slotLabel).split(" ")[0] : "";
-  const { data: slotRows } = slotName
-    ? await supabase
-        .from("time_slots")
-        .select("id, start_time")
-        .eq("canteen_id", canteenId)
-        .ilike("slot_name", `%${slotName}%`)
-        .limit(1)
-    : { data: null };
-  const slotId = slotRows?.[0]?.id ?? null;
-  const slotStart = slotRows?.[0]?.start_time as string | undefined;
 
   // ── Order cutoff (PDF requirement) ───────────────────────────────────────
   // A slot closes for new orders one slot_duration BEFORE its start time.

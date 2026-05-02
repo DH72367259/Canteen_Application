@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { getRequestContext } from "@/lib/authServer";
 import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
+import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
 
 export const dynamic = "force-dynamic";
 
@@ -68,14 +69,46 @@ export async function POST(request: Request) {
 
   // 2. Load menu items in cart to get name + is_meal flags
   const ids = items.map(i => i.id);
-  const { data: menuRows, error: menuErr } = await supabase
-    .from("menu_items")
-    .select("id, name, is_meal, canteen_id")
-    .in("id", ids);
+  let menuRows: Array<Record<string, unknown>> | null = null;
+  let menuErr: { message: string } | null = null;
+  for (const cols of [
+    "id, name, is_meal, canteen_id, availability_type, quantity_per_slot, total_per_day",
+    "id, name, is_meal, canteen_id",
+  ]) {
+    const q = await supabase
+      .from("menu_items")
+      .select(cols)
+      .in("id", ids);
+    if (!q.error) {
+      menuRows = (q.data ?? []) as unknown as Array<Record<string, unknown>>;
+      menuErr = null;
+      break;
+    }
+    menuErr = { message: q.error.message };
+    if (!/column .* does not exist/i.test(q.error.message)) break;
+  }
   if (menuErr) return Response.json({ error: menuErr.message }, { status: 500 });
 
-  const menuById = new Map<string, { id: string; name: string; is_meal: boolean; canteen_id: string }>();
-  for (const m of menuRows ?? []) menuById.set(m.id as string, m as { id: string; name: string; is_meal: boolean; canteen_id: string });
+  const menuById = new Map<string, {
+    id: string;
+    name: string;
+    is_meal: boolean;
+    canteen_id: string;
+    availability_type?: string | null;
+    quantity_per_slot?: number | null;
+    total_per_day?: number | null;
+  }>();
+  for (const m of menuRows ?? []) {
+    menuById.set(String(m.id), m as {
+      id: string;
+      name: string;
+      is_meal: boolean;
+      canteen_id: string;
+      availability_type?: string | null;
+      quantity_per_slot?: number | null;
+      total_per_day?: number | null;
+    });
+  }
 
   // Validate every cart item belongs to this canteen
   for (const it of items) {
@@ -93,6 +126,34 @@ export async function POST(request: Request) {
     const m = menuById.get(it.id)!;
     return { itemId: it.id, name: m.name, quantity: it.quantity, isMeal: !!m.is_meal };
   });
+
+  // Item-level cap checks (slot/day) so carts are blocked before payment.
+  const usage = await getMenuItemUsageForToday(supabase, {
+    canteenId: canteen_id,
+    menuItemIds: ids,
+    slotLabel: slot,
+  });
+  for (const it of items) {
+    const m = menuById.get(it.id);
+    if (!m) continue;
+    const avail = m.availability_type ?? "slot_based";
+    const slotCap = Number(m.quantity_per_slot ?? 0);
+    const dayCap = Number(m.total_per_day ?? 0);
+    const slotUsed = usage.slotUsed.get(it.id) ?? 0;
+    const dayUsed = usage.dayUsed.get(it.id) ?? 0;
+    if (avail === "slot_based" && slotCap > 0 && slotUsed + it.quantity > slotCap) {
+      return Response.json({
+        error: `${m.name} limit reached for this slot (${slotCap}).`,
+        item_id: it.id,
+      }, { status: 409 });
+    }
+    if (avail === "batched_prepared" && dayCap > 0 && dayUsed + it.quantity > dayCap) {
+      return Response.json({
+        error: `${m.name} is sold out for today (${dayCap}).`,
+        item_id: it.id,
+      }, { status: 409 });
+    }
+  }
 
   // 3. Count orders already placed for this slot today
   // Prod schema drift: orders has `slot_label` (or legacy `pickup_slot`),

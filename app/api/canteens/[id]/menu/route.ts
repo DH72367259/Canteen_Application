@@ -1,6 +1,36 @@
 import { createAdminClient } from "@/lib/supabase-server";
+import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
 
 export const dynamic = "force-dynamic";
+
+function missingColumn(errorMessage: string): string | null {
+  const m = errorMessage.match(/column\s+"?([a-zA-Z0-9_\.]+)"?\s+does not exist/i);
+  if (!m) return null;
+  const raw = m[1].split(".").pop() ?? m[1];
+  return raw.replace(/"/g, "");
+}
+
+function istMinuteOfDay(now = new Date()): number {
+  return (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+}
+
+function pickNextOpenSlot(
+  slots: Array<{ id: string; start_time: string; is_active?: boolean | null }>,
+  slotDurationMins: number,
+): string | null {
+  if (slots.length === 0) return null;
+  const nowMin = istMinuteOfDay();
+  const active = slots
+    .filter((s) => s.is_active !== false)
+    .slice()
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  for (const s of active) {
+    const [h, m] = s.start_time.split(":").map(Number);
+    const cutoff = h * 60 + m - slotDurationMins;
+    if (nowMin <= cutoff) return s.id;
+  }
+  return active[0]?.id ?? null;
+}
 
 /**
  * GET /api/canteens/[id]/menu
@@ -31,12 +61,17 @@ export async function GET(
     category: string | null; image_url: string | null;
     is_available: boolean; is_hidden: boolean; is_sold_out: boolean;
     availability_type?: string | null; is_meal?: boolean | null;
+    quantity_per_slot?: number | null; total_per_day?: number | null;
   };
-  const baseCols = "id, name, description, price, category, image_url, is_available, is_hidden, is_sold_out";
-  const fullCols = `${baseCols}, availability_type, is_meal`;
+  const selectedCols = [
+    "id", "name", "description", "price", "category", "image_url",
+    "is_available", "is_hidden", "is_sold_out",
+    "availability_type", "is_meal", "quantity_per_slot", "total_per_day",
+  ];
   let rows: MenuRow[] | null = null;
   let lastError: string | null = null;
-  for (const cols of [fullCols, baseCols]) {
+  for (let attempt = 0; attempt < 10 && selectedCols.length > 0; attempt++) {
+    const cols = selectedCols.join(", ");
     const { data, error } = await supabase
       .from("menu_items")
       .select(cols)
@@ -48,21 +83,56 @@ export async function GET(
       .order("name",     { ascending: true });
     if (!error) { rows = (data ?? []) as unknown as MenuRow[]; break; }
     lastError = error.message;
-    // Only retry with reduced columns if it's a missing-column error
-    if (!/column .* does not exist/i.test(error.message)) break;
+    const miss = missingColumn(error.message);
+    if (!miss) break;
+    const idx = selectedCols.findIndex((c) => c === miss);
+    if (idx < 0) break;
+    selectedCols.splice(idx, 1);
   }
   if (rows === null) return Response.json({ error: lastError ?? "menu query failed" }, { status: 500 });
 
-  const items = rows.map(r => ({
-    id:                r.id,
-    name:              r.name,
-    description:       r.description ?? "",
-    price:             Number(r.price ?? 0),
-    category:          (r.category ?? "Other").toString(),
-    image_url:         r.image_url ?? null,
-    availability_type: r.availability_type ?? "slot_based",
-    is_meal:           !!r.is_meal,
-  }));
+  // Slot-aware hiding for capped items: if an item's configured cap is fully
+  // consumed, it disappears from student menu so students cannot attempt the
+  // 11th order when the canteen cap is 10.
+  const { data: slotControl } = await supabase
+    .from("slot_control")
+    .select("slot_duration_mins")
+    .eq("canteen_id", id)
+    .maybeSingle();
+  const slotDurationMins = Number(slotControl?.slot_duration_mins) || 15;
+  const { data: slotRows } = await supabase
+    .from("time_slots")
+    .select("id, start_time, is_active")
+    .eq("canteen_id", id)
+    .limit(200);
+  const nextSlotId = pickNextOpenSlot((slotRows ?? []) as Array<{ id: string; start_time: string; is_active?: boolean | null }>, slotDurationMins);
+  const usage = await getMenuItemUsageForToday(supabase, {
+    canteenId: id,
+    menuItemIds: rows.map((r) => r.id),
+    slotId: nextSlotId,
+  });
+
+  const items = rows
+    .filter((r) => {
+      const availType = r.availability_type ?? "slot_based";
+      const slotCap = Number(r.quantity_per_slot ?? 0);
+      const dayCap = Number(r.total_per_day ?? 0);
+      const slotUsed = usage.slotUsed.get(r.id) ?? 0;
+      const dayUsed = usage.dayUsed.get(r.id) ?? 0;
+      if (availType === "slot_based" && slotCap > 0) return slotUsed < slotCap;
+      if (availType === "batched_prepared" && dayCap > 0) return dayUsed < dayCap;
+      return true;
+    })
+    .map(r => ({
+      id:                r.id,
+      name:              r.name,
+      description:       r.description ?? "",
+      price:             Number(r.price ?? 0),
+      category:          (r.category ?? "Other").toString(),
+      image_url:         r.image_url ?? null,
+      availability_type: r.availability_type ?? "slot_based",
+      is_meal:           !!r.is_meal,
+    }));
 
   // Build a unique, ordered list of category labels for the tab bar
   const categoriesSet = new Set<string>();

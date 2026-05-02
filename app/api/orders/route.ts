@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { canManageOrders } from "@/lib/roleChecks";
 import { menuItems } from "@/lib/menu";
+import { autoAcceptPlacedOrders } from "@/lib/orderAutoAccept";
+import { createAdminClient } from "@/lib/supabase-server";
 import { createOrder, listOrdersForUser, listRecentOrders } from "@/lib/orderRepository";
 import type {
   CreateOrderRequest,
@@ -59,6 +61,22 @@ export async function GET(request: Request) {
   try {
     const context = await getRequestContext(request);
     if (!context) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+    try {
+      const isPlatformAdmin = (context.role === "super_admin" || context.role === "co_admin") && !context.canteenId;
+      if (canManageOrders(context.role)) {
+        if (isPlatformAdmin) {
+          await autoAcceptPlacedOrders({ supabase: createAdminClient() });
+        } else if (context.canteenId) {
+          await autoAcceptPlacedOrders({ supabase: createAdminClient(), canteenId: context.canteenId });
+        }
+      } else {
+        await autoAcceptPlacedOrders({ supabase: createAdminClient(), userId: context.uid });
+      }
+    } catch (e) {
+      // Auto-accept is best-effort; listing orders should still work.
+      console.warn("[orders] auto-accept skipped", e);
+    }
 
     let orders: Awaited<ReturnType<typeof listRecentOrders>> = [];
     if (canManageOrders(context.role)) {
