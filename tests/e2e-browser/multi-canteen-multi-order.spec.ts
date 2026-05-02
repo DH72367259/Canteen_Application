@@ -36,11 +36,19 @@ async function ensureSlotLabel(canteenId: string): Promise<string> {
     .eq("is_active", true)
     .order("start_time", { ascending: true });
   if (slots.error) throw slots.error;
-  if (slots.data && slots.data.length > 0) return String(slots.data[0].slot_name);
 
-  const now = new Date();
-  const istMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
-  const startMin = Math.min(istMin + 30, 23 * 60 + 30);
+  const istNow = (() => {
+    const d = new Date();
+    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+  })();
+
+  const future = (slots.data ?? []).find((s) => {
+    const [h, m] = String(s.start_time).split(":").map(Number);
+    return h * 60 + m - 15 > istNow;
+  });
+  if (future) return String(future.slot_name);
+
+  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
   const endMin = Math.min(startMin + 30, 23 * 60 + 59);
   const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
   const sm = String(startMin % 60).padStart(2, "0");
