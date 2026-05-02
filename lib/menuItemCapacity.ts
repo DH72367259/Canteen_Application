@@ -34,8 +34,7 @@ export async function getMenuItemUsageForToday(
     .select("id, slot_id, slot_label")
     .eq("canteen_id", canteenId)
     .gte("created_at", istDayStartIso())
-    .not("status", "in", '("cancelled","refunded")')
-    .limit(2000);
+    .not("status", "in", '("cancelled","refunded")');
   if (ordersErr || !orders || orders.length === 0) return out;
 
   const orderIds = orders.map((o) => o.id as string);

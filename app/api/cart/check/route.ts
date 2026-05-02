@@ -128,11 +128,22 @@ export async function POST(request: Request) {
   });
 
   // Item-level cap checks (slot/day) so carts are blocked before payment.
-  const usage = await getMenuItemUsageForToday(supabase, {
-    canteenId: canteen_id,
-    menuItemIds: ids,
-    slotLabel: slot,
+  // If this deployment doesn't expose cap columns yet, skip the usage query
+  // and preserve legacy behavior.
+  const needsCapValidation = items.some((it) => {
+    const m = menuById.get(it.id);
+    if (!m) return false;
+    const slotCap = Number(m.quantity_per_slot ?? 0);
+    const dayCap = Number(m.total_per_day ?? 0);
+    return slotCap > 0 || dayCap > 0;
   });
+  const usage = needsCapValidation
+    ? await getMenuItemUsageForToday(supabase, {
+        canteenId: canteen_id,
+        menuItemIds: ids,
+        slotLabel: slot,
+      })
+    : { dayUsed: new Map<string, number>(), slotUsed: new Map<string, number>() };
   for (const it of items) {
     const m = menuById.get(it.id);
     if (!m) continue;
