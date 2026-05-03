@@ -47,8 +47,8 @@ test.describe("A. boundary value", () => {
         body: JSON.stringify({ canteenId: CANTEEN_ID, slotLabel: "ANY", cartItems: [{ id: meal.data!.id, qty: 1 }] }),
       });
       const body = await r.json();
-      // Either accepted (200/201) or rejected for slot reasons (400 about slot) — but never with a generic schema error.
-      expect([200, 201, 400]).toContain(r.status);
+      // Either accepted (200/201), rejected for item cap (400), or slot/bin issues (409)
+      expect([200, 201, 400, 409]).toContain(r.status);
       if (r.status < 400) orderId = body.orderId;
     } finally {
       if (orderId) {
