@@ -9,6 +9,8 @@
     "test": "jest --runInBand --forceExit --testTimeout=30000",
     "test:coverage": "jest --runInBand --forceExit --coverage",
     "test:e2e:browser": "playwright test",
+    "test:e2e:clean": "node scripts/cleanup-e2e.mjs",
+    "test:e2e:full": "playwright test && npm run test:e2e:clean",
     "admin:create": "node scripts/create-admin-user.mjs",
     "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "cap:add:ios": "npx cap add ios",

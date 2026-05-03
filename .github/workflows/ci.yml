@@ -93,6 +93,13 @@ jobs:
         env:
           APP_BASE_URL: http://localhost:3000
         run: npx playwright test --reporter=list
+      - name: Clean up test data
+        if: always()
+        env:
+          NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run test:e2e:clean
       - name: Upload Playwright traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
