@@ -140,23 +140,15 @@ export async function apiFetch(
   const ip = uniqueIpHeaders();
   for (const [k, v] of Object.entries(ip)) headers.set(k, v);
 
-  // If auth credentials provided, perform Supabase login and get session token
+  // If auth credentials provided, use Supabase client to get session token
   if (auth) {
-    const loginRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: auth.email,
-        password: auth.password,
-        grant_type: "password",
-      }),
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: auth.email,
+      password: auth.password,
     });
-    if (loginRes.ok) {
-      const loginData = await loginRes.json() as { access_token?: string; session?: { access_token?: string } };
-      const accessToken = loginData.access_token ?? loginData.session?.access_token;
-      if (typeof accessToken === "string") {
-        headers.set("Authorization", `Bearer ${accessToken}`);
-      }
+    if (!error && data.session?.access_token) {
+      headers.set("Authorization", `Bearer ${data.session.access_token}`);
     }
   }
 
