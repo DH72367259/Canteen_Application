@@ -264,7 +264,7 @@ test.describe("Security & Injection Tests", () => {
       .select("id")
       .limit(2);
 
-    if (canteens?.length < 2) return;
+    if (!canteens || canteens.length < 2) return;
 
     // canteen1@noqx.test is for canteens[0]
     const res = await apiFetch(
@@ -299,6 +299,8 @@ test.describe("Security & Injection Tests", () => {
       })
       .select("id")
       .single();
+
+    if (!order) return;
 
     const res = await apiFetch(
       `${APP_URL}/api/orders/${order.id}/verify-otp`,
