@@ -131,9 +131,34 @@ export function uniqueIpHeaders(): Record<string, string> {
  * Use this instead of fetch() in API-driven tests; reserve raw fetch() for
  * the dedicated rate-limit test that intentionally shares an IP.
  */
-export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(
+  url: string,
+  init: RequestInit = {},
+  auth?: { email: string; password: string }
+): Promise<Response> {
   const headers = new Headers(init.headers ?? {});
   const ip = uniqueIpHeaders();
   for (const [k, v] of Object.entries(ip)) headers.set(k, v);
+
+  // If auth credentials provided, perform Supabase login and get session token
+  if (auth) {
+    const loginRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: auth.email,
+        password: auth.password,
+        grant_type: "password",
+      }),
+    });
+    if (loginRes.ok) {
+      const loginData = await loginRes.json() as { access_token?: string; session?: { access_token?: string } };
+      const accessToken = loginData.access_token ?? loginData.session?.access_token;
+      if (typeof accessToken === "string") {
+        headers.set("Authorization", `Bearer ${accessToken}`);
+      }
+    }
+  }
+
   return fetch(url, { ...init, headers });
 }
