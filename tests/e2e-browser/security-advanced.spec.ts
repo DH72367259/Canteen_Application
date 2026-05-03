@@ -258,17 +258,22 @@ test.describe("Security & Injection Tests", () => {
   test("canteen_admin cannot see other canteen's live orders", async () => {
     const admin = adminClient();
 
-    // Get two canteens
+    // Get canteens (dynamic: 0, 1, 100, 1000, etc.)
     const { data: canteens } = await admin
       .from("canteens")
       .select("id")
-      .limit(2);
+      .limit(100);
 
-    if (!canteens || canteens.length < 2) return;
+    // Skip test if less than 2 canteens (or none)
+    if (!canteens || canteens.length < 2) {
+      console.log(`Skipping test: only ${canteens?.length ?? 0} canteen(s) available`);
+      return;
+    }
 
-    // canteen1@noqx.test is for canteens[0]
+    // canteen1@noqx.test is for canteens[0], try accessing canteens[1]
+    const otherCanteenId = canteens[1].id;
     const res = await apiFetch(
-      `${APP_URL}/api/canteen/live-orders?canteenId=${canteens[1].id}`,
+      `${APP_URL}/api/canteen/live-orders?canteenId=${otherCanteenId}`,
       {
         method: "GET",
         headers: { ...uniqueIpHeaders() },
@@ -279,7 +284,8 @@ test.describe("Security & Injection Tests", () => {
       }
     );
 
-    // Should be 403 or empty results (depending on implementation)
+    // Should be 403 (denied) or empty results (depending on implementation)
+    // Accept 200 if no orders exist in that canteen, 403 if access denied
     expect([200, 403]).toContain(res.status);
   });
 
