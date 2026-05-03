@@ -195,15 +195,16 @@ export async function POST(req: NextRequest) {
   const maxBins          = Number(sc?.max_bins) || 60;
   const { maxOrdersPerSlot } = computeSlotCapacity(maxBins);
 
+  const todayIST = new Date(new Date().getTime() + 330 * 60_000)
+    .toISOString()
+    .slice(0, 10);
+
   // ── PER-SLOT ORDER CAP (server-side gate) ────────────────────────────────
   // /api/cart/check is a pre-flight UI guard; this check enforces the cap
   // server-side so concurrent requests can't race past the UI. Without it,
   // two requests that both read "slot available" can both succeed and drive
   // the slot past 75% capacity, exhausting the shared physical bin pool.
   if (slotLabel) {
-    const todayIST = new Date(new Date().getTime() + 330 * 60_000)
-      .toISOString()
-      .slice(0, 10);
     const { count: slotCount } = await supabase
       .from("orders")
       .select("*", { count: "exact", head: true })
@@ -359,6 +360,29 @@ export async function POST(req: NextRequest) {
 
   if (orderError || !order) {
     return Response.json({ error: "Failed to create order" }, { status: 500 });
+  }
+
+  // ── POST-CREATION CAPACITY CHECK (atomic race condition guard) ──────────────
+  // Even though we checked capacity before creating the order, concurrent requests
+  // can both read count=N, both pass, and both create. Verify again now that the
+  // order exists. If we've exceeded capacity, delete this order and reject.
+  if (slotLabel) {
+    const { count: slotCountAfter } = await supabase
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("canteen_id", canteenId)
+      .eq("slot_label", String(slotLabel))
+      .gte("created_at", `${todayIST}T00:00:00+05:30`)
+      .not("status", "in", '("cancelled","failed","refunded")');
+
+    if ((slotCountAfter ?? 0) > maxOrdersPerSlot) {
+      // Exceeded capacity — delete this order and reject
+      await supabase.from("orders").delete().eq("id", order.id);
+      return Response.json({
+        error: "This time slot is full. Please select a different slot.",
+        slot_full: true,
+      }, { status: 409 });
+    }
   }
 
   // Step 2: Atomically claim N free bins for this order using the real order_id.
