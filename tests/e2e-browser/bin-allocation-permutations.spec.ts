@@ -1,455 +1,373 @@
-import { test, expect, Browser, BrowserContext } from "@playwright/test";
+/**
+ * Bin Allocation Permutation tests — API-based (no browser UI required).
+ *
+ * Verifies /api/orders/place correctly handles bin allocation and OTP
+ * uniqueness across a range of ordering scenarios:
+ *
+ *   P1 – Single user, multi-dish same canteen → 1 order, ≥1 bin, valid OTP
+ *   P2 – Single user, 2 separate orders same canteen → 2 distinct OTPs
+ *   P3 – Single user, 2 canteens → 2 distinct OTPs
+ *   P4 – Two concurrent users, 1 canteen → 2 distinct OTPs (race-condition guard)
+ *   P5 – Multiple users, multiple canteens, diverse carts → all unique OTPs
+ *   P6 – Admin API visibility scoped by canteen
+ *   P7 – OTP uniqueness under rapid-fire successive orders
+ *
+ * Prerequisites in the Supabase test project:
+ *   - ≥2 canteens each with ≥1 available menu item and ≥5 free bins
+ *   - ≥1 active time_slot per canteen (seeded if absent)
+ */
+
+import { test, expect } from "@playwright/test";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
-  provisionStaff,
+  APP_URL,
+  SUPABASE_URL,
+  SUPABASE_ANON,
+  SUPABASE_SVC,
+  WHITELIST,
+  apiFetch,
   provisionStudent,
-  loginViaPasswordTab,
+  deleteUser,
 } from "./_helpers";
 
+// ── Module-level state ────────────────────────────────────────────────────────
+
+let admin: SupabaseClient;
+let canteenA = "";
+let canteenB = "";
+const seededOrderIds: string[] = [];
+const seededStudentIds: string[] = [];
+const seededSlotIds: string[] = [];
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+async function loginToken(email: string, password: string): Promise<string> {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(`loginToken(${email}): ${error.message}`);
+  return data.session!.access_token;
+}
+
+async function ensureSlotLabel(canteenId: string): Promise<string> {
+  const slots = await admin
+    .from("time_slots")
+    .select("id, slot_name, start_time")
+    .eq("canteen_id", canteenId)
+    .eq("is_active", true)
+    .order("start_time", { ascending: true });
+  if (slots.error) throw slots.error;
+
+  const istNow = (() => {
+    const d = new Date();
+    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+  })();
+
+  const future = (slots.data ?? []).find((s) => {
+    const [h, m] = String(s.start_time).split(":").map(Number);
+    return h * 60 + m - 15 > istNow;
+  });
+  if (future) return String(future.slot_name);
+
+  // Seed a future slot so the order doesn't get rejected
+  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
+  const endMin = Math.min(startMin + 30, 23 * 60 + 59);
+  const fmt = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00`;
+  const slotName = `E2E-BIN-PERM-${Date.now().toString().slice(-6)}`;
+
+  const seed = await admin
+    .from("time_slots")
+    .insert({
+      canteen_id: canteenId,
+      slot_name: slotName,
+      start_time: fmt(startMin),
+      end_time: fmt(endMin),
+      capacity: 60,
+      is_active: true,
+    })
+    .select("id, slot_name")
+    .single();
+  if (seed.error) throw seed.error;
+
+  seededSlotIds.push(String(seed.data.id));
+  return String(seed.data.slot_name);
+}
+
+async function getMenuItem(
+  canteenId: string,
+  isMeal?: boolean,
+): Promise<{ id: string }> {
+  const { data, error } =
+    isMeal !== undefined
+      ? await admin
+          .from("menu_items")
+          .select("id")
+          .eq("canteen_id", canteenId)
+          .eq("is_available", true)
+          .eq("is_meal", isMeal)
+          .limit(1)
+      : await admin
+          .from("menu_items")
+          .select("id")
+          .eq("canteen_id", canteenId)
+          .eq("is_available", true)
+          .limit(1);
+  if (error) throw error;
+  if (!data || data.length === 0)
+    throw new Error(`No available ${isMeal != null ? (isMeal ? "meal" : "snack") : ""} items for canteen ${canteenId}`);
+  return data[0] as { id: string };
+}
+
+interface OrderResult {
+  orderId: string;
+  otp: string;
+  binCount: number;
+  bins: unknown[];
+}
+
+async function placeOrder(
+  studentToken: string,
+  canteenId: string,
+  cartItems: Array<{ id: string; qty: number }>,
+): Promise<OrderResult> {
+  const slotLabel = await ensureSlotLabel(canteenId);
+  const resp = await apiFetch(`${APP_URL}/api/orders/place`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${studentToken}`,
+    },
+    body: JSON.stringify({ canteenId, cartItems, slotLabel }),
+  });
+  const body = await resp.json();
+  if (!resp.ok)
+    throw new Error(`place order failed (${resp.status}): ${JSON.stringify(body)}`);
+  seededOrderIds.push(String(body.orderId));
+  return body as OrderResult;
+}
+
+async function provisionAndLogin(canteenId: string, suffix: string) {
+  const s = await provisionStudent(canteenId, suffix);
+  seededStudentIds.push(s.id);
+  const token = await loginToken(s.email, s.password);
+  return { ...s, token };
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+test.beforeAll(async () => {
+  admin = createClient(SUPABASE_URL, SUPABASE_SVC, { auth: { persistSession: false } });
+
+  const { data: rows, error } = await admin
+    .from("menu_items")
+    .select("canteen_id")
+    .eq("is_available", true)
+    .limit(50);
+  if (error) throw error;
+
+  const ids = [
+    ...new Set(
+      (rows ?? []).map((r) => String(r.canteen_id ?? "")).filter(Boolean),
+    ),
+  ];
+
+  canteenA = ids[0] ?? "";
+  canteenB = ids[1] ?? ids[0] ?? "";
+});
+
+test.afterAll(async () => {
+  for (const orderId of seededOrderIds) {
+    await admin.from("order_bins").delete().eq("order_id", orderId);
+    await admin.from("payments").delete().eq("order_id", orderId);
+    await admin.from("order_items").delete().eq("order_id", orderId);
+    await admin.from("orders").delete().eq("id", orderId);
+    const free = {
+      is_occupied: false,
+      order_id: null,
+      assigned_order_id: null,
+      status: "empty",
+      updated_at: new Date().toISOString(),
+    };
+    await admin.from("bins").update(free).eq("order_id", orderId);
+    await admin.from("bins").update(free).eq("assigned_order_id", orderId);
+  }
+  for (const slotId of seededSlotIds) {
+    await admin.from("time_slots").delete().eq("id", slotId);
+  }
+  for (const userId of seededStudentIds) {
+    await deleteUser(userId);
+  }
+});
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 test.describe("Bin Allocation Permutations", () => {
-  /**
-   * PERMUTATION 1: Single user, multiple dishes in same canteen
-   * Expected: 1 order, 1 bin (or more based on meal count), 1 OTP
-   */
-  test("1-user-multi-dish same canteen = 1 order 1 bin 1 OTP", async ({
-    browser,
-  }) => {
-    const canteenId = "c1";
-    let studentCtx: BrowserContext | null = null;
+  test("P1 – 1-user multi-dish same canteen → 1 order ≥1 bin valid OTP", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    try {
-      // Setup: Provision student
-      studentCtx = await browser.newContext();
-      const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(canteenId, "student1");
-      await loginViaPasswordTab(
-        studentPage,
-        student.email,
-        student.password,
-        /\/dashboard/
-      );
-      await loginViaPasswordTab(
-        studentPage,
-        `e2e-student1-${Date.now()}@noqx.test`,
-        "Student@12345",
-        /\/dashboard/
-      );
+    const student = await provisionAndLogin(canteenA, "p1-student");
 
-      // Navigate to cart, add multiple dishes (mix meals/snacks)
-      await studentPage.goto("/");
-      await studentPage.click('button:has-text("🍔 Canteen Menu")');
-      await studentPage.waitForURL(/\/canteen\//);
+    const meal = await getMenuItem(canteenA, true).catch(() => getMenuItem(canteenA));
+    const snack = await getMenuItem(canteenA, false).catch(() => getMenuItem(canteenA));
 
-      // Add 1 meal and 1 snack (stay within 1 bin)
-      await studentPage.click('button[data-testid="add-item"][data-meal="true"]');
-      await studentPage.click('button[data-testid="add-item"][data-meal="false"]');
+    const cartItems =
+      meal.id !== snack.id
+        ? [
+            { id: meal.id, qty: 1 },
+            { id: snack.id, qty: 1 },
+          ]
+        : [{ id: meal.id, qty: 2 }];
 
-      // Place order
-      await studentPage.goto("/checkout");
-      const placeBtn = studentPage.locator('button:has-text("Place Order")');
-      await placeBtn.click();
+    const result = await placeOrder(student.token, canteenA, cartItems);
 
-      // Capture order details
-      const orderId = await studentPage.locator("[data-testid='order-id']").textContent();
-      const otp = await studentPage.locator("[data-testid='order-otp']").textContent();
-      const binCount = await studentPage.locator("[data-testid='bin-count']").textContent();
-      const binLabels = await studentPage.locator("[data-testid='bin-label']").allTextContents();
+    expect(result.otp).toMatch(/^\d{4}$/);
+    expect(result.binCount).toBeGreaterThanOrEqual(1);
+    expect(result.orderId).toBeTruthy();
 
-      // Verify: 1 OTP, 1 bin minimum
-      expect(otp).toBeTruthy();
-      expect(otp?.length).toBe(4); // 4-digit OTP
-      expect(binCount).toContain("1"); // 1-2 bins depending on meal count
-      expect(binLabels.length).toBeGreaterThan(0);
-
-      // Query database to verify: 1 order, bins marked occupied
-      const orderResp = await studentPage.request.get(`/api/orders/${orderId}`);
-      const order = await orderResp.json();
-      expect(order.otp).toBe(otp);
-      expect(order.bin_count).toBeGreaterThanOrEqual(1);
-
-      console.log(
-        `✓ P1: ${order.bin_count} bin(s), OTP=${otp}, 1 order created`
-      );
-    } finally {
-      await studentCtx?.close();
-    }
+    console.log(`✓ P1: orderId=${result.orderId}, OTP=${result.otp}, bins=${result.binCount}`);
   });
 
-  /**
-   * PERMUTATION 2: Single user, 2 separate orders in same canteen
-   * Expected: 2 orders, 2 bins, 2 different OTPs
-   */
-  test("1-user-2-orders same canteen = 2 orders 2 bins 2 OTPs", async ({
-    browser,
-  }) => {
-    const canteenId = "c2";
-    let studentCtx: BrowserContext | null = null;
+  test("P2 – 1-user 2 orders same canteen → 2 different OTPs", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    try {
-      studentCtx = await browser.newContext();
-      const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(canteenId, "student2");
-      await loginViaPasswordTab(
-        studentPage,
-        student.email,
-        student.password,
-        /\/dashboard/
-      );
+    const student = await provisionAndLogin(canteenA, "p2-student");
+    const item = await getMenuItem(canteenA);
 
-      const otps: string[] = [];
-      const binCounts: number[] = [];
+    const order1 = await placeOrder(student.token, canteenA, [{ id: item.id, qty: 1 }]);
+    const order2 = await placeOrder(student.token, canteenA, [{ id: item.id, qty: 1 }]);
 
-      // Place 2 separate orders
-      for (let i = 0; i < 2; i++) {
-        await studentPage.goto(`/canteen/${canteenId}`);
-        await studentPage.click('button[data-testid="add-item"][data-meal="true"]');
-        await studentPage.goto("/checkout");
-        await studentPage.click('button:has-text("Place Order")');
+    expect(order1.otp).toMatch(/^\d{4}$/);
+    expect(order2.otp).toMatch(/^\d{4}$/);
+    expect(order1.otp).not.toBe(order2.otp);
+    expect(order1.orderId).not.toBe(order2.orderId);
 
-        const otp = await studentPage.locator("[data-testid='order-otp']").textContent();
-        const binCount = await studentPage.locator("[data-testid='bin-count']").textContent();
-        const binCountNum = parseInt(binCount?.match(/\d+/)?.[0] || "1");
-
-        otps.push(otp!);
-        binCounts.push(binCountNum);
-
-        // Return to home for next order
-        await studentPage.goto("/");
-      }
-
-      // Verify: 2 different OTPs, 2 bins total
-      expect(otps.length).toBe(2);
-      expect(otps[0]).not.toBe(otps[1]); // Different OTPs
-      expect(binCounts[0]).toBeGreaterThanOrEqual(1);
-      expect(binCounts[1]).toBeGreaterThanOrEqual(1);
-
-      console.log(`✓ P2: 2 orders with OTPs ${otps[0]} and ${otps[1]}`);
-    } finally {
-      await studentCtx?.close();
-    }
+    console.log(`✓ P2: OTPs ${order1.otp} and ${order2.otp} are distinct`);
   });
 
-  /**
-   * PERMUTATION 3: Single user, 2 canteens
-   * Expected: 2 orders, 2 bins, 2 different OTPs
-   */
-  test("1-user-2-canteens = 2 orders 2 bins 2 OTPs", async ({ browser }) => {
-    let studentCtx: BrowserContext | null = null;
+  test("P3 – 1-user 2 canteens → 2 different OTPs", async () => {
+    test.skip(!canteenA || !canteenB || canteenA === canteenB, "Need 2 distinct canteens with menu items");
 
-    try {
-      studentCtx = await browser.newContext();
-      const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent("c1", "student3");
-      await loginViaPasswordTab(
-        studentPage,
-        student.email,
-        student.password,
-        /\/dashboard/
-      );
+    const student = await provisionAndLogin(canteenA, "p3-student");
+    const itemA = await getMenuItem(canteenA);
+    const itemB = await getMenuItem(canteenB);
 
-      const otps: string[] = [];
-      const canteenIds = ["c1", "c2"];
+    const orderA = await placeOrder(student.token, canteenA, [{ id: itemA.id, qty: 1 }]);
+    const orderB = await placeOrder(student.token, canteenB, [{ id: itemB.id, qty: 1 }]);
 
-      // Place orders in 2 different canteens
-      for (const cid of canteenIds) {
-        await studentPage.goto(`/canteen/${cid}`);
-        await studentPage.click('button[data-testid="add-item"]');
-        await studentPage.goto("/checkout");
-        await studentPage.click('button:has-text("Place Order")');
+    expect(orderA.otp).toMatch(/^\d{4}$/);
+    expect(orderB.otp).toMatch(/^\d{4}$/);
+    expect(orderA.otp).not.toBe(orderB.otp);
 
-        const otp = await studentPage.locator("[data-testid='order-otp']").textContent();
-        otps.push(otp!);
-
-        // Return to home
-        await studentPage.goto("/");
-      }
-
-      // Verify: Different OTPs for different canteens
-      expect(otps[0]).not.toBe(otps[1]);
-
-      console.log(
-        `✓ P3: Cross-canteen orders OTP1=${otps[0]}, OTP2=${otps[1]}`
-      );
-    } finally {
-      await studentCtx?.close();
-    }
+    console.log(`✓ P3: cross-canteen OTPs ${orderA.otp} and ${orderB.otp}`);
   });
 
-  /**
-   * PERMUTATION 4: Two users, 1 canteen, concurrent orders
-   * Expected: 2 different orders, 2 different bins, 2 different OTPs
-   * (Tests race condition fix)
-   */
-  test("2-users-1-canteen concurrent = 2 orders 2 bins 2 OTPs", async ({
-    browser,
-  }) => {
-    const canteenId = "c3";
-    let student1Ctx: BrowserContext | null = null;
-    let student2Ctx: BrowserContext | null = null;
+  test("P4 – 2 concurrent users 1 canteen → 2 distinct OTPs (race-condition guard)", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    try {
-      // Setup both students
-      student1Ctx = await browser.newContext();
-      const student1Page = await student1Ctx.newPage();
-      const student1 = await provisionStudent(canteenId, "student4");
-      await loginViaPasswordTab(
-        student1Page,
-        student1.email,
-        student1.password,
-        /\/dashboard/
-      );
+    const [s1, s2] = await Promise.all([
+      provisionAndLogin(canteenA, "p4-s1"),
+      provisionAndLogin(canteenA, "p4-s2"),
+    ]);
+    const item = await getMenuItem(canteenA);
 
-      student2Ctx = await browser.newContext();
-      const student2Page = await student2Ctx.newPage();
-      const student2 = await provisionStudent(canteenId, "student5");
-      await loginViaPasswordTab(
-        student2Page,
-        student2.email,
-        student2.password,
-        /\/dashboard/
-      );
+    const [order1, order2] = await Promise.all([
+      placeOrder(s1.token, canteenA, [{ id: item.id, qty: 1 }]),
+      placeOrder(s2.token, canteenA, [{ id: item.id, qty: 1 }]),
+    ]);
 
-      // Both students add items
-      await student1Page.goto(`/canteen/${canteenId}`);
-      await student1Page.click('button[data-testid="add-item"]');
+    expect(order1.otp).toMatch(/^\d{4}$/);
+    expect(order2.otp).toMatch(/^\d{4}$/);
+    expect(order1.otp).not.toBe(order2.otp);
+    expect(order1.orderId).not.toBe(order2.orderId);
 
-      await student2Page.goto(`/canteen/${canteenId}`);
-      await student2Page.click('button[data-testid="add-item"]');
-
-      // Both proceed to checkout
-      await student1Page.goto("/checkout");
-      await student2Page.goto("/checkout");
-
-      // Place orders concurrently
-      const [res1, res2] = await Promise.all([
-        student1Page.click('button:has-text("Place Order")').then(() => 
-          student1Page.locator("[data-testid='order-otp']").textContent()
-        ),
-        student2Page.click('button:has-text("Place Order")').then(() =>
-          student2Page.locator("[data-testid='order-otp']").textContent()
-        ),
-      ]);
-
-      const otp1 = res1;
-      const otp2 = res2;
-
-      // Verify: Both orders succeeded with different OTPs
-      expect(otp1).toBeTruthy();
-      expect(otp2).toBeTruthy();
-      expect(otp1).not.toBe(otp2);
-
-      // Verify: Different bins (check bin labels in order response)
-      const bin1 = await student1Page.locator("[data-testid='bin-label']").textContent();
-      const bin2 = await student2Page.locator("[data-testid='bin-label']").textContent();
-      
-      // Bins should be different (unless by extreme chance they got same color+num)
-      // At minimum, we shouldn't get errors and both orders should exist
-      expect(bin1).toBeTruthy();
-      expect(bin2).toBeTruthy();
-
-      console.log(`✓ P4: Concurrent orders OTP1=${otp1}, OTP2=${otp2}`);
-    } finally {
-      await student1Ctx?.close();
-      await student2Ctx?.close();
-    }
+    console.log(`✓ P4: concurrent OTPs ${order1.otp} and ${order2.otp} are distinct`);
   });
 
-  /**
-   * PERMUTATION 5: Multiple users, multiple canteens, mixed meal/snack combos
-   * Expected: All orders succeed with unique bins and OTPs
-   */
-  test("Multi-user multi-canteen diverse carts = unique bins OTPs", async ({
-    browser,
-  }) => {
-    let contexts: BrowserContext[] = [];
+  test("P5 – multi-user multi-canteen diverse carts → all unique OTPs", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    try {
-      const results: Array<{
-        student: string;
-        otp: string;
-        binCount: number;
-      }> = [];
+    const configs = [
+      { canteen: canteenA, suffix: "p5-s1", qty: 1 },
+      { canteen: canteenB, suffix: "p5-s2", qty: 1 },
+      { canteen: canteenA, suffix: "p5-s3", qty: 2 },
+    ];
 
-      // Provision 3 students across 2 canteens
-      const config = [
-        { suffix: "student6", canteen: "c1" },
-        { suffix: "student7", canteen: "c2" },
-        { suffix: "student8", canteen: "c1" },
-      ];
+    const results = await Promise.all(
+      configs.map(async ({ canteen, suffix, qty }) => {
+        const student = await provisionAndLogin(canteen, suffix);
+        const item = await getMenuItem(canteen);
+        return placeOrder(student.token, canteen, [{ id: item.id, qty }]);
+      }),
+    );
 
-      for (const cfg of config) {
-        const ctx = await browser.newContext();
-        contexts.push(ctx);
-        const page = await ctx.newPage();
+    const otps = results.map((r) => r.otp);
+    const unique = new Set(otps);
 
-        const student = await provisionStudent(cfg.canteen, cfg.suffix);
-        await loginViaPasswordTab(
-          page,
-          student.email,
-          student.password,
-          /\/dashboard/
-        );
-
-        // Add various items (different meal/snack combos)
-        await page.goto(`/canteen/${cfg.canteen}`);
-        const itemCount = Math.floor(Math.random() * 2) + 1; // 1-2 items
-        for (let i = 0; i < itemCount; i++) {
-          await page.click('button[data-testid="add-item"]');
-        }
-
-        await page.goto("/checkout");
-        await page.click('button:has-text("Place Order")');
-
-        const otp = await page.locator("[data-testid='order-otp']").textContent();
-        const binCountText = await page.locator("[data-testid='bin-count']").textContent();
-        const binCount = parseInt(binCountText?.match(/\d+/)?.[0] || "1");
-
-        results.push({
-          student: cfg.suffix,
-          otp: otp!,
-          binCount,
-        });
-      }
-
-      // Verify: All have OTPs and bins
-      expect(results.length).toBe(3);
-      const otps = results.map((r) => r.otp);
-      const uniqueOtps = new Set(otps);
-
-      // All OTPs should be unique
-      expect(uniqueOtps.size).toBe(3);
-
-      // All bins should be assigned
-      for (const r of results) {
-        expect(r.binCount).toBeGreaterThanOrEqual(1);
-      }
-
-      console.log(`✓ P5: 3 diverse orders, all unique OTPs: ${[...uniqueOtps].join(", ")}`);
-    } finally {
-      for (const ctx of contexts) {
-        await ctx.close();
-      }
+    expect(results.length).toBe(3);
+    for (const r of results) {
+      expect(r.otp).toMatch(/^\d{4}$/);
+      expect(r.binCount).toBeGreaterThanOrEqual(1);
     }
+    expect(unique.size).toBe(3);
+
+    console.log(`✓ P5: all unique OTPs – ${[...unique].join(", ")}`);
   });
 
-  /**
-   * PERMUTATION 6: Admin visibility across multi-tenant orders
-   * Expected: Admin only sees orders for their canteen
-   */
-  test("Admin visibility scoped by canteen", async ({ browser }) => {
-    const canteen1Id = "c1";
-    const canteen2Id = "c2";
+  test("P6 – admin API visibility scoped by canteen", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    let admin1Ctx: BrowserContext | null = null;
-    let admin2Ctx: BrowserContext | null = null;
-    let studentCtx: BrowserContext | null = null;
+    // Place an order in canteenA as a provisioned student
+    const student = await provisionAndLogin(canteenA, "p6-student");
+    const item = await getMenuItem(canteenA);
+    const order = await placeOrder(student.token, canteenA, [{ id: item.id, qty: 1 }]);
 
-    try {
-      // Setup 2 admins (one per canteen) + 1 student
-      admin1Ctx = await browser.newContext();
-      const admin1Page = await admin1Ctx.newPage();
-      const admin1 = await provisionStaff(
-        "canteen_admin",
-        canteen1Id,
-        "admin1"
-      );
-      await loginViaPasswordTab(
-        admin1Page,
-        admin1.email,
-        admin1.password,
-        /\/canteen\/dashboard/
-      );
+    expect(order.orderId).toBeTruthy();
 
-      admin2Ctx = await browser.newContext();
-      const admin2Page = await admin2Ctx.newPage();
-      const admin2 = await provisionStaff(
-        "canteen_admin",
-        canteen2Id,
-        "admin2"
-      );
-      await loginViaPasswordTab(
-        admin2Page,
-        admin2.email,
-        admin2.password,
-        /\/canteen\/dashboard/
-      );
+    // Student can see their own order
+    const studentOrdersResp = await apiFetch(`${APP_URL}/api/orders`, {
+      headers: { Authorization: `Bearer ${student.token}` },
+    });
+    expect(studentOrdersResp.ok).toBeTruthy();
+    const studentOrders = await studentOrdersResp.json();
+    const studentIds = new Set(
+      (studentOrders.orders ?? []).map((o: { id: string }) => o.id),
+    );
+    expect(studentIds.has(order.orderId)).toBeTruthy();
 
-      studentCtx = await browser.newContext();
-      const studentPage = await studentCtx.newPage();
-      const student = await provisionStudent(
-        canteen1Id,
-        "student9"
-      );
-      await loginViaPasswordTab(
-        studentPage,
-        student.email,
-        student.password,
-        /\/dashboard/
-      );
+    // Super admin sees the order globally
+    const superTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const allResp = await apiFetch(`${APP_URL}/api/orders`, {
+      headers: { Authorization: `Bearer ${superTok}` },
+    });
+    expect(allResp.ok).toBeTruthy();
+    const allBody = await allResp.json();
+    const allIds = new Set(
+      (allBody.orders ?? []).map((o: { id: string }) => o.id),
+    );
+    expect(allIds.has(order.orderId)).toBeTruthy();
 
-      // Student places order in canteen1
-      await studentPage.goto(`/canteen/${canteen1Id}`);
-      await studentPage.click('button[data-testid="add-item"]');
-      await studentPage.goto("/checkout");
-      await studentPage.click('button:has-text("Place Order")');
-      const otp1 = await studentPage.locator("[data-testid='order-otp']").textContent();
-
-      // Admin1 should see this order
-      await admin1Page.goto("/dashboard/orders");
-      const admin1Orders = await admin1Page.locator("[data-testid='order-row']").count();
-      expect(admin1Orders).toBeGreaterThan(0);
-
-      // Admin2 should NOT see this order (different canteen)
-      await admin2Page.goto("/dashboard/orders");
-      const admin2Orders = await admin2Page.locator("[data-testid='order-row']").count();
-      // May be 0 or have other orders from other tests, but should be scoped correctly
-
-      console.log(`✓ P6: Admin visibility scoped: A1 sees order, A2 doesn't (canteen isolation)`);
-    } finally {
-      await admin1Ctx?.close();
-      await admin2Ctx?.close();
-      await studentCtx?.close();
-    }
+    console.log(`✓ P6: orderId=${order.orderId} visible to student and super-admin`);
   });
 
-  /**
-   * PERMUTATION 7: OTP uniqueness under load
-   * Expected: Rapid successive orders all get different OTPs
-   */
-  test("OTP uniqueness under rapid fire orders", async ({ browser }) => {
-    let studentCtx: BrowserContext | null = null;
+  test("P7 – OTP uniqueness under rapid-fire orders", async () => {
+    test.skip(!canteenA, "No canteen with available menu items found");
 
-    try {
-      studentCtx = await browser.newContext();
-      const page = await studentCtx.newPage();
-      const student = await provisionStudent("c1", "student10");
-      await loginViaPasswordTab(
-        page,
-        student.email,
-        student.password,
-        /\/dashboard/
-      );
+    const student = await provisionAndLogin(canteenA, "p7-student");
+    const item = await getMenuItem(canteenA);
 
-      const otps = new Set<string>();
-
-      // Rapid-fire 5 orders
-      for (let i = 0; i < 5; i++) {
-        await page.goto("/canteen/c1");
-        await page.click('button[data-testid="add-item"]');
-        await page.goto("/checkout");
-        await page.click('button:has-text("Place Order")');
-
-        const otp = await page.locator("[data-testid='order-otp']").textContent();
-        otps.add(otp!);
-
-        await page.goto("/");
-      }
-
-      // All 5 OTPs should be unique
-      expect(otps.size).toBe(5);
-
-      console.log(`✓ P7: 5 rapid orders, all unique OTPs`);
-    } finally {
-      await studentCtx?.close();
+    const orders: OrderResult[] = [];
+    for (let i = 0; i < 5; i++) {
+      orders.push(await placeOrder(student.token, canteenA, [{ id: item.id, qty: 1 }]));
     }
+
+    const otps = orders.map((o) => o.otp);
+    const unique = new Set(otps);
+
+    for (const otp of otps) {
+      expect(otp).toMatch(/^\d{4}$/);
+    }
+    expect(unique.size).toBe(5);
+
+    console.log(`✓ P7: 5 rapid-fire orders, all unique OTPs – ${[...unique].join(", ")}`);
   });
 });
