@@ -3,7 +3,7 @@ import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
-import { assignBins, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
+import { assignBins, computeSlotCapacity, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
 import { claimFreeBinsAtomic } from "@/lib/atomicBinClaim";
@@ -187,8 +187,39 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
+  // ── Slot control (fetched once, reused for cap + bin plan + cutoff) ─────
   const sc = await ensureSlotControl(supabase, canteenId);
+  // maxOrdersPerSlot is derived from the canteen manager's max_bins setting
+  // via computeSlotCapacity (75% rule). Canteen managers control this through
+  // the Slot & Bin Control panel — changing max_bins changes the cap in real time.
+  const maxBins          = Number(sc?.max_bins) || 60;
+  const { maxOrdersPerSlot } = computeSlotCapacity(maxBins);
+
+  // ── PER-SLOT ORDER CAP (server-side gate) ────────────────────────────────
+  // /api/cart/check is a pre-flight UI guard; this check enforces the cap
+  // server-side so concurrent requests can't race past the UI. Without it,
+  // two requests that both read "slot available" can both succeed and drive
+  // the slot past 75% capacity, exhausting the shared physical bin pool.
+  if (slotLabel) {
+    const todayIST = new Date(new Date().getTime() + 330 * 60_000)
+      .toISOString()
+      .slice(0, 10);
+    const { count: slotCount } = await supabase
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("canteen_id", canteenId)
+      .eq("slot_label", String(slotLabel))
+      .gte("created_at", `${todayIST}T00:00:00+05:30`)
+      .not("status", "in", '("cancelled","failed","refunded")');
+    if ((slotCount ?? 0) >= maxOrdersPerSlot) {
+      return Response.json(
+        { error: "This time slot is full. Please select a different slot.", slot_full: true },
+        { status: 409 },
+      );
+    }
+  }
+
+  // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
   const mealsPerBin    = Number(sc?.meals_per_bin)        || 2;
   const snacksPerBin   = Number(sc?.snacks_per_bin)       || 5;
   const extraFeePaise0 = Number(sc?.extra_bin_fee_paise)  || 200;
@@ -264,7 +295,8 @@ export async function POST(req: NextRequest) {
       });
     } else if (allocated.length < binsNeeded) {
       return Response.json({
-        error: `This order needs ${binsNeeded} bins but only ${allocated.length} are free right now. Please pick a different slot or reduce your cart.`,
+        error: `All physical bins are in use right now — workers are still clearing the previous slot. Please wait a moment and try again, or pick a different slot.`,
+        bins_exhausted: true,
       }, { status: 409 });
     }
   }
@@ -281,12 +313,7 @@ export async function POST(req: NextRequest) {
   // We compare wall-clock minutes-of-day in the canteen's local timezone
   // (server is UTC; time_slots.start_time is "HH:MM:SS" in local time).
   if (slotId && slotStart) {
-    const { data: scRow } = await supabase
-      .from("slot_control")
-      .select("slot_duration_mins")
-      .eq("canteen_id", canteenId)
-      .single();
-    const durMins = Number(scRow?.slot_duration_mins) || 15;
+    const durMins = Number(sc?.slot_duration_mins) || 15;
     const [sh, sm] = slotStart.split(":").map(Number);
     const slotStartMin = sh * 60 + sm;
     const cutoffMin = slotStartMin - durMins;
