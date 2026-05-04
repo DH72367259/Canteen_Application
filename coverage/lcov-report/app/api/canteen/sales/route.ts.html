@@ -1,0 +1,475 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for app/api/canteen/sales/route.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../index.html">All files</a> / <a href="index.html">app/api/canteen/sales</a> route.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/101</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/44</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/8</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/73</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * GET /api/canteen/sales
+ *
+ * Returns sales aggregates for the calling canteen at multiple granularities:
+ *   - today, week, month, quarter, year (single totals)
+ *   - hourly (24 buckets for IST today)
+ *   - daily  (last 30 days)
+ *   - monthly(last 12 months)
+ *
+ * Counts every non-cancelled order so Sales updates as soon as a payment
+ * lands, regardless of whether OTP collection has happened yet (Earnings
+ * is the OTP-gated, payout-relevant view).
+ */
+<span class="cstat-no" title="statement not covered" >import { getRequestContext } from "@/lib/authServer";</span>
+<span class="cstat-no" title="statement not covered" >import { createAdminClient } from "@/lib/supabase-server";</span>
+&nbsp;
+export const <span class="cstat-no" title="statement not covered" >dynamic = "force-dynamic";</span>
+&nbsp;
+function <span class="fstat-no" title="function not covered" >r2(</span>n: number) { <span class="cstat-no" title="statement not covered" >return Math.round(n * 100) / 100; </span>}
+&nbsp;
+// IST helpers — all bucketing is done in IST so "today" matches the vendor's
+// physical clock regardless of where the server runs.
+const IST_OFFSET_MIN = <span class="cstat-no" title="statement not covered" >330;</span>
+function <span class="fstat-no" title="function not covered" >toIst(</span>d: Date): Date { <span class="cstat-no" title="statement not covered" >return new Date(d.getTime() + IST_OFFSET_MIN * 60_000); </span>}
+function <span class="fstat-no" title="function not covered" >istUtcStart(</span>d: Date): Date {
+  const ist = <span class="cstat-no" title="statement not covered" >toIst(d);</span>
+<span class="cstat-no" title="statement not covered" >  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MIN * 60_000);</span>
+}
+&nbsp;
+<span class="cstat-no" title="statement not covered" >export a</span>sync function <span class="fstat-no" title="function not covered" >GET(</span>request: Request) {
+  const ctx = <span class="cstat-no" title="statement not covered" >await getRequestContext(request);</span>
+<span class="cstat-no" title="statement not covered" >  if (!ctx) <span class="cstat-no" title="statement not covered" >return Response.json({ error: "Unauthorized" }, { status: 401 });</span></span>
+<span class="cstat-no" title="statement not covered" >  if (!["canteen_admin", "vendor", "super_admin", "co_admin", "worker"].includes(ctx.role ?? "")) {</span>
+<span class="cstat-no" title="statement not covered" >    return Response.json({ error: "Forbidden" }, { status: 403 });</span>
+  }
+&nbsp;
+  const supabase = <span class="cstat-no" title="statement not covered" >createAdminClient();</span>
+&nbsp;
+  // Resolve canteen_id from profile (super_admin can pass canteen_id)
+  const { data: profile } = <span class="cstat-no" title="statement not covered" >await supabase</span>
+    .from("profiles").select("canteen_id").eq("id", ctx.uid).single();
+  const url = <span class="cstat-no" title="statement not covered" >new URL(request.url);</span>
+  const canteenId = <span class="cstat-no" title="statement not covered" >ctx.role === "super_admin"</span>
+    ? (url.searchParams.get("canteen_id") || profile?.canteen_id)
+    : profile?.canteen_id;
+<span class="cstat-no" title="statement not covered" >  if (!canteenId) <span class="cstat-no" title="statement not covered" >return Response.json({ error: "No canteen associated" }, { status: 404 });</span></span>
+&nbsp;
+  // Pull the last 12 months of orders once and bucket in JS — small dataset
+  // and one round-trip beats five aggregated queries.
+  const now = <span class="cstat-no" title="statement not covered" >new Date();</span>
+  const istNow = <span class="cstat-no" title="statement not covered" >toIst(now);</span>
+  const todayStart   = <span class="cstat-no" title="statement not covered" >istUtcStart(now);</span>
+  const yearStart    = <span class="cstat-no" title="statement not covered" >new Date(Date.UTC(istNow.getUTCFullYear(), 0, 1) - IST_OFFSET_MIN * 60_000);</span>
+&nbsp;
+  const { data: rows, error } = <span class="cstat-no" title="statement not covered" >await supabase</span>
+    .from("orders")
+    .select("id, total_amount, status, created_at")
+    .eq("canteen_id", canteenId)
+    .gte("created_at", yearStart.toISOString())
+    .neq("status", "cancelled");
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  if (error) <span class="cstat-no" title="statement not covered" >return Response.json({ error: error.message }, { status: 500 });</span></span>
+&nbsp;
+  const orders = <span class="cstat-no" title="statement not covered" >rows ?? [];</span>
+&nbsp;
+  // Period boundaries (all in UTC ms)
+  const todayMs    = <span class="cstat-no" title="statement not covered" >todayStart.getTime();</span>
+  const weekStart  = <span class="cstat-no" title="statement not covered" >new Date(todayMs - ((toIst(now).getUTCDay() + 6) % 7) * 86_400_000);</span> // Mon-start
+  const monthStart = <span class="cstat-no" title="statement not covered" >new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - IST_OFFSET_MIN * 60_000);</span>
+  const qIdx       = <span class="cstat-no" title="statement not covered" >Math.floor(istNow.getUTCMonth() / 3);</span>
+  const quarterStart = <span class="cstat-no" title="statement not covered" >new Date(Date.UTC(istNow.getUTCFullYear(), qIdx * 3, 1) - IST_OFFSET_MIN * 60_000);</span>
+&nbsp;
+  let today = <span class="cstat-no" title="statement not covered" >0,</span> week = <span class="cstat-no" title="statement not covered" >0,</span> month = <span class="cstat-no" title="statement not covered" >0,</span> quarter = <span class="cstat-no" title="statement not covered" >0,</span> year = <span class="cstat-no" title="statement not covered" >0;</span>
+  let todayCount = <span class="cstat-no" title="statement not covered" >0,</span> weekCount = <span class="cstat-no" title="statement not covered" >0,</span> monthCount = <span class="cstat-no" title="statement not covered" >0,</span> quarterCount = <span class="cstat-no" title="statement not covered" >0,</span> yearCount = <span class="cstat-no" title="statement not covered" >0;</span>
+  const hourly = <span class="cstat-no" title="statement not covered" >Array.from({ length: 24 }, <span class="fstat-no" title="function not covered" >(_</span>, h) =&gt; (<span class="cstat-no" title="statement not covered" >{ hour: h, revenue: 0, orders: 0 })</span>);</span>
+  const daily: { date: string; revenue: number; orders: number }[] = <span class="cstat-no" title="statement not covered" >[];</span>
+  const dailyMap = <span class="cstat-no" title="statement not covered" >new Map&lt;string, { date: string; revenue: number; orders: number }&gt;();</span>
+<span class="cstat-no" title="statement not covered" >  for (let i = <span class="cstat-no" title="statement not covered" >29;</span> i &gt;= 0; i--) {</span>
+    const d = <span class="cstat-no" title="statement not covered" >new Date(todayMs - i * 86_400_000);</span>
+    const istD = <span class="cstat-no" title="statement not covered" >toIst(d);</span>
+    const key = <span class="cstat-no" title="statement not covered" >`${istD.getUTCFullYear()}-${String(istD.getUTCMonth() + 1).padStart(2, "0")}-${String(istD.getUTCDate()).padStart(2, "0")}`;</span>
+    const bucket = <span class="cstat-no" title="statement not covered" >{ date: key, revenue: 0, orders: 0 };</span>
+<span class="cstat-no" title="statement not covered" >    dailyMap.set(key, bucket);</span>
+<span class="cstat-no" title="statement not covered" >    daily.push(bucket);</span>
+  }
+  const monthly: { month: string; revenue: number; orders: number }[] = <span class="cstat-no" title="statement not covered" >[];</span>
+  const monthlyMap = <span class="cstat-no" title="statement not covered" >new Map&lt;string, { month: string; revenue: number; orders: number }&gt;();</span>
+<span class="cstat-no" title="statement not covered" >  for (let i = <span class="cstat-no" title="statement not covered" >11;</span> i &gt;= 0; i--) {</span>
+    const d = <span class="cstat-no" title="statement not covered" >new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth() - i, 1));</span>
+    const key = <span class="cstat-no" title="statement not covered" >`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;</span>
+    const label = <span class="cstat-no" title="statement not covered" >d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });</span>
+    const bucket = <span class="cstat-no" title="statement not covered" >{ month: label, revenue: 0, orders: 0 };</span>
+<span class="cstat-no" title="statement not covered" >    monthlyMap.set(key, bucket);</span>
+<span class="cstat-no" title="statement not covered" >    monthly.push(bucket);</span>
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  for (const o of orders) {</span>
+    const amt = <span class="cstat-no" title="statement not covered" >Number(o.total_amount || 0);</span>
+    const ts  = <span class="cstat-no" title="statement not covered" >new Date(o.created_at).getTime();</span>
+    const istD = <span class="cstat-no" title="statement not covered" >toIst(new Date(ts));</span>
+<span class="cstat-no" title="statement not covered" >    if (ts &gt;= yearStart.getTime())   { <span class="cstat-no" title="statement not covered" >year    += amt; <span class="cstat-no" title="statement not covered" ></span>yearCount++; </span>}</span>
+<span class="cstat-no" title="statement not covered" >    if (ts &gt;= quarterStart.getTime()){ <span class="cstat-no" title="statement not covered" >quarter += amt; <span class="cstat-no" title="statement not covered" ></span>quarterCount++; </span>}</span>
+<span class="cstat-no" title="statement not covered" >    if (ts &gt;= monthStart.getTime())  { <span class="cstat-no" title="statement not covered" >month   += amt; <span class="cstat-no" title="statement not covered" ></span>monthCount++; </span>}</span>
+<span class="cstat-no" title="statement not covered" >    if (ts &gt;= weekStart.getTime())   { <span class="cstat-no" title="statement not covered" >week    += amt; <span class="cstat-no" title="statement not covered" ></span>weekCount++; </span>}</span>
+<span class="cstat-no" title="statement not covered" >    if (ts &gt;= todayMs)               {</span>
+<span class="cstat-no" title="statement not covered" >      today += amt; <span class="cstat-no" title="statement not covered" ></span>todayCount++;</span>
+      const h = <span class="cstat-no" title="statement not covered" >istD.getUTCHours();</span>
+<span class="cstat-no" title="statement not covered" >      hourly[h].revenue += amt; <span class="cstat-no" title="statement not covered" ></span>hourly[h].orders += 1;</span>
+    }
+    const dKey = <span class="cstat-no" title="statement not covered" >`${istD.getUTCFullYear()}-${String(istD.getUTCMonth() + 1).padStart(2, "0")}-${String(istD.getUTCDate()).padStart(2, "0")}`;</span>
+    const dB = <span class="cstat-no" title="statement not covered" >dailyMap.get(dKey);</span>
+<span class="cstat-no" title="statement not covered" >    if (dB) { <span class="cstat-no" title="statement not covered" >dB.revenue += amt; <span class="cstat-no" title="statement not covered" ></span>dB.orders += 1; </span>}</span>
+    const mKey = <span class="cstat-no" title="statement not covered" >`${istD.getUTCFullYear()}-${String(istD.getUTCMonth() + 1).padStart(2, "0")}`;</span>
+    const mB = <span class="cstat-no" title="statement not covered" >monthlyMap.get(mKey);</span>
+<span class="cstat-no" title="statement not covered" >    if (mB) { <span class="cstat-no" title="statement not covered" >mB.revenue += amt; <span class="cstat-no" title="statement not covered" ></span>mB.orders += 1; </span>}</span>
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return Response.json({</span>
+    totals: {
+      today:   { revenue: r2(today),   orders: todayCount },
+      week:    { revenue: r2(week),    orders: weekCount },
+      month:   { revenue: r2(month),   orders: monthCount },
+      quarter: { revenue: r2(quarter), orders: quarterCount },
+      year:    { revenue: r2(year),    orders: yearCount },
+    },
+    hourly: hourly.map(<span class="fstat-no" title="function not covered" >h </span>=&gt; <span class="cstat-no" title="statement not covered" >({ ...h, revenue: r2(h.revenue) }))</span>,
+    daily:  daily.map(<span class="fstat-no" title="function not covered" >d </span> =&gt; <span class="cstat-no" title="statement not covered" >({ ...d,  revenue: r2(d.revenue) }))</span>,
+    monthly: monthly.map(<span class="fstat-no" title="function not covered" >m </span>=&gt; <span class="cstat-no" title="statement not covered" >({ ...m, revenue: r2(m.revenue) }))</span>,
+  });
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-05-04T12:25:49.876Z
+            </div>
+        <script src="../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../sorter.js"></script>
+        <script src="../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

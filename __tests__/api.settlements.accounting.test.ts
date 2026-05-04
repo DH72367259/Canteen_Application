@@ -188,7 +188,7 @@ describe("settlement accounting regressions", () => {
           payment_id: "pay_old_1",
           total_amount: 100,
           status: "collected",
-          created_at: "2026-04-28T10:00:00Z",
+          created_at: "2026-05-04T10:00:00Z",
           extra_bin_fee_paise: 0,
         },
       ],

@@ -1,0 +1,487 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for app/api/notifications/route.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">app/api/notifications</a> route.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">53.57% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>45/84</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">56.04% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>51/91</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">50% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>5/10</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">63.49% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>40/63</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line medium'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { NextResponse } from "next/server";
+import { getRequestContext } from "@/lib/authServer";
+import { createAdminClient } from "@/lib/supabase-server";
+&nbsp;
+export const dynamic = "force-dynamic";
+&nbsp;
+// GET /api/notifications — returns notifications visible to the current user
+export async function GET(request: Request) {
+  const auth = await getRequestContext(request);
+  if (!auth) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+&nbsp;
+  const supabase = createAdminClient();
+&nbsp;
+  // Fetch user's canteen_id from profile (already in auth context)
+  const canteenId = auth.canteenId<span class="branch-1 cbranch-no" title="branch not covered" ><span class="branch-0 cbranch-no" title="branch not covered" > ?? n</span></span>ull;
+&nbsp;
+  // Build the filter: notifications targeted at 'all', or specific canteen/user
+  let query = supabase
+    .from("notifications")
+    .select("id, title, body, type, recipient_type, recipient_id, target_role, created_at")
+    .order("created_at", { ascending: false })
+    .limit(50);
+&nbsp;
+  // Super/co admins see all notifications
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (auth.role !== "super_admin" &amp;&amp; <span class="branch-1 cbranch-no" title="branch not covered" >auth.role !== "co_admin")</span> {
+    // Per-role routing via target_role:
+    //   - 'all'         -&gt; visible to everyone
+    //   - 'all_staff'   -&gt; visible to worker/canteen_admin/vendor (any staff role)
+    //   - 'user'        -&gt; visible to user role
+    //   - 'worker'      -&gt; visible only to worker
+    //   - 'canteen_admin' -&gt; visible to canteen_admin / vendor
+    const isStaff = <span class="cstat-no" title="statement not covered" >["worker", "canteen_admin", "vendor"].includes(auth.role);</span>
+    const roleTargets = <span class="cstat-no" title="statement not covered" >["all"];</span>
+<span class="cstat-no" title="statement not covered" >    if (isStaff) <span class="cstat-no" title="statement not covered" >roleTargets.push("all_staff");</span></span>
+<span class="cstat-no" title="statement not covered" >    if (auth.role === "worker") <span class="cstat-no" title="statement not covered" >roleTargets.push("worker");</span></span>
+<span class="cstat-no" title="statement not covered" >    if (auth.role === "canteen_admin" || auth.role === "vendor") <span class="cstat-no" title="statement not covered" >roleTargets.push("canteen_admin");</span></span>
+<span class="cstat-no" title="statement not covered" >    if (auth.role === "user") <span class="cstat-no" title="statement not covered" >roleTargets.push("user");</span></span>
+&nbsp;
+    const filters: string[] = <span class="cstat-no" title="statement not covered" >[];</span>
+    // recipient-based (legacy)
+<span class="cstat-no" title="statement not covered" >    filters.push(`recipient_type.eq.all`);</span>
+<span class="cstat-no" title="statement not covered" >    if (canteenId) <span class="cstat-no" title="statement not covered" >filters.push(`and(recipient_type.eq.canteen,recipient_id.eq.${canteenId})`);</span></span>
+<span class="cstat-no" title="statement not covered" >    filters.push(`and(recipient_type.eq.user,recipient_id.eq.${auth.uid})`);</span>
+    // target_role-based (Phase 1)
+<span class="cstat-no" title="statement not covered" >    filters.push(`target_role.in.(${roleTargets.join(",")})`);</span>
+<span class="cstat-no" title="statement not covered" >    query = query.or(filters.join(","));</span>
+  }
+&nbsp;
+  const { data, error } = await query;
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (error) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: `Failed to fetch notifications: ${error.message}` }, { status: 500 });</span>
+&nbsp;
+  // Fetch read status for this user
+  const ids = (data ?? <span class="branch-1 cbranch-no" title="branch not covered" >[])</span>.map(n =&gt; n.id);
+  const { data: reads } = ids.length &gt; 0
+    ? await supabase.from("notification_reads").select("notification_id").eq("user_id", auth.uid).in("notification_id", ids)
+    : <span class="branch-1 cbranch-no" title="branch not covered" >{ data: [] };</span>
+&nbsp;
+  const readSet = new Set((reads ?? <span class="branch-1 cbranch-no" title="branch not covered" >[])</span>.map(<span class="fstat-no" title="function not covered" >r </span>=&gt; <span class="cstat-no" title="statement not covered" >r.notification_id)</span>);
+  const notifications = (data ?? <span class="branch-1 cbranch-no" title="branch not covered" >[])</span>.map(n =&gt; ({ ...n, is_read: readSet.has(n.id) }));
+  const unread_count = notifications.filter(n =&gt; !n.is_read).length;
+&nbsp;
+  return NextResponse.json({ notifications, unread_count });
+}
+&nbsp;
+// POST /api/notifications — super_admin sends a notification
+export async function POST(request: Request) {
+  const auth = await getRequestContext(request);
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!auth) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: "Unauthorized." }, { status: 401 });</span>
+  if (auth.role !== "super_admin" &amp;&amp; auth.role !== "co_admin") {
+    return NextResponse.json({ error: "Only admins can send notifications." }, { status: 403 });
+  }
+&nbsp;
+  const body = await request.json().catch(<span class="fstat-no" title="function not covered" >() =</span>&gt; <span class="cstat-no" title="statement not covered" >null)</span>;
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!body) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });</span>
+&nbsp;
+  const { title, message, recipient_type, recipient_id, target_role } = body as Record&lt;string, string&gt;;
+&nbsp;
+  if (!title?.trim()) return NextResponse.json({ error: "Title is required." }, { status: 400 });
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!message<span class="branch-0 cbranch-no" title="branch not covered" >?.t</span>rim()) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: "Message is required." }, { status: 400 });</span>
+&nbsp;
+  const validTypes = ["all", "all_users", "all_canteens", "canteen", "user"];
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (!recipient_type || !validTypes.includes(recipient_type)) {
+<span class="cstat-no" title="statement not covered" >    return NextResponse.json({ error: `recipient_type must be one of: ${validTypes.join(", ")}.` }, { status: 400 });</span>
+  }
+&nbsp;
+  <span class="missing-if-branch" title="if path not taken" >I</span>if ((recipient_type === "canteen" || recipient_type === "user") &amp;&amp; <span class="branch-2 cbranch-no" title="branch not covered" >!recipient_id)</span> {
+<span class="cstat-no" title="statement not covered" >    return NextResponse.json({ error: "recipient_id is required for targeted notifications." }, { status: 400 });</span>
+  }
+&nbsp;
+  // Phase 5: target_role enables fan-out by role (all/all_staff/user/worker/canteen_admin)
+  const validRoles = ["all", "all_staff", "user", "worker", "canteen_admin"];
+  if (target_role &amp;&amp; !validRoles.includes(target_role)) {
+    return NextResponse.json({ error: `target_role must be one of: ${validRoles.join(", ")}.` }, { status: 400 });
+  }
+&nbsp;
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      title: title.trim(),
+      body: message.trim(),
+      type: "admin",
+      recipient_type,
+      recipient_id: <span class="branch-0 cbranch-no" title="branch not covered" >recipient_id </span>?? null,
+      // Prod DB check_constraint on `target_role` does NOT permit 'all' (only
+      // 'all_staff'/'user'/'worker'/'canteen_admin'). For broadcasts we fall
+      // back to 'all_staff'; visibility is still universal because the GET
+      // filter OR's `recipient_type.eq.all` so every role still sees the row.
+      target_role: !target_role || target_role === "all" ? "all_staff" : target_role,
+      created_by: auth.uid,
+    })
+    .select("id")
+    .single();
+&nbsp;
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (error) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: `Failed to send notification: ${error.message}` }, { status: 500 });</span>
+&nbsp;
+  return NextResponse.json({ success: true, id: data.id });
+}
+&nbsp;
+// PATCH /api/notifications — mark notification(s) as read
+export async function <span class="fstat-no" title="function not covered" >PATCH(</span>request: Request) {
+  const auth = <span class="cstat-no" title="statement not covered" >await getRequestContext(request);</span>
+<span class="cstat-no" title="statement not covered" >  if (!auth) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: "Unauthorized." }, { status: 401 });</span></span>
+&nbsp;
+  const body = <span class="cstat-no" title="statement not covered" >await request.json().catch(<span class="fstat-no" title="function not covered" >() =</span>&gt; <span class="cstat-no" title="statement not covered" >null)</span>;</span>
+  const ids: string[] = <span class="cstat-no" title="statement not covered" >Array.isArray(body?.ids) ? body.ids : [];</span>
+<span class="cstat-no" title="statement not covered" >  if (!ids.length) <span class="cstat-no" title="statement not covered" >return NextResponse.json({ error: "ids array is required." }, { status: 400 });</span></span>
+&nbsp;
+  const supabase = <span class="cstat-no" title="statement not covered" >createAdminClient();</span>
+  const rows = <span class="cstat-no" title="statement not covered" >ids.map(<span class="fstat-no" title="function not covered" >id </span>=&gt; (<span class="cstat-no" title="statement not covered" >{ notification_id: id, user_id: auth.uid })</span>);</span>
+<span class="cstat-no" title="statement not covered" >  await supabase.from("notification_reads").upsert(rows, { onConflict: "notification_id,user_id" });</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return NextResponse.json({ success: true });</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-05-04T12:25:49.876Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    

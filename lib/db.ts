@@ -17,8 +17,10 @@ export async function getOrder(orderId: string) {
   for (const proj of projections) {
     const r = await supabase.from('orders').select(proj).eq('id', orderId).maybeSingle()
     if (!r.error) { data = (r.data ?? null) as Record<string, unknown> | null; error = null; break }
-    error = r.error as { message: string; code?: string }
-    if (!/relation .* does not exist|column .* does not exist/i.test(r.error.message)) break
+    const err = r.error as unknown as { message: string; code?: string }
+    error = err
+    const errMsg = typeof err === 'string' ? err : (err as any)?.message ?? ''
+    if (!/relation .* does not exist|column .* does not exist/i.test(errMsg)) break
   }
 
   if (error) {
