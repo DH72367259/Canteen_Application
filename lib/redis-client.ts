@@ -36,6 +36,14 @@ export async function getRedisClient() {
   }
 }
 
+// Initialize Redis on app startup
+if (typeof window === "undefined") {
+  // Server-side only
+  getRedisClient().catch((e) => {
+    console.error("Redis initialization error on startup:", e);
+  });
+}
+
 /**
  * Cache wrapper for read-only operations
  * Returns cached value if exists, else fetches and caches
