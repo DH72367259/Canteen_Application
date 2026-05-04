@@ -306,17 +306,22 @@ export async function POST(req: NextRequest) {
 
   const allocated: FreeBin[] = pickContiguous(binsNeeded) ?? pool.slice(0, binsNeeded);
   if (allocated.length < binsNeeded) {
-    // Fall back gracefully when only one or zero bins exist (typical for a
-    // freshly-seeded test canteen). Pad with synthetic placeholders so the
-    // order still places — workers will physically use whatever bins are
-    // available. Never error out single-bin orders for missing seed data.
-    if (binsNeeded === 1 && allocated.length === 0) {
-      // legacy behaviour: synth a placeholder code/color so the response shape
-      // matches the original API contract
+    // Reject orders when there aren't enough configured bins available.
+    // Check total bins configured for this canteen to distinguish between
+    // "no bins in test canteen" vs "no free bins during peak load".
+    const { count: totalBinsCount } = await supabase
+      .from("bins")
+      .select("*", { count: "exact", head: true })
+      .eq("canteen_id", canteenId);
+
+    const hasNoConfiguredBins = (totalBinsCount ?? 0) === 0;
+
+    if (binsNeeded === 1 && allocated.length === 0 && hasNoConfiguredBins) {
+      // Test data: synth a placeholder ONLY if canteen has ZERO bins configured
       allocated.push({
         id: "",
-        bin_code: String(Math.floor(Math.random() * 8) + 1),
-        color: ["red", "blue", "green", "yellow"][Math.floor(Math.random() * 4)],
+        bin_code: "SYNTH-001",
+        color: "blue",
         zone_color: null,
         bin_number: null,
       });

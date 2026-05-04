@@ -53,6 +53,11 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
       ? (row.order_bins as Array<Record<string, unknown>>)
           .slice()
           .sort((a, b) => Number(a.bin_index ?? 0) - Number(b.bin_index ?? 0))
+          // Only include bins that have valid bin_code and bin_color (filter out invalid entries)
+          .filter((ob) => {
+            const code = String(ob.bin_code ?? "").trim();
+            return code.length > 0;
+          })
           .map((ob) => ({
             binIndex: Number(ob.bin_index ?? 1),
             binLabel: String(ob.bin_code ?? ""),
