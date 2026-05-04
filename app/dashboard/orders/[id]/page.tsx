@@ -124,9 +124,12 @@ export default function OrderTrackingPage() {
         )}
 
         {isCollected && (
-          <div style={{ background: "var(--green-light)", border: "1px solid var(--green)", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
-            <div style={{ fontSize: "2.5rem" }}>🎉</div>
-            <div style={{ fontWeight: 700, color: "var(--green)", fontSize: "1.1rem" }}>Enjoy your meal!</div>
+          <div style={{ background: "var(--green-light)", border: "1px solid var(--green)", borderRadius: 12, padding: "1.5rem", textAlign: "center" }}>
+            <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>😊</div>
+            <div style={{ fontWeight: 700, color: "var(--green)", fontSize: "1.2rem", marginBottom: "0.5rem" }}>Thank You!</div>
+            <div style={{ fontSize: "0.95rem", color: "var(--ink-2)", lineHeight: 1.5 }}>
+              Visit again and enjoy your order with a smile 😋
+            </div>
           </div>
         )}
 
