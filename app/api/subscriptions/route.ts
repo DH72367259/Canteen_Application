@@ -38,7 +38,8 @@ export async function GET(request: Request) {
   let ordersSincePro = 0;
   let daysLeft = 0;
   if (isActive && data?.started_at) {
-    const { count } = await supabase
+    const sb = createAdminClient();
+    const { count } = await sb
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("user_id", ctx.uid)
