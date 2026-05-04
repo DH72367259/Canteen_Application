@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { withCache, invalidateCache, CACHE_KEYS, CACHE_TTL } from "@/lib/redis-client";
 
 export const dynamic = "force-dynamic";
 
@@ -9,16 +10,22 @@ export async function GET(request: Request) {
   const ctx = await getRequestContext(request);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("noqx_pro_subscriptions")
-    .select("id, status, started_at, expires_at, amount_paid")
-    .eq("user_id", ctx.uid)
-    .single();
+  const cacheKey = CACHE_KEYS.SUBSCRIPTION(ctx.uid);
 
-  if (error && error.code !== "PGRST116") {
-    return NextResponse.json({ error: "Failed to fetch subscription" }, { status: 500 });
-  }
+  const data = await withCache(cacheKey, CACHE_TTL.SUBSCRIPTION, async () => {
+    const sb = createAdminClient();
+    const { data: subData, error } = await sb
+      .from("noqx_pro_subscriptions")
+      .select("id, status, started_at, expires_at, amount_paid")
+      .eq("user_id", ctx.uid)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      throw new Error("Failed to fetch subscription");
+    }
+
+    return subData;
+  });
 
   const isActive = data?.status === "active" && (
     !data.expires_at || new Date(data.expires_at) > new Date()
@@ -90,6 +97,9 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json({ error: "Failed to create subscription" }, { status: 500 });
   }
+
+  // Invalidate subscription cache - user's subscription just changed
+  await invalidateCache(CACHE_KEYS.SUBSCRIPTION(ctx.uid));
 
   return NextResponse.json({ subscription: data, isActive: true });
 }
