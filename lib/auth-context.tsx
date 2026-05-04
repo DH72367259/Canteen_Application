@@ -437,10 +437,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       if (session?.user) {
-        // Snapshot existing role BEFORE the async profile fetch.
-        // If fetchProfile times out or errors and returns the 'user' fallback, we use this
-        // to restore the real role — prevents TOKEN_REFRESHED from silently demoting an admin.
-        const existingRole = roleRef.current
+        // On SIGNED_IN, clear old role from previous user session to prevent confusion
+        // when switching between accounts (e.g., student → admin → student).
+        // The old roleRef should not influence the new login's role detection.
+        const existingRole = event === 'SIGNED_IN' ? null : roleRef.current
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
         const pwChangedAt: string | undefined = meta.password_changed_at
@@ -559,26 +559,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.removeItem(LAST_ACTIVITY_KEY) } catch { /* SSR safe */ }
     clearProfileCache()
     purgeStudentLocalState()
-    // Mark session as inactive before signing out (fire-and-forget)
-    if (session?.access_token && activeSessionIdRef.current) {
-      fetch('/api/auth/session', {
+
+    // Snapshot session ID and token before clearing state
+    const sessionId = activeSessionIdRef.current
+    const token = session?.access_token
+
+    // Mark session as inactive before signing out (must happen before clearing state)
+    if (token && sessionId) {
+      await fetch('/api/auth/session', {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionIdRef.current, markInactive: true }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, markInactive: true }),
       }).catch(() => {})
     }
+
+    // Clear refs to prevent stale data from being used in listeners
     activeSessionIdRef.current = null
-    // Clear UI state immediately — callers can navigate without waiting for the SIGNED_OUT event
-    setUser(null)
     roleRef.current = null
+
+    // Clear UI state synchronously — prevents onAuthStateChange from re-populating during sign out
+    setUser(null)
     setSession(null)
-    // Step 1: ALWAYS clear the local Supabase session from browser storage.
-    // This is synchronous-safe (just localStorage.removeItem) and must succeed even when
-    // the network is unreachable. Without this, a failed global signOut leaves the JWT
-    // token in localStorage and the session is silently restored on the next page load.
+
+    // Step 1: Clear the local Supabase session from browser storage (must complete)
     try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* ignore */ }
-    // Step 2: Best-effort global revocation — invalidates the token server-side.
-    // Fire-and-forget: network errors must never block the caller from navigating away.
+
+    // Step 2: Best-effort global revocation (fire-and-forget)
     supabase.auth.signOut().catch(() => {})
   }
 
