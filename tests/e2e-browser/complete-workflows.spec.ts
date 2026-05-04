@@ -87,7 +87,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
       const ordersLink = page.getByText(/order|track/i).first();
       if (await ordersLink.count() > 0) {
         await ordersLink.click();
-        await expect(page).toBeVisible({ timeout: 5_000 });
+        await expect(ordersLink).toBeVisible({ timeout: 5_000 });
       }
     });
   });
@@ -267,7 +267,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
       await page.waitForTimeout(500);
 
       // Availability should update
-      expect(page).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`menu.*${canteenId}`));
     });
 
     test("respects meal vs snack capacity limits", async ({ page }) => {
