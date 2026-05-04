@@ -213,25 +213,30 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Delete all seeded orders (order_bins, payments, order_items first for FK).
-  for (const orderId of seededOrderIds) {
-    await admin.from("order_bins").delete().eq("order_id", orderId);
-    await admin.from("payments").delete().eq("order_id", orderId);
-    await admin.from("order_items").delete().eq("order_id", orderId);
-    await admin.from("orders").delete().eq("id", orderId);
+  // Batch delete all seeded orders for efficiency
+  if (seededOrderIds.length > 0) {
+    await admin.from("order_bins").delete().in("order_id", seededOrderIds);
+    await admin.from("payments").delete().in("order_id", seededOrderIds);
+    await admin.from("order_items").delete().in("order_id", seededOrderIds);
+    await admin.from("orders").delete().in("id", seededOrderIds);
+
+    // Batch update bins
     const free = {
       is_occupied: false, order_id: null,
       assigned_order_id: null, status: "empty",
       updated_at: new Date().toISOString(),
     };
-    await admin.from("bins").update(free).eq("order_id", orderId);
-    await admin.from("bins").update(free).eq("assigned_order_id", orderId);
+    await admin.from("bins").update(free).in("order_id", seededOrderIds);
+    await admin.from("bins").update(free).in("assigned_order_id", seededOrderIds);
   }
-  for (const slotId of seededSlotIds) {
-    await admin.from("time_slots").delete().eq("id", slotId);
+
+  // Batch delete seeded slots
+  if (seededSlotIds.length > 0) {
+    await admin.from("time_slots").delete().in("id", seededSlotIds);
   }
+
   await deleteUser(studentId);
-});
+}, { timeout: 60_000 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

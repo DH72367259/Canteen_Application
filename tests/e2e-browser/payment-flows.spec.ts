@@ -15,7 +15,8 @@ test.describe("Payment Flows", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.orderId).toMatch(/^order_test_/);
-    expect(body.amount).toBe(100);
+    // Razorpay API returns amount in paise (100 * rupees)
+    expect(body.amount).toBe(10000);
     expect(body.testMode).toBe(true);
   });
 
@@ -28,7 +29,8 @@ test.describe("Payment Flows", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.amount).toBe(1);
+    // Razorpay API returns amount in paise (1 * 100)
+    expect(body.amount).toBe(100);
   });
 
   test("Razorpay order with zero amount is rejected", async () => {
@@ -218,6 +220,7 @@ test.describe("Payment Flows", () => {
 
     const orderBody = await orderRes.json();
     expect(orderBody.testMode).toBe(true);
+    expect(orderBody.amount).toBe(10000); // paise: 100 * 100
 
     const verifyRes = await apiFetch(`${APP_URL}/api/payments/razorpay-verify`, {
       method: "POST",
