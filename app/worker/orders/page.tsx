@@ -34,6 +34,16 @@ const BIN_COLORS: Record<string, string> = {
 
 const ACTIVE_STATUSES = ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"];
 
+// New workflow: placed → preparing → placed_in_bin → (OTP shown) → ready_for_pickup
+const STATUS_FLOW = {
+  "placed": { next: "preparing", label: "Start Preparing", icon: "🔴" },
+  "preparing": { next: "placed_in_bin", label: "Mark as Placed in Bin", icon: "🟡" },
+  "placed_in_bin": { next: "ready_for_pickup", label: "Ready for Pickup", icon: "🟢" },
+  "ready_for_pickup": { next: null, label: "Completed", icon: "✓" },
+  "confirmed": { next: "preparing", label: "Start Preparing", icon: "🔴" },
+  "ready_for_placement": { next: "placed_in_bin", label: "Mark as Placed in Bin", icon: "🟡" },
+};
+
 function tint(hex: string, alpha: string): string {
   if (!hex.startsWith("#") || hex.length !== 7) return `${hex}${alpha}`;
   return `${hex}${alpha}`;
@@ -333,47 +343,51 @@ export default function WorkerOrdersPage() {
                   </div>
 
                   <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {order.status === "placed" && (
+                    {/* NEW WORKFLOW: placed → preparing → placed_in_bin → ready_for_pickup */}
+                    {(order.status === "placed" || order.status === "confirmed") && (
                       <button
                         disabled={updating === order.id}
                         onClick={() => updateStatus(order.id, "preparing")}
                         style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
-                        {updating === order.id ? "..." : "Accept Order -> Start Preparing"}
-                      </button>
-                    )}
-                    {order.status === "confirmed" && (
-                      <button
-                        disabled={updating === order.id}
-                        onClick={() => updateStatus(order.id, "preparing")}
-                        style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                      >
-                        {updating === order.id ? "..." : "Start Preparing"}
+                        {updating === order.id ? "..." : "🔴 Start Preparing"}
                       </button>
                     )}
                     {order.status === "preparing" && (
                       <button
                         disabled={updating === order.id}
-                        onClick={() => updateStatus(order.id, "ready_for_placement")}
-                        style={{ background: "#eab308", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                        onClick={() => {
+                          if (confirm(`Are you sure the order is placed in the correct bin?\n\nBin: ${order.bin_label || "Unknown"}`)) {
+                            updateStatus(order.id, "placed_in_bin");
+                          }
+                        }}
+                        style={{ background: "#eab308", color: "#000", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
-                        {updating === order.id ? "..." : "Mark Preparing -> Ready to Place"}
+                        {updating === order.id ? "..." : "🟡 Mark as Placed in Bin"}
                       </button>
                     )}
                     {order.status === "ready_for_placement" && (
                       <button
                         disabled={updating === order.id}
                         onClick={() => updateStatus(order.id, "placed_in_bin")}
-                        style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 900, fontSize: "0.95rem", cursor: "pointer" }}
+                        style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
-                        {updating === order.id ? "..." : "Placed in Bin (double verify)"}
+                        {updating === order.id ? "..." : "🟢 Placed in Bin"}
                       </button>
                     )}
-                    {["placed_in_bin", "ready_for_pickup"].includes(order.status) && (
+                    {order.status === "placed_in_bin" && (
                       <div
-                        style={{ background: "#dcfce7", borderRadius: 10, padding: "0.5rem 0.75rem", fontSize: "0.82rem", color: "#166534", fontWeight: 700, textAlign: "center" }}
+                        style={{ background: "#dcfce7", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "#166534", fontWeight: 700, textAlign: "center" }}
                       >
-                        In bin and ready for pickup (manager verifies OTP)
+                        ✓ In bin and ready for pickup<br />
+                        <span style={{ fontSize: "0.75rem", opacity: 0.85 }}>Manager will verify OTP with student</span>
+                      </div>
+                    )}
+                    {order.status === "ready_for_pickup" && (
+                      <div
+                        style={{ background: "#dbeafe", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "#164e63", fontWeight: 700, textAlign: "center" }}
+                      >
+                        ✓ Order Completed
                       </div>
                     )}
                   </div>

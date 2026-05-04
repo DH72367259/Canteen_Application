@@ -15,6 +15,10 @@ type MenuItem = {
   price: number;
   category: string;
   is_meal: boolean;
+  is_sold_out?: boolean;
+  availability_type?: string;
+  quantity_per_slot?: number | null;
+  total_per_day?: number | null;
 };
 
 type CartItem = { id: string; name: string; price: number; qty: number };
@@ -134,9 +138,77 @@ export default function CanteenMenuPage() {
   const hiddenByMeal = currentMeal ? visibleItems.length - mealFilteredItems.length : 0;
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [slotOptions, setSlotOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [itemAvailability, setItemAvailability] = useState<Record<string, { isAvailable: boolean; reason: string }>>({});
+
+  // Fetch slots and item availability
+  useEffect(() => {
+    if (!canteenId) return;
+    let cancelled = false;
+    async function fetchSlotsAndAvailability() {
+      try {
+        const res = await fetch(`/api/slots?canteenId=${encodeURIComponent(canteenId)}`);
+        const json = await res.json();
+        if (!cancelled && Array.isArray(json.slots)) {
+          setSlotOptions(json.slots);
+          const first = json.slots.find((s: any) => s.available);
+          if (first) setSelectedSlot(first.id);
+        }
+      } catch { /* ignore */ }
+    }
+    fetchSlotsAndAvailability();
+    return () => { cancelled = true; };
+  }, [canteenId]);
+
+  // Check availability for current slot
+  useEffect(() => {
+    if (!canteenId || !selectedSlot || items.length === 0) {
+      setItemAvailability({});
+      return;
+    }
+    const slotLabel = slotOptions.find(s => s.id === selectedSlot)?.label;
+    if (!slotLabel) return;
+
+    let cancelled = false;
+    async function checkAvailability() {
+      try {
+        const res = await fetch("/api/cart/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            canteen_id: canteenId,
+            slot: slotLabel,
+            items: items.map(item => ({ id: item.id, quantity: 1 })),
+          }),
+        });
+        const json = await res.json();
+        if (!cancelled) {
+          const avail: Record<string, { isAvailable: boolean; reason: string }> = {};
+          for (const item of items) {
+            const isSoldOut = item.is_sold_out || false;
+            const isBatchedFull = item.availability_type === "batched_prepared" && json.slot_capacity &&
+              json.slot_capacity.batchedPreparedCap > 0 &&
+              json.slot_capacity.batchedPreparedCap <= (json.slot_orders_used || 0);
+            const isMadeToOrderFull = item.availability_type !== "batched_prepared" && json.slot_capacity &&
+              json.slot_capacity.madeToOrderCap > 0 &&
+              json.slot_capacity.madeToOrderCap <= (json.slot_orders_used || 0);
+
+            avail[item.id] = {
+              isAvailable: !isSoldOut && !isBatchedFull && !isMadeToOrderFull,
+              reason: isSoldOut ? "Sold out" : isBatchedFull ? "Batched orders full" : isMadeToOrderFull ? "Made-to-order full" : "",
+            };
+          }
+          setItemAvailability(avail);
+        }
+      } catch { /* ignore */ }
+    }
+    checkAvailability();
+    return () => { cancelled = true; };
+  }, [canteenId, selectedSlot, items, slotOptions]);
 
   const addItem = (item: { id: string; name: string; price: number }) => {
-    if (isClosed) return; // guard: never add to closed canteen
+    if (isClosed || !itemAvailability[item.id]?.isAvailable) return;
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
       if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
@@ -232,8 +304,12 @@ export default function CanteenMenuPage() {
         )}
         {mealFilteredItems.map(item => {
           const inCart = cart.find(c => c.id === item.id);
+          const availability = itemAvailability[item.id] || { isAvailable: true, reason: "" };
+          const isOutOfStock = !availability.isAvailable;
+          const opacity = isClosed || isOutOfStock ? 0.6 : 1;
+
           return (
-            <div key={item.id} className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "center", opacity: isClosed ? 0.6 : 1 }}>
+            <div key={item.id} className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "center", opacity }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.15rem" }}>
                   <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{item.name}</span>
@@ -241,15 +317,28 @@ export default function CanteenMenuPage() {
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>{item.description}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.25rem" }}>
-                  <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, background: "#ecfdf5", color: "#15803d", border: "1px solid #a7f3d0" }}>
-                    ⚡ Available in next slot
-                  </span>
+                  {isOutOfStock ? (
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}>
+                      ⛔ {availability.reason || "Out of stock"}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, background: "#ecfdf5", color: "#15803d", border: "1px solid #a7f3d0" }}>
+                      ⚡ Available
+                    </span>
+                  )}
+                  {item.quantity_per_slot && (
+                    <span style={{ fontSize: "0.65rem", color: "var(--ink-3)" }}>
+                      Max {item.quantity_per_slot}/slot
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>₹{item.price}</div>
               </div>
               <div>
-                {isClosed ? (
-                  <button disabled className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem", opacity: 0.45, cursor: "not-allowed" }}>ADD</button>
+                {isClosed || isOutOfStock ? (
+                  <button disabled className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem", opacity: 0.45, cursor: "not-allowed" }}>
+                    {isOutOfStock ? "SOLD OUT" : "CLOSED"}
+                  </button>
                 ) : !inCart ? (
                   <button onClick={() => addItem(item)} className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem" }}>ADD</button>
                 ) : (

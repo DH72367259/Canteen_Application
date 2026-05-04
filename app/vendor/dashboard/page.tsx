@@ -37,6 +37,7 @@ const NAV_ITEMS = [
   { id: "live",         icon: "📊", label: "Live Orders" },
   { id: "prep-summary", icon: "📋", label: "Prep Summary" },
   { id: "menu",         icon: "🍽️", label: "Menu & Items" },
+  { id: "inventory",    icon: "📦", label: "Inventory" },
   { id: "slot-control", icon: "🎚️", label: "Slot and Bin Control" },
   { id: "slots",        icon: "🕐", label: "Time Slots" },
   { id: "bins",         icon: "📦", label: "Bin Management" },
@@ -936,6 +937,7 @@ export default function VendorDashboard() {
         {activeNav === "slot-control" && <VendorSlotControlView session={session} />}
         {activeNav === "prep-summary" && <VendorPrepSummaryView session={session} />}
         {activeNav === "menu" && <VendorMenuView session={session} />}
+        {activeNav === "inventory" && <VendorInventoryView session={session} />}
         {activeNav === "slots" && <VendorSlotsView />}
         {activeNav === "sales" && <VendorSalesView session={session} />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
@@ -2774,6 +2776,187 @@ function PrepBucket({ title, color, items }: { title: string; color: string; ite
           <strong>{it.quantity}</strong>
         </div>
       ))}
+    </div>
+  );
+}
+
+interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  is_meal: boolean;
+  availability_type: "slot_based" | "batched_prepared";
+  quantity_per_slot: number | null;
+  total_per_day: number | null;
+  is_sold_out: boolean;
+  is_available: boolean;
+}
+
+interface InventoryItem extends MenuItem {
+  slotUsed: number;
+  dayUsed: number;
+  slotRemaining: number;
+  dayRemaining: number;
+}
+
+function VendorInventoryView({ session }: { session: { access_token: string } | null }) {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/canteen/menu", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load menu");
+      const { items: menuItems } = await res.json();
+      setItems(
+        (menuItems as MenuItem[]).map((m) => ({
+          ...m,
+          slotUsed: 0,
+          dayUsed: 0,
+          slotRemaining: m.quantity_per_slot ?? 0,
+          dayRemaining: m.total_per_day ?? 0,
+        }))
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error loading inventory");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    void load();
+    const iv = setInterval(load, 60000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  const toggleSoldOut = async (itemId: string, currentState: boolean) => {
+    if (!session) return;
+    setToggling(itemId);
+    try {
+      const res = await fetch(`/api/canteen/menu/${itemId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ is_sold_out: !currentState }),
+      });
+      if (!res.ok) throw new Error("Failed to update item");
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === itemId ? { ...it, is_sold_out: !currentState } : it
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update");
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  if (loading)
+    return (
+      <div className="page-content">
+        <p>Loading inventory…</p>
+      </div>
+    );
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <h2>Inventory Dashboard</h2>
+        <button
+          onClick={load}
+          className="tag tag-blue"
+          style={{ cursor: "pointer", border: "none" }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: "#dc2626", marginBottom: "1rem" }}>{error}</div>
+      )}
+
+      {items.length === 0 ? (
+        <p style={{ color: "#94a3b8" }}>No menu items found.</p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: "1rem" }}>
+          {items.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "1rem",
+                background: item.is_sold_out ? "#fef2f2" : "#fff",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1rem" }}>{item.name}</h3>
+                  <div style={{ fontSize: "0.8rem", color: "#94a3b8", marginTop: "0.25rem" }}>
+                    ₹{item.price} · {item.availability_type === "batched_prepared" ? "Batched" : "Made-to-Order"}
+                    {item.is_meal && <span style={{ marginLeft: "0.5rem", background: "#fef3c7", color: "#92400e", padding: "0.1rem 0.4rem", borderRadius: 4, fontSize: "0.7rem" }}>MEAL</span>}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleSoldOut(item.id, item.is_sold_out)}
+                  disabled={toggling === item.id}
+                  style={{
+                    padding: "0.4rem 0.8rem",
+                    borderRadius: 6,
+                    border: "1px solid " + (item.is_sold_out ? "#991b1b" : "#16a34a"),
+                    background: item.is_sold_out ? "#fee2e2" : "#dcfce7",
+                    color: item.is_sold_out ? "#991b1b" : "#166534",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    cursor: toggling === item.id ? "wait" : "pointer",
+                  }}
+                >
+                  {item.is_sold_out ? "🛑 Out" : "✓ In Stock"}
+                </button>
+              </div>
+
+              {item.quantity_per_slot ? (
+                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--bg)", borderRadius: 6 }}>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.35rem" }}>Slot Capacity</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                    Limit: <strong>{item.quantity_per_slot}</strong> per slot
+                  </div>
+                </div>
+              ) : null}
+
+              {item.total_per_day ? (
+                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--bg)", borderRadius: 6 }}>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.35rem" }}>Daily Capacity</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                    Limit: <strong>{item.total_per_day}</strong> per day
+                  </div>
+                </div>
+              ) : null}
+
+              {item.is_available ? (
+                <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#ecfdf5", borderRadius: 6, fontSize: "0.8rem", color: "#166534", fontWeight: 600 }}>
+                  ✓ Available for ordering
+                </div>
+              ) : (
+                <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#fee2e2", borderRadius: 6, fontSize: "0.8rem", color: "#991b1b", fontWeight: 600 }}>
+                  ✕ Not available
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

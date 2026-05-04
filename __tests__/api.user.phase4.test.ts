@@ -197,8 +197,10 @@ describe("POST /api/cart/check", () => {
     menuQB.in = jest.fn().mockResolvedValueOnce({
       data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Thali", is_meal: true, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
-    // No existing orders for this slot
-    ordersQB.not = jest.fn().mockResolvedValueOnce({ data: [], error: null });
+    // No existing orders for this slot (called twice: once in getMenuItemUsageForToday, once in getSlotAvailabilityUsage)
+    ordersQB.not = jest.fn()
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
 
     const res = await cartCheckPOST(reqBody({
       canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM",
@@ -220,10 +222,11 @@ describe("POST /api/cart/check", () => {
     menuQB.in = jest.fn().mockResolvedValueOnce({
       data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Samosa", is_meal: false, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
-    // 45 existing orders → at cap
-    ordersQB.not = jest.fn().mockResolvedValueOnce({
-      data: Array.from({ length: 45 }, (_, i) => ({ id: `o${i}` })), error: null,
-    });
+    // 45 existing orders → at cap (called twice: once in getMenuItemUsageForToday, once in getSlotAvailabilityUsage)
+    const existingOrders = Array.from({ length: 45 }, (_, i) => ({ id: `o${i}` }));
+    ordersQB.not = jest.fn()
+      .mockResolvedValueOnce({ data: existingOrders, error: null })
+      .mockResolvedValueOnce({ data: existingOrders, error: null });
 
     const res = await cartCheckPOST(reqBody({
       canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM",

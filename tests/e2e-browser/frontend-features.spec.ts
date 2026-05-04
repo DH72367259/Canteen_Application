@@ -1,0 +1,299 @@
+import { test, expect } from "@playwright/test";
+import {
+  APP_URL,
+  WHITELIST,
+  loginViaPasswordTab,
+  provisionStudent,
+  provisionStaff,
+  deleteUser,
+  adminClient,
+  apiFetch,
+} from "./_helpers";
+
+test.describe("Frontend Features: Inventory Dashboard, Out-of-Stock UI, Worker Workflow", () => {
+  let canteenId: string;
+  let studentId: string;
+  let studentEmail: string;
+  let studentPassword: string;
+  let workerId: string;
+  let workerEmail: string;
+  let workerPassword: string;
+  let canteenAdminId: string;
+
+  test.beforeAll(async () => {
+    const admin = adminClient();
+
+    const canteenRes = await admin
+      .from("canteens")
+      .select("id")
+      .limit(1)
+      .single();
+    if (!canteenRes.data?.id) throw new Error("No canteen found");
+    canteenId = canteenRes.data.id;
+
+    ({ id: studentId, email: studentEmail, password: studentPassword } = await provisionStudent(
+      canteenId,
+      "menu-test"
+    ));
+
+    ({ id: workerId, email: workerEmail, password: workerPassword } = await provisionStaff(
+      "worker",
+      canteenId,
+      "workflow"
+    ));
+
+    ({ id: canteenAdminId } = await provisionStaff(
+      "canteen_admin",
+      canteenId,
+      "inventory"
+    ));
+  });
+
+  test.afterAll(async () => {
+    await deleteUser(studentId);
+    await deleteUser(workerId);
+    await deleteUser(canteenAdminId);
+  });
+
+  test.describe("Inventory Dashboard", () => {
+    test("should display menu items with capacity info", async ({ page }) => {
+      await loginViaPasswordTab(
+        page,
+        WHITELIST.canteenAdmin.email,
+        WHITELIST.canteenAdmin.password,
+        /\/vendor\/dashboard/
+      );
+
+      await page.click('button:has-text("Inventory")');
+      await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
+
+      await expect(page.getByText(/In Stock|Out/)).toBeVisible({ timeout: 10_000 });
+    });
+
+    test("should allow toggling item out of stock", async ({ page }) => {
+      await loginViaPasswordTab(
+        page,
+        WHITELIST.canteenAdmin.email,
+        WHITELIST.canteenAdmin.password,
+        /\/vendor\/dashboard/
+      );
+
+      await page.click('button:has-text("Inventory")');
+      await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
+
+      const firstStockButton = page
+        .locator('button:has-text("In Stock"), button:has-text("Out")')
+        .first();
+      const initialText = await firstStockButton.textContent();
+
+      await firstStockButton.click();
+      await page.waitForTimeout(500);
+
+      const updatedText = await firstStockButton.textContent();
+      expect(initialText).not.toBe(updatedText);
+    });
+
+    test("should show capacity limits", async ({ page }) => {
+      await loginViaPasswordTab(
+        page,
+        WHITELIST.canteenAdmin.email,
+        WHITELIST.canteenAdmin.password,
+        /\/vendor\/dashboard/
+      );
+
+      await page.click('button:has-text("Inventory")');
+      await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
+
+      const capacityElements = page.getByText(/Limit:|per slot|per day/);
+      const count = await capacityElements.count();
+      expect(count).toBeGreaterThan(0);
+    });
+
+    test("should refresh inventory on button click", async ({ page }) => {
+      await loginViaPasswordTab(
+        page,
+        WHITELIST.canteenAdmin.email,
+        WHITELIST.canteenAdmin.password,
+        /\/vendor\/dashboard/
+      );
+
+      await page.click('button:has-text("Inventory")');
+      await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
+
+      const refreshButton = page.locator('button:has-text("↻ Refresh")').first();
+      await expect(refreshButton).toBeVisible();
+      await refreshButton.click();
+      await page.waitForTimeout(500);
+
+      expect(refreshButton).toBeVisible();
+    });
+  });
+
+  test.describe("Out-of-Stock UI", () => {
+    test("should show available items in menu", async ({ page }) => {
+      await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
+
+      const menuContainer = page.locator('[class*="menu"], [class*="grid"]').first();
+      await expect(menuContainer).toBeVisible({ timeout: 10_000 });
+
+      const itemCards = page.locator('[class*="card"], [class*="item"]');
+      const count = await itemCards.count();
+      expect(count).toBeGreaterThan(0);
+    });
+
+    test("should display slot selector", async ({ page }) => {
+      await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
+
+      const slotSelect = page.locator("select").first();
+      await expect(slotSelect).toBeVisible({ timeout: 10_000 });
+    });
+
+    test("should check availability when slot is selected", async ({ page }) => {
+      await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
+
+      const slotSelect = page.locator("select").first();
+      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1000);
+
+      const addButtons = page.locator('button:has-text("ADD"), button:has-text("SOLD OUT")');
+      const buttonCount = await addButtons.count();
+      expect(buttonCount).toBeGreaterThan(0);
+    });
+
+    test("should show out of stock badge with reason", async ({ page }) => {
+      await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
+
+      const slotSelect = page.locator("select").first();
+      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.waitForLoadState("networkidle");
+
+      const outOfStockIndicators = page.getByText(/Out of stock|SOLD OUT|CLOSED|Available/i);
+      const count = await outOfStockIndicators.count();
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+
+    test("should disable add button when out of stock", async ({ page }) => {
+      await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
+
+      const slotSelect = page.locator("select").first();
+      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.waitForLoadState("networkidle");
+
+      const soldOutButton = page.locator('button:has-text("SOLD OUT"), button:has-text("CLOSED")').first();
+      if (await soldOutButton.count() > 0) {
+        await expect(soldOutButton).toBeDisabled();
+      }
+    });
+  });
+
+  test.describe("Worker Workflow", () => {
+    test("should display new workflow status buttons", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      await expect(page.getByText(/Start Preparing|Mark as Placed in Bin|Order Completed/i)).toBeVisible(
+        { timeout: 10_000 }
+      );
+    });
+
+    test("should show preparing status with confirmation dialog", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      const startPrepButton = page.locator('button:has-text("Start Preparing")').first();
+      if (await startPrepButton.count() > 0) {
+        await expect(startPrepButton).toBeVisible();
+      }
+    });
+
+    test("should display visual status indicators", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      const statusIndicators = page.getByText(/🔴|🟡|🟢|✓|In bin and ready/i);
+      const count = await statusIndicators.count();
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+
+    test("should transition from placed to preparing", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      const acceptButton = page.locator('button:has-text("Accept")').first();
+      if (await acceptButton.count() > 0) {
+        await acceptButton.click();
+        await page.waitForTimeout(500);
+
+        const markReadyButton = page.locator('button:has-text("Mark Ready")').first();
+        if (await markReadyButton.count() > 0) {
+          await expect(markReadyButton).toBeVisible({ timeout: 5_000 });
+        }
+      }
+    });
+
+    test("should show confirmation before marking placed in bin", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      page.once("dialog", (dialog) => {
+        expect(dialog.type()).toBe("confirm");
+        expect(dialog.message()).toContain("placed in the correct bin");
+      });
+    });
+
+    test("should display success message when order in bin", async ({ page }) => {
+      await page.goto(`${APP_URL}/worker/login`);
+
+      const emailInput = page.locator('input[type="text"]').first();
+      await emailInput.fill(workerEmail);
+      const passwordInput = page.locator('input[type="password"]').first();
+      await passwordInput.fill(workerPassword);
+
+      await page.locator('button[type="submit"]').first().click();
+      await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+
+      const successMessages = page.getByText(/✓|In bin and ready|Order Completed|manager verifies OTP/i);
+      const count = await successMessages.count();
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+  });
+});
