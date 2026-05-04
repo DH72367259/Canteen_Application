@@ -3,15 +3,15 @@
  * Reduces database queries by 97% for high-traffic endpoints
  */
 
-import { Redis } from "@upstash/redis";
+import { createClient } from "redis";
 
-let redis: Redis | null = null;
+let redis: ReturnType<typeof createClient> | null = null;
 
 /**
  * Get or initialize Redis client
  * Uses REDIS_URL from environment (set by Railway)
  */
-export function getRedisClient(): Redis | null {
+export async function getRedisClient() {
   if (!process.env.REDIS_URL) {
     console.warn("⚠️  REDIS_URL not set - caching disabled");
     return null;
@@ -20,9 +20,14 @@ export function getRedisClient(): Redis | null {
   if (redis) return redis;
 
   try {
-    redis = new Redis({
+    redis = createClient({
       url: process.env.REDIS_URL,
     });
+
+    redis.on("error", (err) => console.error("❌ Redis error:", err));
+    redis.on("connect", () => console.log("✅ Redis client connected"));
+
+    await redis.connect();
     console.log("✅ Redis client initialized");
     return redis;
   } catch (e) {
@@ -40,7 +45,7 @@ export async function withCache<T>(
   ttlSeconds: number,
   fetcher: () => Promise<T>
 ): Promise<T> {
-  const client = getRedisClient();
+  const client = await getRedisClient();
 
   // If Redis disabled, fetch directly
   if (!client) {
@@ -52,7 +57,7 @@ export async function withCache<T>(
     const cached = await client.get(key);
     if (cached) {
       console.log(`✓ Cache hit: ${key}`);
-      return JSON.parse(cached as string);
+      return JSON.parse(cached);
     }
   } catch (e) {
     console.warn(`⚠️  Cache get failed for ${key}:`, e);
@@ -65,9 +70,7 @@ export async function withCache<T>(
 
   // Store in cache
   try {
-    await client.set(key, JSON.stringify(data), {
-      ex: ttlSeconds,
-    });
+    await client.setEx(key, ttlSeconds, JSON.stringify(data));
     console.log(`✓ Cached: ${key} (TTL: ${ttlSeconds}s)`);
   } catch (e) {
     console.warn(`⚠️  Cache set failed for ${key}:`, e);
@@ -82,7 +85,7 @@ export async function withCache<T>(
  * Call after updates to keep cache fresh
  */
 export async function invalidateCache(key: string): Promise<void> {
-  const client = getRedisClient();
+  const client = await getRedisClient();
   if (!client) return;
 
   try {
@@ -97,11 +100,11 @@ export async function invalidateCache(key: string): Promise<void> {
  * Invalidate multiple cache keys
  */
 export async function invalidateCaches(keys: string[]): Promise<void> {
-  const client = getRedisClient();
+  const client = await getRedisClient();
   if (!client) return;
 
   try {
-    await Promise.all(keys.map((k) => client!.del(k)));
+    await client.del(keys);
     console.log(`✓ Cache invalidated: ${keys.join(", ")}`);
   } catch (e) {
     console.warn(`⚠️  Batch cache invalidation failed:`, e);
@@ -112,11 +115,11 @@ export async function invalidateCaches(keys: string[]): Promise<void> {
  * Clear all cache (use with caution!)
  */
 export async function clearAllCache(): Promise<void> {
-  const client = getRedisClient();
+  const client = await getRedisClient();
   if (!client) return;
 
   try {
-    await client.flushdb();
+    await client.flushDb();
     console.log(`✓ All cache cleared`);
   } catch (e) {
     console.warn(`⚠️  Clear cache failed:`, e);
