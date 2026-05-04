@@ -81,3 +81,60 @@ export async function getMenuItemUsageForToday(
 
   return out;
 }
+
+export interface SlotAvailabilityUsage {
+  batchedPreparedUsed: number;
+  madeToOrderUsed: number;
+}
+
+export async function getSlotAvailabilityUsage(
+  supabase: ReturnType<typeof createAdminClient>,
+  canteenId: string,
+  slotLabel: string,
+): Promise<SlotAvailabilityUsage> {
+  const out: SlotAvailabilityUsage = { batchedPreparedUsed: 0, madeToOrderUsed: 0 };
+
+  const { data: orders, error: ordersErr } = await supabase
+    .from("orders")
+    .select("id, slot_label")
+    .eq("canteen_id", canteenId)
+    .eq("slot_label", slotLabel)
+    .gte("created_at", istDayStartIso())
+    .not("status", "in", '("cancelled","refunded")');
+  if (ordersErr || !orders || orders.length === 0) return out;
+
+  const orderIds = orders.map((o) => o.id as string);
+
+  const { data: itemRows, error: itemErr } = await supabase
+    .from("order_items")
+    .select("order_id, menu_item_id, quantity")
+    .in("order_id", orderIds);
+  if (itemErr || !itemRows) return out;
+
+  const menuItemIds = [...new Set(itemRows.map((r) => String(r.menu_item_id ?? "")))].filter(Boolean);
+  if (menuItemIds.length === 0) return out;
+
+  const { data: menuItems, error: menuErr } = await supabase
+    .from("menu_items")
+    .select("id, availability_type")
+    .in("id", menuItemIds);
+  if (menuErr || !menuItems) return out;
+
+  const typeMap = new Map(
+    menuItems.map((m) => [String(m.id), (m.availability_type ?? "slot_based") as string])
+  );
+
+  for (const row of itemRows) {
+    const itemId = String(row.menu_item_id ?? "");
+    const quantity = Number(row.quantity ?? 0);
+    const type = typeMap.get(itemId) ?? "slot_based";
+
+    if (type === "batched_prepared") {
+      out.batchedPreparedUsed += quantity;
+    } else {
+      out.madeToOrderUsed += quantity;
+    }
+  }
+
+  return out;
+}

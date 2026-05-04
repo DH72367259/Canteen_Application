@@ -5,7 +5,7 @@ import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, computeSlotCapacity, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
-import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
+import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
 import { claimFreeBinsAtomic } from "@/lib/atomicBinClaim";
 
 export const dynamic = "force-dynamic";
@@ -193,7 +193,33 @@ export async function POST(req: NextRequest) {
   // via computeSlotCapacity (75% rule). Canteen managers control this through
   // the Slot & Bin Control panel — changing max_bins changes the cap in real time.
   const maxBins          = Number(sc?.max_bins) || 60;
-  const { maxOrdersPerSlot } = computeSlotCapacity(maxBins);
+  const { maxOrdersPerSlot, batchedPreparedCap, madeToOrderCap } = computeSlotCapacity(maxBins);
+
+  // ── MADE-TO-ORDER vs BATCHED-PREPARED SPLIT (enforce slot-level caps) ────
+  // The 75% maxOrdersPerSlot is split: 70% for batched/prepared, 30% for made-to-order.
+  // Enforce this split so concurrent orders can't exhaust one type.
+  if (slotLabel) {
+    const slotUsage = await getSlotAvailabilityUsage(supabase, canteenId, String(slotLabel));
+    const thisMadeToOrder = cartLines.filter((l) => {
+      const item = menuMap.get(l.itemId);
+      return item && (item.availability_type ?? "slot_based") === "slot_based";
+    }).reduce((sum, l) => sum + l.quantity, 0);
+    const thisBatchedPrepared = cartLines.filter((l) => {
+      const item = menuMap.get(l.itemId);
+      return item && (item.availability_type ?? "slot_based") === "batched_prepared";
+    }).reduce((sum, l) => sum + l.quantity, 0);
+
+    if (slotUsage.madeToOrderUsed + thisMadeToOrder > madeToOrderCap) {
+      return Response.json({
+        error: `Made-to-order capacity full for this slot (${madeToOrderCap} total). Try a different time slot.`,
+      }, { status: 409 });
+    }
+    if (slotUsage.batchedPreparedUsed + thisBatchedPrepared > batchedPreparedCap) {
+      return Response.json({
+        error: `Batched item capacity full for this slot (${batchedPreparedCap} total). Try a different time slot.`,
+      }, { status: 409 });
+    }
+  }
 
   const todayIST = new Date(new Date().getTime() + 330 * 60_000)
     .toISOString()

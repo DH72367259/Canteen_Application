@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { getRequestContext } from "@/lib/authServer";
 import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
-import { getMenuItemUsageForToday } from "@/lib/menuItemCapacity";
+import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
 
 export const dynamic = "force-dynamic";
 
@@ -195,6 +195,27 @@ export async function POST(request: Request) {
   const slotOrdersUsed = existingOrders.length;
   const slotFull = slotOrdersUsed >= capacity.maxOrdersPerSlot;
 
+  // Check made-to-order vs batched-prepared split
+  let slotFullByType = false;
+  let availabilityMessage = "";
+  if (!slotFull && slot) {
+    const slotUsage = await getSlotAvailabilityUsage(supabase, canteen_id, slot);
+    const thisMadeToOrder = cartLines
+      .filter((l) => menuById.get(l.itemId)?.availability_type !== "batched_prepared")
+      .reduce((sum, l) => sum + l.quantity, 0);
+    const thisBatchedPrepared = cartLines
+      .filter((l) => menuById.get(l.itemId)?.availability_type === "batched_prepared")
+      .reduce((sum, l) => sum + l.quantity, 0);
+
+    if (slotUsage.madeToOrderUsed + thisMadeToOrder > capacity.madeToOrderCap) {
+      slotFullByType = true;
+      availabilityMessage = `Made-to-order capacity full for this slot`;
+    } else if (slotUsage.batchedPreparedUsed + thisBatchedPrepared > capacity.batchedPreparedCap) {
+      slotFullByType = true;
+      availabilityMessage = `Batched item capacity full for this slot`;
+    }
+  }
+
   // 4. Compute bin plan with this canteen's per-bin settings
   const binPlan = assignBins(
     cartLines,
@@ -204,9 +225,10 @@ export async function POST(request: Request) {
   );
 
   return Response.json({
-    slot_available: !slotFull,
-    slot_full: slotFull,
+    slot_available: !slotFull && !slotFullByType,
+    slot_full: slotFull || slotFullByType,
     slot_orders_used: slotOrdersUsed,
+    availability_message: availabilityMessage,
     slot_capacity: capacity,
     bin_plan: binPlan,
     requires_extra_bin: binPlan.bins.length > 1,
