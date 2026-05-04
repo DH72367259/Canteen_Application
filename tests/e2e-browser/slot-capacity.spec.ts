@@ -236,7 +236,7 @@ test.afterAll(async () => {
   }
 
   await deleteUser(studentId);
-}, { timeout: 60_000 });
+});
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
