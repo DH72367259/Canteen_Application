@@ -179,6 +179,16 @@ describe("settlement accounting regressions", () => {
   it("weekly report preserves historical charge snapshots instead of current platform settings", async () => {
     mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
 
+    // Test that historical snapshot is used, not current platform charges
+    // Current charges: 0%, but payment snapshot is 5%
+    const snapshotChargePct = 5;
+    const snapshotGstPct = 18;
+    const orderGross = 100;
+    const expectedPlatformFee = Math.round((orderGross * snapshotChargePct / 100) * 100) / 100;
+    const expectedGstFee = Math.round((expectedPlatformFee * snapshotGstPct / 100) * 100) / 100;
+    const expectedTotalPlatformEarnings = Math.round((expectedPlatformFee + expectedGstFee) * 100) / 100;
+    const expectedNetPayable = Math.round((orderGross - expectedPlatformFee - expectedGstFee) * 100) / 100;
+
     ordersQB = makeQB({
       data: [
         {
@@ -186,7 +196,7 @@ describe("settlement accounting regressions", () => {
           canteen_id: "c-1",
           user_id: "u-1",
           payment_id: "pay_old_1",
-          total_amount: 100,
+          total_amount: orderGross,
           status: "collected",
           created_at: "2026-05-04T10:00:00Z",
           extra_bin_fee_paise: 0,
@@ -194,11 +204,13 @@ describe("settlement accounting regressions", () => {
       ],
       error: null,
     });
-    orderItemsQB = makeQB({ data: [{ order_id: "o-legacy", quantity: 1, unit_price: 100 }], error: null });
+    orderItemsQB = makeQB({ data: [{ order_id: "o-legacy", quantity: 1, unit_price: orderGross }], error: null });
+    // Current platform charges: 0% (not used because snapshot exists)
     platformChargesQB = makeQB({ data: [{ charge_pct: 0, flat_charge: 0, gst_pct: 18, id: "pc-2" }], error: null });
+    // Payment snapshot: 5% (this is what gets used)
     paymentsQB = makeQB({
       data: [
-        { order_id: "o-legacy", charge_pct_snapshot: 2, flat_charge_snapshot: 0, gst_pct_snapshot: 18, status: "captured" },
+        { order_id: "o-legacy", charge_pct_snapshot: snapshotChargePct, flat_charge_snapshot: 0, gst_pct_snapshot: snapshotGstPct, status: "captured" },
       ],
       error: null,
     });
@@ -207,10 +219,11 @@ describe("settlement accounting regressions", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
 
-    expect(json.totals.platform_fee).toBe(2);
-    expect(json.totals.gst_on_fee).toBe(0.36);
-    expect(json.totals.total_platform_earnings).toBe(2.36);
-    expect(json.totals.net_payable).toBe(97.64);
+    // Verify snapshot was used (5%), not current charges (0%)
+    expect(json.totals.platform_fee).toBe(expectedPlatformFee);
+    expect(json.totals.gst_on_fee).toBe(expectedGstFee);
+    expect(json.totals.total_platform_earnings).toBe(expectedTotalPlatformEarnings);
+    expect(json.totals.net_payable).toBe(expectedNetPayable);
   });
 
   it("canteen earnings rejects malformed or reversed date ranges", async () => {

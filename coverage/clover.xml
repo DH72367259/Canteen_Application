@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1777897549988" clover="3.2.0">
-  <project timestamp="1777897549988" name="All files">
+<coverage generated="1777897623151" clover="3.2.0">
+  <project timestamp="1777897623151" name="All files">
     <metrics statements="3675" coveredstatements="1101" conditionals="4966" coveredconditionals="1102" methods="487" coveredmethods="162" elements="9128" coveredelements="2365" complexity="0" loc="3675" ncloc="3675" packages="65" files="85" classes="85"/>
     <package name="app.api.admin.canteen-bank">
       <metrics statements="27" coveredstatements="0" conditionals="32" coveredconditionals="0" methods="2" coveredmethods="0"/>
