@@ -38,11 +38,6 @@ const STATUS_STEPS: { key: OrderStatus; label: string; emoji: string }[] = [
 
 function statusIndex(s: OrderStatus) { return STATUS_STEPS.findIndex(step => step.key === s); }
 
-const BIN_COLORS: Record<string, string> = {
-  red: "#ef4444", blue: "#3b82f6", green: "#22c55e",
-  yellow: "#eab308", purple: "#a855f7", orange: "#f97316",
-};
-
 export default function OrderTrackingPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -91,7 +86,6 @@ export default function OrderTrackingPage() {
   const isCancelled  = order.status === "cancelled";
   const isCollected  = order.status === "collected";
   const showBin      = ["placed_in_bin", "ready_for_pickup", "collected"].includes(order.status);
-  const binColor     = BIN_COLORS[order.bin_color ?? "orange"] ?? "#f97316";
 
   return (
     <div className="app-shell">
@@ -136,24 +130,18 @@ export default function OrderTrackingPage() {
           </div>
         )}
 
-        {showBin && order.bin_number && (
-          <div style={{ background: binColor, borderRadius: 16, padding: "1.25rem", textAlign: "center", color: "#fff" }}>
-            <div style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.9 }}>Your Bin</div>
-            <div style={{ fontSize: "3.5rem", fontWeight: 900, lineHeight: 1 }}>{order.bin_number}</div>
-            <div style={{ fontSize: "0.82rem", opacity: 0.9, marginTop: "0.25rem" }}>Collect from Bin {order.bin_number} at the pickup area</div>
-            {order.otp && !isCollected && (
-              <div style={{ marginTop: "0.75rem" }}>
-                {showOtp ? (
-                  <div style={{ background: "rgba(255,255,255,0.25)", borderRadius: 12, padding: "0.75rem" }}>
-                    <div style={{ fontSize: "0.72rem", opacity: 0.85, marginBottom: "0.25rem" }}>Show this OTP to canteen staff</div>
-                    <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: "0.4rem" }}>{order.otp}</div>
-                  </div>
-                ) : (
-                  <button onClick={() => setShowOtp(true)} style={{ background: "rgba(255,255,255,0.2)", border: "2px solid rgba(255,255,255,0.6)", borderRadius: 10, padding: "0.6rem 1.25rem", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem" }}>
-                    🔐 Show OTP
-                  </button>
-                )}
+        {showBin && order.otp && !isCollected && (
+          <div style={{ background: "#22c55e", borderRadius: 16, padding: "1.5rem", textAlign: "center", color: "#fff" }}>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "1rem" }}>🔐 Your OTP is Ready</div>
+            {showOtp ? (
+              <div style={{ background: "rgba(255,255,255,0.25)", borderRadius: 12, padding: "1rem" }}>
+                <div style={{ fontSize: "0.85rem", opacity: 0.9, marginBottom: "0.5rem" }}>Show this to canteen staff to collect your order</div>
+                <div style={{ fontSize: "3rem", fontWeight: 900, letterSpacing: "0.5rem", fontFamily: "monospace" }}>{order.otp}</div>
               </div>
+            ) : (
+              <button onClick={() => setShowOtp(true)} style={{ background: "rgba(255,255,255,0.3)", border: "2px solid rgba(255,255,255,0.7)", borderRadius: 10, padding: "0.75rem 1.5rem", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.95rem" }}>
+                📲 Reveal OTP
+              </button>
             )}
           </div>
         )}
