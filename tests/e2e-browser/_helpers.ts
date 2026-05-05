@@ -63,7 +63,11 @@ export async function loginWorkerUI(page: Page) {
   await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 }
 
-/** Provisions a student via admin SDK and returns its credentials + id. */
+/** Provisions a student via admin SDK and returns its credentials + id.
+ * NOTE: Students are NOT assigned a canteen_id in their profile. They can order from ANY canteen.
+ * The canteen they order from is determined per-order, not per-profile.
+ * @param canteenId Kept for backward compatibility but not used; students are multi-canteen.
+ */
 export async function provisionStudent(canteenId: string, suffix: string) {
   const admin = adminClient();
   const email = `e2e-${suffix}-${Date.now()}@noqx.test`;
@@ -74,8 +78,9 @@ export async function provisionStudent(canteenId: string, suffix: string) {
   });
   if (create.error) throw create.error;
   const id = create.data.user.id;
+  // Do NOT set canteen_id for students — they can order from any canteen
   await admin.from("profiles").upsert({
-    id, name: `E2E ${suffix}`, role: "user", canteen_id: canteenId,
+    id, name: `E2E ${suffix}`, role: "user",
   });
   return { id, email, password, role: "user" };
 }
