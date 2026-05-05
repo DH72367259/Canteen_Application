@@ -94,17 +94,22 @@ CREATE TRIGGER trg_profiles_updated_at
 -- TABLE: menu_items
 -- ============================================================
 CREATE TABLE public.menu_items (
-  id               uuid           PRIMARY KEY DEFAULT gen_random_uuid(),
-  canteen_id       uuid           NOT NULL REFERENCES public.canteens(id) ON DELETE CASCADE,
-  name             text           NOT NULL,
-  description      text,
-  price            numeric(10, 2) NOT NULL,
-  category         text,
-  production_type  production_type NOT NULL DEFAULT 'made_to_order',
-  image_url        text,
-  is_available     boolean        NOT NULL DEFAULT true,
-  created_at       timestamptz    NOT NULL DEFAULT now(),
-  updated_at       timestamptz    NOT NULL DEFAULT now()
+  id                   uuid           PRIMARY KEY DEFAULT gen_random_uuid(),
+  canteen_id           uuid           NOT NULL REFERENCES public.canteens(id) ON DELETE CASCADE,
+  name                 text           NOT NULL,
+  description          text,
+  price                numeric(10, 2) NOT NULL,
+  category             text,
+  production_type      production_type NOT NULL DEFAULT 'made_to_order',
+  image_url            text,
+  is_available         boolean        NOT NULL DEFAULT true,
+  is_meal              boolean        NOT NULL DEFAULT false,
+  availability_type    text           NOT NULL DEFAULT 'batched_prepared',
+  quantity_per_slot    int,
+  total_per_day        int,
+  cancelled_quantity   int            NOT NULL DEFAULT 0,
+  created_at           timestamptz    NOT NULL DEFAULT now(),
+  updated_at           timestamptz    NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_menu_items_canteen_id   ON public.menu_items(canteen_id);
@@ -146,15 +151,23 @@ CREATE TABLE public.bins (
   canteen_id        uuid        NOT NULL REFERENCES public.canteens(id) ON DELETE CASCADE,
   bin_code          text        NOT NULL,
   color             text,
+  zone_color        text,
+  bin_number        int,
   is_occupied       boolean     NOT NULL DEFAULT false,
   current_order_id  uuid,       -- FK added after orders table
+  assigned_order_id uuid,
+  status            text        NOT NULL DEFAULT 'empty' CHECK (status IN (
+    'empty','preparing','placed','picked','late_pickup','grace_bin','reserved','occupied','disabled'
+  )),
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (canteen_id, bin_code)
 );
 
-CREATE INDEX idx_bins_canteen_id  ON public.bins(canteen_id);
-CREATE INDEX idx_bins_is_occupied ON public.bins(is_occupied);
+CREATE INDEX idx_bins_canteen_id       ON public.bins(canteen_id);
+CREATE INDEX idx_bins_is_occupied      ON public.bins(is_occupied);
+CREATE INDEX idx_bins_zone_color       ON public.bins(canteen_id, zone_color, bin_number);
+CREATE INDEX idx_bins_assigned_order   ON public.bins(assigned_order_id);
 
 CREATE TRIGGER trg_bins_updated_at
   BEFORE UPDATE ON public.bins
@@ -164,35 +177,62 @@ CREATE TRIGGER trg_bins_updated_at
 -- TABLE: orders
 -- ============================================================
 CREATE TABLE public.orders (
-  id              uuid           PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         uuid           NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-  canteen_id      uuid           NOT NULL REFERENCES public.canteens(id) ON DELETE RESTRICT,
-  slot_id         uuid           REFERENCES public.time_slots(id) ON DELETE SET NULL,
-  bin_id          uuid           REFERENCES public.bins(id) ON DELETE SET NULL,
-  status          order_status   NOT NULL DEFAULT 'placed',
-  total_amount    numeric(10, 2) NOT NULL,
-  otp             text,
-  otp_expires_at  timestamptz,
-  payment_id      text,
-  payment_status  text           DEFAULT 'pending',
-  notes           text,
-  created_at      timestamptz    NOT NULL DEFAULT now(),
-  updated_at      timestamptz    NOT NULL DEFAULT now()
+  id                    uuid           PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               uuid           NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  canteen_id            uuid           NOT NULL REFERENCES public.canteens(id) ON DELETE RESTRICT,
+  slot_id               uuid           REFERENCES public.time_slots(id) ON DELETE SET NULL,
+  bin_id                uuid           REFERENCES public.bins(id) ON DELETE SET NULL,
+  status                order_status   NOT NULL DEFAULT 'placed',
+  total_amount          numeric(10, 2) NOT NULL,
+  otp                   text,
+  otp_expires_at        timestamptz,
+  payment_id            text,
+  payment_status        text           DEFAULT 'pending',
+  notes                 text,
+  slot_label            text,
+  extra_bin_fee_paise   int            NOT NULL DEFAULT 0 CHECK (extra_bin_fee_paise >= 0),
+  bin_count             int            NOT NULL DEFAULT 1 CHECK (bin_count >= 1),
+  created_at            timestamptz    NOT NULL DEFAULT now(),
+  updated_at            timestamptz    NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_orders_user_id    ON public.orders(user_id);
 CREATE INDEX idx_orders_canteen_id ON public.orders(canteen_id);
 CREATE INDEX idx_orders_status     ON public.orders(status);
 CREATE INDEX idx_orders_created_at ON public.orders(created_at DESC);
+CREATE INDEX idx_orders_slot_cap   ON public.orders(canteen_id, slot_label, created_at)
+  WHERE status NOT IN ('cancelled', 'failed', 'refunded');
 
 CREATE TRIGGER trg_orders_updated_at
   BEFORE UPDATE ON public.orders
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Circular FK: bins.current_order_id → orders
+-- Circular FKs: bins.current_order_id → orders, bins.assigned_order_id → orders
 ALTER TABLE public.bins
   ADD CONSTRAINT fk_bins_current_order
   FOREIGN KEY (current_order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+
+ALTER TABLE public.bins
+  ADD CONSTRAINT fk_bins_assigned_order
+  FOREIGN KEY (assigned_order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- TABLE: order_bins (Multi-bin order assignments)
+-- ============================================================
+CREATE TABLE public.order_bins (
+  id              uuid           PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id        uuid           NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  bin_id          uuid           REFERENCES public.bins(id) ON DELETE SET NULL,
+  bin_index       int            NOT NULL CHECK (bin_index >= 1),
+  bin_code        text,
+  bin_color       text,
+  items           jsonb          NOT NULL DEFAULT '[]'::jsonb,
+  created_at      timestamptz    NOT NULL DEFAULT now(),
+  UNIQUE (order_id, bin_index)
+);
+
+CREATE INDEX idx_order_bins_order_id ON public.order_bins(order_id);
+CREATE INDEX idx_order_bins_bin_id   ON public.order_bins(bin_id);
 
 -- ============================================================
 -- TABLE: order_items
@@ -422,6 +462,7 @@ ALTER TABLE public.menu_items          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_slots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bins                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_bins          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rewards             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reward_transactions ENABLE ROW LEVEL SECURITY;
@@ -520,6 +561,24 @@ CREATE POLICY "orders: staff updates own canteen"
 CREATE POLICY "orders: super_admin all"
   ON public.orders FOR ALL
   USING (get_my_role() = 'super_admin');
+
+-- ---- order_bins ----
+CREATE POLICY "order_bins: user reads own"
+  ON public.order_bins FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.orders o
+      WHERE o.id = order_bins.order_id
+        AND (
+          o.user_id = auth.uid()
+          OR EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = auth.uid()
+              AND p.role IN ('canteen_admin', 'vendor', 'worker', 'super_admin', 'co_admin')
+          )
+        )
+    )
+  );
 
 -- ---- order_items ----
 CREATE POLICY "order_items: user reads own"
