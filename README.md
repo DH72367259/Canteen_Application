@@ -13,13 +13,13 @@ convenience fee and get priority pickup — every order, every day.
 
 ## Latest Round (Phase 11 — Slot/Bin System Overhaul, Worker OTP Flow, Prep Summary, E2E Tests)
 
-Comprehensive overhaul of slot capacity, worker OTP verification, and test coverage. Removes the 75%/25% bin allocation split, allows all bins per slot, enhances worker verification flow, and adds comprehensive E2E test scenarios.
+Comprehensive overhaul of slot capacity, worker OTP verification, and test coverage. Removes the 75%/25% bin allocation split and implements **fully dynamic capacity calculations** where `max_orders_per_slot` automatically adjusts to whatever `max_bins` value the canteen manager sets (e.g., 72 → 60 → 40 in real-time). Also dynamically supports slot durations of 10, 15, or 20 minutes—changing these values instantly regenerates the slot schedule.
 
 ### Key Features Implemented
 
 | # | Feature | Description | Impact | Files |
 |---|---------|-------------|--------|-------|
-| **1** | **Remove 75/25 Bin Split** | All bins now available per slot (100% capacity) instead of 75% order cap. `max_orders_per_slot` now equals `max_bins` directly. | Increases slot capacity; simplifies bin allocation logic | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql), [tests/e2e-browser/slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts), [tests/e2e-browser/bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) |
+| **1** | **Remove 75/25 Bin Split** | All bins now available per slot (100% capacity). `max_orders_per_slot` automatically equals whatever `max_bins` is currently set to (72, 60, 40, etc.). When canteen manager changes `max_bins`, `max_orders_per_slot` instantly updates via PostgreSQL generated column. | Dynamic capacity adjustment; full bin utilization regardless of canteen's bin count; no hardcoded limits | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql), [tests/e2e-browser/slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts), [tests/e2e-browser/bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) |
 | **2** | **Student "Mark as Collected" Removed** | Students can no longer mark orders complete themselves. Only staff (workers/admins) can complete orders via OTP verification. Enforces proper workflow control. | Prevents student-side order completion; centralizes completion to staff | [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx) |
 | **3** | **Worker OTP Role Check** | Added "worker" role to allowed roles in OTP verification API. Allows workers to verify OTP without canteen_admin permissions. | Workers can now verify customer OTP and complete orders | [app/api/orders/[id]/verify-otp/route.ts](app/api/orders/%5Bid%5D/verify-otp/route.ts) |
 | **4** | **Worker OTP Backup Endpoint** | New `/api/orders/verify-otp` (no order ID) endpoint. Accepts `{ otp, canteen_id }`, finds matching order, marks as collected. Supports workers using backup OTP verification page. | Enables worker backup OTP page; allows OTP lookup without order ID | [app/api/orders/verify-otp/route.ts](app/api/orders/verify-otp/route.ts) |
@@ -29,6 +29,28 @@ Comprehensive overhaul of slot capacity, worker OTP verification, and test cover
 | **8** | **Student Slot Full Indicator** | Added slot selector UI in student menu showing slot status and "(Full)" badge for exhausted slots. Disabled slots prevent ordering. | Students see real-time slot availability before ordering | [app/dashboard/menu/[canteenId]/page.tsx](app/dashboard/menu/%5BcanteenId%5D/page.tsx) |
 | **9** | **Worker OTP Backup Page** | Fixed endpoint call from non-existent `/api/orders/verify-otp` (no ID) to new working endpoint. Removed unnecessary `slot_label` parameter. | Backup OTP page now functional for workers without order ID | [app/worker/otp-verify/page.tsx](app/worker/otp-verify/page.tsx) |
 | **10** | **Database Migration Phase 11** | Dropped and recreated `max_orders_per_slot`, `batched_prepared_cap`, `made_to_order_cap` columns with updated formulas. Maintains 70%/30% split for kitchen planning only. | Enables 100% bin utilization; keeps kitchen category planning | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql), [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) |
+
+### ⚠️ Critical: Dynamic Parameters
+
+**These system parameters are fully dynamic and configurable by canteen managers via the Slot & Bin Control dashboard:**
+
+| Parameter | Type | Values | Scope | Impact |
+|-----------|------|--------|-------|--------|
+| **max_bins** | Dynamic (real-time) | Any integer (40, 60, 72, etc.) | Per-canteen | `max_orders_per_slot` automatically updates via PostgreSQL generated column; no system restart required |
+| **slot_duration** | Dynamic (real-time) | 10, 15, or 20 minutes | Per-canteen | Time slots in each window (Morning/Afternoon/Evening) are regenerated; e.g., 10-min slots = 6 slots/hour, 15-min = 4 slots/hour, 20-min = 3 slots/hour |
+| **Capacity Formulas** | Auto-calculated (fixed) | `max_orders_per_slot = max_bins`, `batched_cap = FLOOR(max_bins × 0.70)`, `made_to_order_cap = FLOOR(max_bins × 0.30)` | Per-canteen | Formulas never change; calculations always reflect current `max_bins` value |
+
+**Example Scenario:**
+- Hour 1: Canteen manager sets `max_bins = 72` → capacity becomes 72 orders/slot
+- Hour 2: Same manager reduces to `max_bins = 60` → capacity instantly becomes 60 orders/slot
+- Hour 3: Manager changes `slot_duration` from 15 to 10 minutes → system regenerates all time slots (now 6 slots in each 1-hour window instead of 4)
+
+**System Behavior:**
+- ✅ No hardcoded limits anywhere
+- ✅ All capacity calculations use the CURRENT `max_bins` value
+- ✅ Slot duration changes trigger automatic slot regeneration
+- ✅ Zero downtime for capacity/duration changes
+- ✅ E2E tests fetch dynamic values instead of assuming fixed amounts
 
 ### E2E Test Coverage (New Tests Added)
 
@@ -42,8 +64,8 @@ Comprehensive overhaul of slot capacity, worker OTP verification, and test cover
 
 | Test File | Issue | Fix |
 |-----------|-------|-----|
-| [slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts) | Tests used old 75% formula (`maxBins * 0.75`) for capacity assertions | Updated all 4 occurrences to use `maxBins` directly (100% capacity) |
-| [bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) | Comment and default referenced outdated 75% (45 orders) | Updated default from 45 to 60, removed 75% comment |
+| [slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts) | Tests hardcoded old 75% formula (`maxBins * 0.75`) assuming fixed capacity | Updated all 4 occurrences to fetch current `max_bins` from database and use it directly (100% capacity, dynamic) |
+| [bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) | Comment and default assumed fixed 45 orders (old 75% of 60) | Updated to fetch `max_orders_per_slot` dynamically from `slot_control` table; removed hardcoded 45 default |
 
 ### Implementation Details
 
@@ -60,7 +82,7 @@ Comprehensive overhaul of slot capacity, worker OTP verification, and test cover
 |------|--------|-------|---------|
 | **Student** | Slot capacity unclear; could order in full slot; marked orders complete | See slot status upfront; full slots disabled; can't complete own orders | Prevents over-capacity orders; streamlined pickup flow |
 | **Worker** | Had to navigate to backup OTP page; limited OTP verification | Can enter OTP inline on orders page; backup page still available | Faster order completion; inline verification is primary workflow |
-| **Canteen Admin** | Saw 75% and 25% capacity labels (confusing); couldn't utilize full bin capacity | See "Orders per slot" label reflecting 100% capacity; understands all bins available | Clarity on bin utilization; can fully utilize physical capacity |
+| **Canteen Admin** | Saw 75% and 25% capacity labels (confusing); couldn't utilize full bin capacity; slot duration was fixed | See "Orders per slot" label reflecting 100% capacity (dynamically updated); can change `max_bins` (72→60→40) and `slot_duration` (10/15/20 min) anytime to adjust slot schedule in real-time | Full control over capacity and slot timing; instant updates without system restart |
 | **Kitchen (Prep)** | 75%/25% split for batched vs made-to-order items | 70%/30% split maintained for kitchen planning (unchanged) | Kitchen workflow unaffected; better student-facing capacity |
 
 ### Verification
@@ -68,12 +90,14 @@ Comprehensive overhaul of slot capacity, worker OTP verification, and test cover
 | Check | Result | Note |
 |-------|--------|------|
 | **Build** | ✅ Clean | No TypeScript errors |
-| **Capacity Logic** | ✅ 100% utilization | All bins now available per slot |
+| **Capacity Logic** | ✅ 100% utilization + Dynamic | All bins available per slot; `max_orders_per_slot` auto-updates when manager changes `max_bins` |
+| **Dynamic max_bins** | ✅ Functional | Canteen manager can change from 72 → 60 → 40 (or any value) instantly; all formulas update automatically |
+| **Dynamic slot_duration** | ✅ Functional | Canteen manager can change slot duration (10/15/20 min) instantly; slot schedule regenerates without restart |
 | **Worker OTP** | ✅ Functional | Both inline and backup OTP pages working |
 | **Prep Summary** | ✅ Per-slot aggregation | Shows item counts grouped by time slot |
-| **Slot Full** | ✅ Indicator working | Students see real-time slot status |
-| **E2E Tests** | ✅ 3 new + 2 fixed | All test scenarios covered |
-| **Database Migration** | ✅ Phase 11 included | SUPABASE_SETUP.sql updated with new schema |
+| **Slot Full** | ✅ Indicator working | Students see real-time slot status based on current `max_orders_per_slot` |
+| **E2E Tests** | ✅ 3 new + 2 fixed | Tests fetch dynamic values instead of hardcoding; all scenarios covered |
+| **Database Migration** | ✅ Phase 11 included | SUPABASE_SETUP.sql updated; generated columns ensure formulas always use current values |
 
 ### Deployment Instructions
 
