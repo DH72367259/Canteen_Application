@@ -82,7 +82,7 @@ async function ensureSlotLabel(canteenId: string): Promise<string> {
     .select("max_orders_per_slot")
     .eq("canteen_id", canteenId)
     .single();
-  const maxOrders = Number(sc?.max_orders_per_slot) || 45; // Default 75% of 60
+  const maxOrders = Number(sc?.max_orders_per_slot) || 60;
 
   const seed = await admin
     .from("time_slots")

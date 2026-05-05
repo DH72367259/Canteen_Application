@@ -295,7 +295,7 @@ test.describe("Slot Capacity Enforcement", () => {
       .eq("canteen_id", canteenId)
       .maybeSingle();
     const maxBins         = Number(sc?.max_bins) || 60;
-    const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
+    const maxOrdersPerSlot = maxBins;
 
     // Seed the slot to exactly full capacity via direct DB inserts.
     await seedSlotOrders(slotLabel, maxOrdersPerSlot);
@@ -322,7 +322,7 @@ test.describe("Slot Capacity Enforcement", () => {
       .eq("canteen_id", canteenId)
       .maybeSingle();
     const maxBins         = Number(sc?.max_bins) || 60;
-    const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
+    const maxOrdersPerSlot = maxBins;
 
     const labelA = `E2E-SLOTCAP-S4A-${Date.now()}`;
     const labelB = `E2E-SLOTCAP-S4B-${Date.now()}`;
@@ -354,7 +354,7 @@ test.describe("Slot Capacity Enforcement", () => {
       .eq("canteen_id", canteenId)
       .maybeSingle();
     const maxBins         = Number(sc?.max_bins) || 60;
-    const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
+    const maxOrdersPerSlot = maxBins;
 
     const slotLabel = `E2E-SLOTCAP-S5-${Date.now()}`;
 
@@ -384,7 +384,7 @@ test.describe("Slot Capacity Enforcement", () => {
       .eq("canteen_id", canteenId)
       .maybeSingle();
     const maxBins         = Number(sc?.max_bins) || 60;
-    const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
+    const maxOrdersPerSlot = maxBins;
 
     const slotLabel = `E2E-SLOTCAP-S6-${Date.now()}`;
     await seedSlotOrders(slotLabel, maxOrdersPerSlot);
@@ -427,7 +427,7 @@ test.describe("Slot Capacity Enforcement", () => {
       .eq("canteen_id", canteenId)
       .maybeSingle();
     const maxBins         = Number(sc?.max_bins) || 60;
-    const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
+    const maxOrdersPerSlot = maxBins;
 
     const slotLabel = `E2E-SLOTCAP-S7-${Date.now()}`;
 

@@ -281,6 +281,43 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
+      {/* Slot Selector */}
+      {slotOptions.length > 0 && (
+        <div style={{ padding: "0.75rem 1rem 0" }}>
+          <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.4rem", display: "block" }}>
+            Select Pickup Slot
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+            {slotOptions.map(slot => {
+              const isSelected = selectedSlot === slot.id;
+              const slotData = slotOptions.find(s => s.id === slot.id) as any;
+              const isFull = slotData?.is_full || false;
+              return (
+                <button
+                  key={slot.id}
+                  onClick={() => !isFull && setSelectedSlot(slot.id)}
+                  disabled={isFull}
+                  style={{
+                    padding: "0.5rem 0.85rem",
+                    borderRadius: 20,
+                    border: isSelected ? "2px solid var(--orange)" : isFull ? "1.5px solid #e5e7eb" : "1.5px solid var(--border)",
+                    background: isSelected ? "var(--orange-light)" : isFull ? "#f3f4f6" : "#fff",
+                    color: isSelected ? "var(--orange-dark)" : isFull ? "var(--ink-3)" : "var(--ink)",
+                    fontWeight: 600,
+                    fontSize: "0.82rem",
+                    cursor: isFull ? "not-allowed" : "pointer",
+                    opacity: isFull ? 0.6 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {slot.label} {isFull && <span style={{ marginLeft: "0.3rem", color: "#dc2626" }}>🔴 FULL</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Menu items */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem", paddingBottom: cartCount > 0 ? "8rem" : "5rem" }}>
         {currentMeal && (

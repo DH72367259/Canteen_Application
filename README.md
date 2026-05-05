@@ -11,7 +11,92 @@ convenience fee and get priority pickup — every order, every day.
 
 ---
 
-## Latest Round (Phase 8 — Complete Dynamic Configuration + Bin Allocation System + Test Fixes)
+## Latest Round (Phase 11 — Slot/Bin System Overhaul, Worker OTP Flow, Prep Summary, E2E Tests)
+
+Comprehensive overhaul of slot capacity, worker OTP verification, and test coverage. Removes the 75%/25% bin allocation split, allows all bins per slot, enhances worker verification flow, and adds comprehensive E2E test scenarios.
+
+### Key Features Implemented
+
+| # | Feature | Description | Impact | Files |
+|---|---------|-------------|--------|-------|
+| **1** | **Remove 75/25 Bin Split** | All bins now available per slot (100% capacity) instead of 75% order cap. `max_orders_per_slot` now equals `max_bins` directly. | Increases slot capacity; simplifies bin allocation logic | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql), [tests/e2e-browser/slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts), [tests/e2e-browser/bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) |
+| **2** | **Student "Mark as Collected" Removed** | Students can no longer mark orders complete themselves. Only staff (workers/admins) can complete orders via OTP verification. Enforces proper workflow control. | Prevents student-side order completion; centralizes completion to staff | [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx) |
+| **3** | **Worker OTP Role Check** | Added "worker" role to allowed roles in OTP verification API. Allows workers to verify OTP without canteen_admin permissions. | Workers can now verify customer OTP and complete orders | [app/api/orders/[id]/verify-otp/route.ts](app/api/orders/%5Bid%5D/verify-otp/route.ts) |
+| **4** | **Worker OTP Backup Endpoint** | New `/api/orders/verify-otp` (no order ID) endpoint. Accepts `{ otp, canteen_id }`, finds matching order, marks as collected. Supports workers using backup OTP verification page. | Enables worker backup OTP page; allows OTP lookup without order ID | [app/api/orders/verify-otp/route.ts](app/api/orders/verify-otp/route.ts) |
+| **5** | **Worker Orders Page OTP** | Added inline "Enter OTP to Complete" button to worker orders page. Opens modal for OTP entry instead of requiring navigation to backup page. | Streamlines worker workflow; OTP entry available on main orders page | [app/worker/orders/page.tsx](app/worker/orders/page.tsx) |
+| **6** | **Worker Dashboard Prep Summary** | Fixed API endpoint from `/api/orders?worker=true` to `/api/canteen/prep-summary`. Returns proper per-slot item aggregation. | Shows accurate per-slot item counts; fixes prep summary visibility | [app/worker/dashboard/page.tsx](app/worker/dashboard/page.tsx) |
+| **7** | **Vendor Slot Control UI** | Removed 75% capacity labels and "Buffer bins (25%)" stat card. Updated labels from "Orders / slot (75%)" to "Orders per slot". | Clarifies that all bins are available; removes outdated capacity messaging | [app/vendor/dashboard/page.tsx](app/vendor/dashboard/page.tsx) |
+| **8** | **Student Slot Full Indicator** | Added slot selector UI in student menu showing slot status and "(Full)" badge for exhausted slots. Disabled slots prevent ordering. | Students see real-time slot availability before ordering | [app/dashboard/menu/[canteenId]/page.tsx](app/dashboard/menu/%5BcanteenId%5D/page.tsx) |
+| **9** | **Worker OTP Backup Page** | Fixed endpoint call from non-existent `/api/orders/verify-otp` (no ID) to new working endpoint. Removed unnecessary `slot_label` parameter. | Backup OTP page now functional for workers without order ID | [app/worker/otp-verify/page.tsx](app/worker/otp-verify/page.tsx) |
+| **10** | **Database Migration Phase 11** | Dropped and recreated `max_orders_per_slot`, `batched_prepared_cap`, `made_to_order_cap` columns with updated formulas. Maintains 70%/30% split for kitchen planning only. | Enables 100% bin utilization; keeps kitchen category planning | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql), [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) |
+
+### E2E Test Coverage (New Tests Added)
+
+| Test Suite | Scenarios Covered | Files |
+|-----------|-----------------|-------|
+| **Worker OTP Verification** | Inline OTP entry on orders page, backup OTP page verification, invalid OTP rejection, sequential order completion | [tests/e2e-browser/worker-otp-verification.spec.ts](tests/e2e-browser/worker-otp-verification.spec.ts) |
+| **Slot Full Indicator** | Student menu shows slot availability, full slots display "FULL" badge, full slots disabled, UI prevents full-slot ordering | [tests/e2e-browser/slot-full-indicator.spec.ts](tests/e2e-browser/slot-full-indicator.spec.ts) |
+| **Prep Summary** | Worker dashboard shows prep tab, items grouped by slot, accurate per-slot counts | [tests/e2e-browser/prep-summary.spec.ts](tests/e2e-browser/prep-summary.spec.ts) |
+
+### Test Fixes Applied
+
+| Test File | Issue | Fix |
+|-----------|-------|-----|
+| [slot-capacity.spec.ts](tests/e2e-browser/slot-capacity.spec.ts) | Tests used old 75% formula (`maxBins * 0.75`) for capacity assertions | Updated all 4 occurrences to use `maxBins` directly (100% capacity) |
+| [bin-allocation-permutations.spec.ts](tests/e2e-browser/bin-allocation-permutations.spec.ts) | Comment and default referenced outdated 75% (45 orders) | Updated default from 45 to 60, removed 75% comment |
+
+### Implementation Details
+
+| Component | Change | Files |
+|-----------|--------|-------|
+| **Database** | Phase 11 migration with new capacity formulas; updated `max_orders_per_slot = max_bins` | [supabase/migrations/phase11_remove_75_cap.sql](supabase/migrations/phase11_remove_75_cap.sql) |
+| **API Routes** | New OTP endpoint for backup page; worker role added to verification; improved order completion | [app/api/orders/verify-otp/route.ts](app/api/orders/verify-otp/route.ts), [app/api/orders/[id]/verify-otp/route.ts](app/api/orders/%5Bid%5D/verify-otp/route.ts) |
+| **Frontend Components** | Removed student completion button; added worker inline OTP modal; slot selector with full indicators; prep summary API fix | [app/dashboard/order-status/page.tsx](app/dashboard/order-status/page.tsx), [app/worker/orders/page.tsx](app/worker/orders/page.tsx), [app/dashboard/menu/[canteenId]/page.tsx](app/dashboard/menu/%5BcanteenId%5D/page.tsx) |
+| **E2E Tests** | 3 new test suites covering worker OTP, slot full indicator, prep summary; 2 test fixes for capacity formulas | [tests/e2e-browser/worker-otp-verification.spec.ts](tests/e2e-browser/worker-otp-verification.spec.ts), [tests/e2e-browser/slot-full-indicator.spec.ts](tests/e2e-browser/slot-full-indicator.spec.ts), [tests/e2e-browser/prep-summary.spec.ts](tests/e2e-browser/prep-summary.spec.ts) |
+
+### User Workflows Affected
+
+| Role | Before | After | Benefit |
+|------|--------|-------|---------|
+| **Student** | Slot capacity unclear; could order in full slot; marked orders complete | See slot status upfront; full slots disabled; can't complete own orders | Prevents over-capacity orders; streamlined pickup flow |
+| **Worker** | Had to navigate to backup OTP page; limited OTP verification | Can enter OTP inline on orders page; backup page still available | Faster order completion; inline verification is primary workflow |
+| **Canteen Admin** | Saw 75% and 25% capacity labels (confusing); couldn't utilize full bin capacity | See "Orders per slot" label reflecting 100% capacity; understands all bins available | Clarity on bin utilization; can fully utilize physical capacity |
+| **Kitchen (Prep)** | 75%/25% split for batched vs made-to-order items | 70%/30% split maintained for kitchen planning (unchanged) | Kitchen workflow unaffected; better student-facing capacity |
+
+### Verification
+
+| Check | Result | Note |
+|-------|--------|------|
+| **Build** | ✅ Clean | No TypeScript errors |
+| **Capacity Logic** | ✅ 100% utilization | All bins now available per slot |
+| **Worker OTP** | ✅ Functional | Both inline and backup OTP pages working |
+| **Prep Summary** | ✅ Per-slot aggregation | Shows item counts grouped by time slot |
+| **Slot Full** | ✅ Indicator working | Students see real-time slot status |
+| **E2E Tests** | ✅ 3 new + 2 fixed | All test scenarios covered |
+| **Database Migration** | ✅ Phase 11 included | SUPABASE_SETUP.sql updated with new schema |
+
+### Deployment Instructions
+
+1. **Apply Database Migration**: Run Phase 11 migration against Supabase:
+   ```sql
+   -- Run in Supabase SQL Editor
+   ALTER TABLE public.slot_control
+     DROP COLUMN IF EXISTS max_orders_per_slot,
+     DROP COLUMN IF EXISTS batched_prepared_cap,
+     DROP COLUMN IF EXISTS made_to_order_cap;
+
+   ALTER TABLE public.slot_control
+     ADD COLUMN max_orders_per_slot int GENERATED ALWAYS AS (max_bins) STORED,
+     ADD COLUMN batched_prepared_cap int GENERATED ALWAYS AS (FLOOR(max_bins * 0.70)::int) STORED,
+     ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.70)::int) STORED;
+   ```
+
+2. **Build & Deploy**: Standard deployment with no code changes beyond Phase 11 changes
+3. **Verify**: Test worker OTP verification and student slot full indicator in staging
+
+---
+
+## Previous Round (Phase 8 — Complete Dynamic Configuration + Bin Allocation System + Test Fixes)
 
 Implements a **fully dynamic configuration system** where canteen admins control every numeric parameter via the "Slot & Bin Control" dashboard in real-time. Also introduces a **new 12-bins-per-zone bin allocation system** and fixes all 22 failing CI Playwright E2E tests.
 
