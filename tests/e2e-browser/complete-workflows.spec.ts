@@ -18,6 +18,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
   let workerId: string;
   let workerEmail: string;
   let workerPassword: string;
+  let createdOrderId: string = "";
 
   test.beforeAll(async () => {
     const admin = adminClient();
@@ -37,9 +38,29 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
 
     ({ id: workerId, email: workerEmail, password: workerPassword } =
       await provisionStaff("worker", canteenId, "complete-workflow"));
+
+    // Create a test order for worker UI tests
+    const order = await admin.from("orders").insert({
+      user_id: studentId,
+      canteen_id: canteenId,
+      total_amount: 500,
+      status: "confirmed",
+      slot_label: "E2E-WORKFLOW-TEST",
+      otp: "1234",
+    }).select().single();
+    if (order.data?.id) {
+      createdOrderId = order.data.id;
+    }
   });
 
   test.afterAll(async () => {
+    const admin = adminClient();
+    if (createdOrderId) {
+      await admin.from("order_bins").delete().eq("order_id", createdOrderId);
+      await admin.from("payments").delete().eq("order_id", createdOrderId);
+      await admin.from("order_items").delete().eq("order_id", createdOrderId);
+      await admin.from("orders").delete().eq("id", createdOrderId);
+    }
     await deleteUser(studentId);
     await deleteUser(workerId);
   });

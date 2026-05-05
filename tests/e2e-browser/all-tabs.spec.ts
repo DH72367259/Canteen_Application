@@ -105,7 +105,7 @@ test.describe("co_admin: every sidebar tab", () => {
 // MANAGER (canteen_admin) — every sidebar tab on /vendor/dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe("canteen_admin (manager): every sidebar tab", () => {
-  test("walks all 11 vendor tabs without errors", async ({ page }) => {
+  test("walks all vendor tabs without errors", async ({ page }) => {
     const watch = attachWatchers(page);
     await loginViaPasswordTab(
       page, WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password,
@@ -114,9 +114,9 @@ test.describe("canteen_admin (manager): every sidebar tab", () => {
     await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
     const tabs: RegExp[] = [
-      /Live Orders/, /Prep Summary/, /Menu & Items/, /Slot and Bin Control/,
-      /Time Slots/, /Bin Management/, /Sales/, /Earnings & Payouts/,
-      /Logs/, /Settings/, /Raise a Concern/,
+      /Live Orders/, /Prep Summary/, /Menu & Items/, /Inventory/,
+      /Slot and Bin Control/, /Time Slots/, /Bin Management/, /Sales/,
+      /Earnings & Payouts/, /Logs/, /Settings/, /Raise a Concern/,
     ];
     for (const tab of tabs) {
       await clickSidebarTab(page, tab);

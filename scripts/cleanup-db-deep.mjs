@@ -19,6 +19,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
+// Whitelist accounts to preserve (NEVER delete)
 const KEEP_EMAILS = [
   'admin@noqx.test',
   'canteen1@noqx.test',
@@ -28,82 +29,142 @@ const KEEP_EMAILS = [
 ];
 
 async function cleanup() {
-  console.log('🧹 Deep cleanup - removing orphaned orders...\n');
+  console.log('🧹 Deep cleanup - comprehensive reset\n');
 
   try {
-    // Get profiles to delete
+    // ── Step 1: Delete ALL orders and dependencies ─────────────────────────────
+    console.log('🗑️  Deleting ALL orders and dependencies...');
+
+    // Get all orders to clean
+    const { data: allOrders } = await supabase
+      .from('orders')
+      .select('id');
+    const allOrderIds = (allOrders || []).map(o => o.id);
+    console.log(`   Found ${allOrderIds.length} orders to delete`);
+
+    if (allOrderIds.length > 0) {
+      // Delete in dependency order (FK constraints)
+      await supabase.from('order_bins').delete().in('order_id', allOrderIds);
+      console.log(`   ✓ Deleted order_bins`);
+
+      await supabase.from('payments').delete().in('order_id', allOrderIds);
+      console.log(`   ✓ Deleted payments`);
+
+      await supabase.from('order_items').delete().in('order_id', allOrderIds);
+      console.log(`   ✓ Deleted order_items`);
+
+      await supabase.from('orders').delete().in('id', allOrderIds);
+      console.log(`   ✓ Deleted orders`);
+    }
+
+    // ── Step 2: Free ALL bins ──────────────────────────────────────────────────
+    console.log('\n🔓 Freeing ALL bins...');
+    const { data: allBins } = await supabase
+      .from('bins')
+      .select('id')
+      .or('is_occupied.eq.true,order_id.neq.null,assigned_order_id.neq.null');
+
+    const binIds = (allBins || []).map(b => b.id);
+    if (binIds.length > 0) {
+      await supabase.from('bins').update({
+        is_occupied: false,
+        order_id: null,
+        assigned_order_id: null,
+        status: 'empty',
+        updated_at: new Date().toISOString(),
+      }).in('id', binIds);
+      console.log(`   ✓ Freed ${binIds.length} bins`);
+    } else {
+      console.log('   ✓ All bins already empty');
+    }
+
+    // ── Step 3: Delete E2E-prefixed time slots ──────────────────────────────────
+    console.log('\n🗑️  Deleting E2E-prefixed time slots...');
+    const { data: testSlots } = await supabase
+      .from('time_slots')
+      .select('id')
+      .or('slot_name.ilike.%E2E-%');
+
+    const testSlotIds = (testSlots || []).map(s => s.id);
+    if (testSlotIds.length > 0) {
+      await supabase.from('time_slots').delete().in('id', testSlotIds);
+      console.log(`   ✓ Deleted ${testSlotIds.length} E2E test slots`);
+    } else {
+      console.log('   ✓ No E2E test slots found');
+    }
+
+    // ── Step 4: Delete non-whitelist auth users ────────────────────────────────
+    console.log('\n🗑️  Deleting non-whitelist auth users...');
+    let deletedCount = 0;
+    let pageNumber = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      // Paginate through auth users (limit 1000 per page)
+      const { data: { users }, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+
+      if (listError) {
+        console.log(`   ⚠️  Error listing users: ${listError.message}`);
+        break;
+      }
+
+      for (const user of users) {
+        const userEmail = (user.email || '').toLowerCase();
+
+        // Skip whitelist users
+        if (KEEP_EMAILS.includes(userEmail)) {
+          console.log(`   ✓ Keeping ${userEmail}`);
+          continue;
+        }
+
+        // Delete non-whitelist users
+        try {
+          await supabase.auth.admin.deleteUser(user.id);
+          deletedCount++;
+        } catch (err) {
+          console.log(`   ⚠️  Failed to delete ${userEmail}: ${err.message}`);
+        }
+      }
+
+      // If we got fewer than 1000 users, there are no more pages
+      hasMore = users.length === 1000;
+      pageNumber++;
+    }
+
+    console.log(`   ✓ Deleted ${deletedCount} non-whitelist auth users`);
+
+    // ── Step 5: Delete non-whitelist profiles ──────────────────────────────────
+    console.log('\n🗑️  Deleting non-whitelist profiles...');
     const { data: allProfiles } = await supabase
       .from('profiles')
       .select('id, email');
-    
-    const toDeleteIds = allProfiles
-      .filter(p => !KEEP_EMAILS.includes(p.email))
-      .map(p => p.id);
-    
-    console.log(`Profiles to clean: ${toDeleteIds.length}`);
 
-    // Delete orders for those users
-    for (const userId of toDeleteIds) {
-      console.log(`\n🔍 Cleaning user: ${userId}`);
-      
-      // Get orders
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('user_id', userId);
-      
-      console.log(`   Found ${orders?.length || 0} orders`);
-      
-      if (orders && orders.length > 0) {
-        const orderIds = orders.map(o => o.id);
-        
-        // Delete order_bins
-        await supabase.from('order_bins').delete().in('order_id', orderIds);
-        console.log(`   ✓ Deleted order_bins`);
-        
-        // Delete payments
-        await supabase.from('payments').delete().in('order_id', orderIds);
-        console.log(`   ✓ Deleted payments`);
-        
-        // Delete order_items
-        await supabase.from('order_items').delete().in('order_id', orderIds);
-        console.log(`   ✓ Deleted order_items`);
-        
-        // Delete orders
-        await supabase.from('orders').delete().eq('user_id', userId);
-        console.log(`   ✓ Deleted orders`);
-      }
-      
-      // Now delete the profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
-      
-      if (profileError) {
-        console.log(`   ❌ Failed to delete profile: ${profileError.message}`);
-      } else {
-        console.log(`   ✓ Deleted profile`);
-      }
+    const nonWhitelistProfiles = (allProfiles || []).filter(p =>
+      !KEEP_EMAILS.includes((p.email || '').toLowerCase())
+    );
+
+    const toDeleteIds = nonWhitelistProfiles.map(p => p.id);
+    if (toDeleteIds.length > 0) {
+      await supabase.from('profiles').delete().in('id', toDeleteIds);
+      console.log(`   ✓ Deleted ${toDeleteIds.length} non-whitelist profiles`);
+    } else {
+      console.log('   ✓ No non-whitelist profiles to delete');
     }
 
-    // Final verification
-    console.log('\n✅ Final check - Remaining users:');
-    const { data: finalProfiles } = await supabase
+    // ── Step 6: Verify cleanup ─────────────────────────────────────────────────
+    console.log('\n✅ Verification - Remaining whitelist users:');
+    const { data: remaining } = await supabase
       .from('profiles')
       .select('email, role')
       .order('email');
-    
-    console.log(`\nTotal: ${finalProfiles.length} users\n`);
-    finalProfiles.forEach((p, i) => {
-      const isKeep = KEEP_EMAILS.includes(p.email);
-      const checkmark = isKeep ? '✓' : '❌';
-      console.log(`   ${checkmark} ${p.email} (${p.role})`);
+
+    remaining?.forEach((p, i) => {
+      console.log(`   ${i + 1}. ${p.email} (${p.role})`);
     });
 
-    console.log('\n🎉 Cleanup complete!');
+    console.log('\n🎉 Deep cleanup complete! Database reset to baseline.');
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error('❌ Error during cleanup:', error.message);
     process.exit(1);
   }
 }
