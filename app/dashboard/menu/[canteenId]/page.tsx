@@ -306,26 +306,54 @@ export default function CanteenMenuPage() {
           const inCart = cart.find(c => c.id === item.id);
           const availability = itemAvailability[item.id] || { isAvailable: true, reason: "" };
           const isOutOfStock = !availability.isAvailable;
-          const opacity = isClosed || isOutOfStock ? 0.6 : 1;
+          const opacity = isClosed || isOutOfStock ? 0.65 : 1;
+
+          // Determine item state
+          let itemState: "available" | "out_of_stock" | "not_available" = "available";
+          let statusBadgeLabel = "✓ Available";
+          let statusBadgeColor = "#ecfdf5";
+          let statusBadgeTextColor = "#15803d";
+          let statusBadgeBorder = "#a7f3d0";
+          let buttonLabel = "ADD";
+          let buttonDisabled = isClosed || isOutOfStock;
+
+          if (isClosed) {
+            itemState = "not_available";
+            statusBadgeLabel = "🔒 Canteen Closed";
+            statusBadgeColor = "#fef2f2";
+            statusBadgeTextColor = "#991b1b";
+            statusBadgeBorder = "#fca5a5";
+            buttonLabel = "CLOSED";
+          } else if (isOutOfStock) {
+            if (availability.reason?.toLowerCase().includes("batched") || availability.reason?.toLowerCase().includes("made-to-order")) {
+              itemState = "not_available";
+              statusBadgeLabel = "⏰ Not Available Now";
+              statusBadgeColor = "#fef3c7";
+              statusBadgeTextColor = "#92400e";
+              statusBadgeBorder = "#fde68a";
+              buttonLabel = "NOT NOW";
+            } else {
+              itemState = "out_of_stock";
+              statusBadgeLabel = "⛔ Out of Stock";
+              statusBadgeColor = "#fee2e2";
+              statusBadgeTextColor = "#b91c1c";
+              statusBadgeBorder = "#fca5a5";
+              buttonLabel = "OUT OF STOCK";
+            }
+          }
 
           return (
             <div key={item.id} className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "center", opacity }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.15rem" }}>
                   <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{item.name}</span>
-                  {item.is_meal && <span style={{ fontSize: "0.65rem", color: "var(--orange)", fontWeight: 700 }}>MEAL</span>}
+                  {item.is_meal && <span style={{ fontSize: "0.65rem", color: "var(--orange)", fontWeight: 700 }}>🍽️ MEAL</span>}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginBottom: "0.25rem" }}>{item.description}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.25rem" }}>
-                  {isOutOfStock ? (
-                    <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}>
-                      ⛔ {availability.reason || "Out of stock"}
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, background: "#ecfdf5", color: "#15803d", border: "1px solid #a7f3d0" }}>
-                      ⚡ Available
-                    </span>
-                  )}
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: 999, background: statusBadgeColor, color: statusBadgeTextColor, border: `1px solid ${statusBadgeBorder}` }}>
+                    {statusBadgeLabel}
+                  </span>
                   {item.quantity_per_slot && (
                     <span style={{ fontSize: "0.65rem", color: "var(--ink-3)" }}>
                       Max {item.quantity_per_slot}/slot
@@ -335,9 +363,9 @@ export default function CanteenMenuPage() {
                 <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>₹{item.price}</div>
               </div>
               <div>
-                {isClosed || isOutOfStock ? (
-                  <button disabled className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem", opacity: 0.45, cursor: "not-allowed" }}>
-                    {isOutOfStock ? "SOLD OUT" : "CLOSED"}
+                {buttonDisabled ? (
+                  <button disabled className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem", opacity: 0.5, cursor: "not-allowed", color: itemState === "out_of_stock" ? "#b91c1c" : undefined }}>
+                    {buttonLabel}
                   </button>
                 ) : !inCart ? (
                   <button onClick={() => addItem(item)} className="btn btn-outline" style={{ padding: "0.35rem 0.75rem", fontSize: "0.82rem" }}>ADD</button>

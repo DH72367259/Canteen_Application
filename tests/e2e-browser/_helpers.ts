@@ -23,10 +23,10 @@ export const APP_URL       = process.env.APP_BASE_URL ?? "http://localhost:3000"
 
 /** Whitelist accounts kept by scripts/cleanup_db.mjs — safe to reuse. */
 export const WHITELIST = {
-  superAdmin:   { email: "admin@noqx.test",    password: "Admin@12345"   },
-  coAdmin:      { email: "coadmin@noqx.test",  password: "Coadmin@12345" },
-  canteenAdmin: { email: "canteen1@noqx.test", password: "Canteen@12345" },
-  worker:       { email: "worker1@noqx.test",  password: "Worker@12345"  },
+  superAdmin:   { email: "admin@noqx.test",    password: "Admin@12345",   username: "admin_user" },
+  coAdmin:      { email: "coadmin@noqx.test",  password: "Coadmin@12345", username: "coadmin_user" },
+  canteenAdmin: { email: "canteen1@noqx.test", password: "Canteen@12345", username: "canteen_admin_1" },
+  worker:       { email: "worker1@noqx.test",  password: "Worker@12345",  username: "worker_1" },
 } as const;
 
 export function adminClient(): SupabaseClient {
@@ -83,6 +83,7 @@ export async function provisionStaff(
   const admin = adminClient();
   const email = `e2e-${role}-${suffix}-${Date.now()}@noqx.test`;
   const password = role === "worker" ? "Worker@12345" : "Canteen@12345";
+  const username = `e2e_${role}_${suffix}`.toLowerCase().replace(/[^a-z0-9_]/g, "_");
   const create = await admin.auth.admin.createUser({
     email,
     password,
@@ -96,8 +97,9 @@ export async function provisionStaff(
     name: `E2E ${role} ${suffix}`,
     role,
     canteen_id: canteenId,
+    username,
   });
-  return { id, email, password };
+  return { id, email, password, username };
 }
 
 export async function deleteUser(id: string) {

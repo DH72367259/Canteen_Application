@@ -29,11 +29,11 @@ alter table public.profiles add constraint profiles_role_check
 do $$
 declare
   v_users  jsonb := '[
-    {"email":"admin@noqx.test",    "pwd":"Admin@12345",   "name":"Super Admin",    "role":"super_admin"},
-    {"email":"canteen1@noqx.test", "pwd":"Canteen@12345", "name":"Canteen One",    "role":"canteen_admin"},
-    {"email":"canteen2@noqx.test", "pwd":"Canteen@12345", "name":"Canteen Two",    "role":"canteen_admin"},
-    {"email":"worker1@noqx.test",  "pwd":"Worker@12345",  "name":"Worker One",     "role":"worker"},
-    {"email":"coadmin@noqx.test",  "pwd":"Coadmin@12345", "name":"Co Administrator","role":"co_admin"}
+    {"email":"admin@noqx.test",    "pwd":"Admin@12345",   "name":"Super Admin",    "role":"super_admin", "username":"admin_user"},
+    {"email":"canteen1@noqx.test", "pwd":"Canteen@12345", "name":"Canteen One",    "role":"canteen_admin", "username":"canteen_admin_1"},
+    {"email":"canteen2@noqx.test", "pwd":"Canteen@12345", "name":"Canteen Two",    "role":"canteen_admin", "username":"canteen_admin_2"},
+    {"email":"worker1@noqx.test",  "pwd":"Worker@12345",  "name":"Worker One",     "role":"worker", "username":"worker_1"},
+    {"email":"coadmin@noqx.test",  "pwd":"Coadmin@12345", "name":"Co Administrator","role":"co_admin", "username":"coadmin_user"}
   ]'::jsonb;
   v_row   jsonb;
   v_uid   uuid;
@@ -41,12 +41,14 @@ declare
   v_pwd   text;
   v_name  text;
   v_role  text;
+  v_username text;
 begin
   for v_row in select * from jsonb_array_elements(v_users) loop
     v_email := v_row->>'email';
     v_pwd   := v_row->>'pwd';
     v_name  := v_row->>'name';
     v_role  := v_row->>'role';
+    v_username := v_row->>'username';
 
     -- Skip if already exists
     select id into v_uid from auth.users where email = v_email;
@@ -89,9 +91,9 @@ begin
     );
 
     -- Profile row (matches the public.profiles schema in supabase-setup.sql)
-    insert into public.profiles (id, name, email, role, created_at)
-    values (v_uid, v_name, v_email, v_role, now())
-    on conflict (id) do update set name = excluded.name, role = excluded.role, email = excluded.email;
+    insert into public.profiles (id, name, email, role, username, created_at)
+    values (v_uid, v_name, v_email, v_role, v_username, now())
+    on conflict (id) do update set name = excluded.name, role = excluded.role, email = excluded.email, username = excluded.username;
 
     raise notice 'Created % as % (uid=%)', v_email, v_role, v_uid;
   end loop;
