@@ -78,7 +78,6 @@ export async function GET(
       .eq("canteen_id", id)
       .eq("is_available", true)
       .eq("is_hidden",    false)
-      .eq("is_sold_out",  false)
       .order("category", { ascending: true })
       .order("name",     { ascending: true });
     if (!error) { rows = (data ?? []) as unknown as MenuRow[]; break; }
@@ -113,26 +112,33 @@ export async function GET(
   });
 
   const items = rows
-    .filter((r) => {
+    .map(r => {
       const availType = r.availability_type ?? "slot_based";
       const slotCap = Number(r.quantity_per_slot ?? 0);
       const dayCap = Number(r.total_per_day ?? 0);
       const slotUsed = usage.slotUsed.get(r.id) ?? 0;
       const dayUsed = usage.dayUsed.get(r.id) ?? 0;
-      if (availType === "slot_based" && slotCap > 0) return slotUsed < slotCap;
-      if (availType === "batched_prepared" && dayCap > 0) return dayUsed < dayCap;
-      return true;
-    })
-    .map(r => ({
-      id:                r.id,
-      name:              r.name,
-      description:       r.description ?? "",
-      price:             Number(r.price ?? 0),
-      category:          (r.category ?? "Other").toString(),
-      image_url:         r.image_url ?? null,
-      availability_type: r.availability_type ?? "slot_based",
-      is_meal:           !!r.is_meal,
-    }));
+
+      // Determine if item is available for ordering
+      let isAvailable = true;
+      if (availType === "slot_based" && slotCap > 0) isAvailable = slotUsed < slotCap;
+      else if (availType === "batched_prepared" && dayCap > 0) isAvailable = dayUsed < dayCap;
+
+      // Mark as sold out if already flagged in DB or if capacity is exhausted
+      const isSoldOut = r.is_sold_out || !isAvailable;
+
+      return {
+        id:                r.id,
+        name:              r.name,
+        description:       r.description ?? "",
+        price:             Number(r.price ?? 0),
+        category:          (r.category ?? "Other").toString(),
+        image_url:         r.image_url ?? null,
+        availability_type: r.availability_type ?? "slot_based",
+        is_meal:           !!r.is_meal,
+        is_sold_out:       isSoldOut,
+      };
+    });
 
   // Build a unique, ordered list of category labels for the tab bar
   const categoriesSet = new Set<string>();

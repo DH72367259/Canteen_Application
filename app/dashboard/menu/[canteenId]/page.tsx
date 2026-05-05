@@ -19,6 +19,7 @@ type MenuItem = {
   availability_type?: string;
   quantity_per_slot?: number | null;
   total_per_day?: number | null;
+  image_url?: string | null;
 };
 
 type CartItem = { id: string; name: string; price: number; qty: number };
@@ -305,7 +306,10 @@ export default function CanteenMenuPage() {
         {mealFilteredItems.map(item => {
           const inCart = cart.find(c => c.id === item.id);
           const availability = itemAvailability[item.id] || { isAvailable: true, reason: "" };
-          const isOutOfStock = !availability.isAvailable;
+          // Use is_sold_out flag from server if available, otherwise rely on real-time availability
+          const isServerSoldOut = item.is_sold_out ?? false;
+          const isRealtimeSoldOut = !availability.isAvailable;
+          const isOutOfStock = isServerSoldOut || isRealtimeSoldOut;
           const opacity = isClosed || isOutOfStock ? 0.65 : 1;
 
           // Determine item state
@@ -325,7 +329,17 @@ export default function CanteenMenuPage() {
             statusBadgeBorder = "#fca5a5";
             buttonLabel = "CLOSED";
           } else if (isOutOfStock) {
-            if (availability.reason?.toLowerCase().includes("batched") || availability.reason?.toLowerCase().includes("made-to-order")) {
+            // Distinguish between manager-flagged sold out vs slot capacity exhausted
+            if (isServerSoldOut && !isRealtimeSoldOut) {
+              // Manager explicitly marked as sold out
+              itemState = "out_of_stock";
+              statusBadgeLabel = "⛔ Out of Stock";
+              statusBadgeColor = "#fee2e2";
+              statusBadgeTextColor = "#b91c1c";
+              statusBadgeBorder = "#fca5a5";
+              buttonLabel = "OUT OF STOCK";
+            } else if (isRealtimeSoldOut && !isServerSoldOut) {
+              // Slot capacity or daily cap exhausted
               itemState = "not_available";
               statusBadgeLabel = "⏰ Not Available Now";
               statusBadgeColor = "#fef3c7";
@@ -333,6 +347,7 @@ export default function CanteenMenuPage() {
               statusBadgeBorder = "#fde68a";
               buttonLabel = "NOT NOW";
             } else {
+              // Both flagged as sold out
               itemState = "out_of_stock";
               statusBadgeLabel = "⛔ Out of Stock";
               statusBadgeColor = "#fee2e2";

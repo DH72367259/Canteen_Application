@@ -17,10 +17,15 @@ import { test, expect, request as pwRequest, Page } from "@playwright/test";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 
-const env = readFileSync(".env.local", "utf8");
-for (const line of env.split("\n")) {
-  const m = line.match(/^([A-Z_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+// Load .env.local if it exists, otherwise rely on process.env (CI environment)
+try {
+  const env = readFileSync(".env.local", "utf8");
+  for (const line of env.split("\n")) {
+    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+} catch {
+  // .env.local doesn't exist — using environment variables from CI
 }
 const URL_  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
