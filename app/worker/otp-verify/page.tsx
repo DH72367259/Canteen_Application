@@ -25,11 +25,11 @@ export default function WorkerOtpVerifyPage() {
       const res = await fetch("/api/orders/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ otp, slot_label: slotLabel !== "all" ? slotLabel : undefined }),
+        body: JSON.stringify({ otp }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Verification failed");
-      setResult({ ok: true, message: data.message ?? "Order marked collected ✅", binCode: data.bin_code });
+      setResult({ ok: true, message: data.message ?? "Order marked collected ✅" });
       setOtp("");
     } catch (e: unknown) {
       setResult({ ok: false, message: e instanceof Error ? e.message : "Error" });

@@ -130,6 +130,9 @@ export default function WorkerOrdersPage() {
   const [updating, setUpdating]     = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<string>("__all__");
   const [tab, setTab]               = useState<"orders" | "prep">("orders");
+  const [otpModal, setOtpModal]     = useState<string | null>(null);
+  const [otpInput, setOtpInput]     = useState("");
+  const [otpSubmitting, setOtpSubmitting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -196,6 +199,25 @@ export default function WorkerOrdersPage() {
       });
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     } finally { setUpdating(null); }
+  }
+
+  async function verifyOtp(orderId: string) {
+    if (!session || otpInput.length < 4) return;
+    setOtpSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ otp: otpInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Verification failed");
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "collected" } : o)));
+      setOtpModal(null);
+      setOtpInput("");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Error verifying OTP");
+    } finally { setOtpSubmitting(false); }
   }
 
   // Only relevant orders: late, current, or starting within next 60 min
@@ -361,12 +383,12 @@ export default function WorkerOrdersPage() {
                       </button>
                     )}
                     {order.status === "placed_in_bin" && (
-                      <div
-                        style={{ background: "#dcfce7", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "#166534", fontWeight: 700, textAlign: "center" }}
+                      <button
+                        onClick={() => { setOtpModal(order.id); setOtpInput(""); }}
+                        style={{ background: "#dcfce7", color: "#166534", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
                       >
-                        ✓ Order Placed in Bin<br />
-                        <span style={{ fontSize: "0.75rem", opacity: 0.85 }}>Student will verify OTP and collect</span>
-                      </div>
+                        🔐 Enter OTP to Complete
+                      </button>
                     )}
                     {order.status === "ready_for_pickup" && (
                       <div
@@ -459,6 +481,96 @@ export default function WorkerOrdersPage() {
         <button className={`nav-item ${tab === "prep" ? "active" : ""}`} onClick={() => setTab("prep")}>📊<span>Prep Plan</span></button>
         <button className="nav-item" onClick={() => router.push("/worker/bins")}>🧺<span>Bins</span></button>
       </div>
+
+      {/* OTP Verification Modal */}
+      {otpModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+          }}
+          onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: "1.5rem",
+              width: "90%",
+              maxWidth: 320,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink-3)", marginBottom: "0.5rem", textTransform: "uppercase" }}>
+              Order ID: {otpModal.slice(0, 8).toUpperCase()}
+            </div>
+            <h3 style={{ margin: "0.5rem 0 1rem", fontSize: "1.1rem", fontWeight: 800 }}>Enter OTP</h3>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              value={otpInput}
+              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+              placeholder="0000"
+              autoFocus
+              disabled={otpSubmitting}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "0.8rem",
+                fontSize: "1.8rem",
+                letterSpacing: "0.3rem",
+                textAlign: "center",
+                border: "2px solid var(--border)",
+                borderRadius: 12,
+                marginBottom: "1rem",
+                fontWeight: 700,
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
+                disabled={otpSubmitting}
+                style={{
+                  flex: 1,
+                  padding: "0.7rem",
+                  border: "1.5px solid #e5e7eb",
+                  background: "#f3f4f6",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  cursor: otpSubmitting ? "not-allowed" : "pointer",
+                  opacity: otpSubmitting ? 0.5 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => verifyOtp(otpModal)}
+                disabled={otpInput.length < 4 || otpSubmitting}
+                style={{
+                  flex: 1,
+                  padding: "0.7rem",
+                  background: otpInput.length < 4 ? "#e5e7eb" : "#16a34a",
+                  color: otpInput.length < 4 ? "var(--ink-3)" : "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  cursor: otpInput.length < 4 ? "not-allowed" : "pointer",
+                }}
+              >
+                {otpSubmitting ? "Verifying..." : "Verify"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

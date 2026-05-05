@@ -331,14 +331,6 @@ export default function OrderStatusPage() {
             </div>
           )}
 
-          {/* Mark collected */}
-          <button
-            onClick={handleMarkCollected}
-            className="btn btn-primary btn-full"
-            style={{ padding: "0.9rem", fontSize: "1rem", fontWeight: 800 }}
-          >
-            ✅ Mark as Collected
-          </button>
         </div>
       </div>
     );

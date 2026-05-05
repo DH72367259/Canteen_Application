@@ -562,17 +562,16 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
   const fetchPrep = useCallback(async () => {
     if (!session) return;
     try {
-      const res  = await fetch("/api/orders?worker=true", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const res = await fetch("/api/canteen/prep-summary", { headers: { Authorization: `Bearer ${session.access_token}` } });
       const data = await res.json();
-      const orders: WorkerOrder[] = data.orders ?? [];
-      const slotMap: Record<string, Record<string, number>> = {};
-      for (const order of orders) {
-        if (!["confirmed", "preparing", "ready_for_placement"].includes(order.rawStatus ?? order.status)) continue;
-        const k = order.pickupSlot ?? order.pickup_slot ?? "Unknown";
-        if (!slotMap[k]) slotMap[k] = {};
-        for (const item of order.items) slotMap[k][item.name] = (slotMap[k][item.name] ?? 0) + item.quantity;
-      }
-      const result: PrepSlot[] = Object.entries(slotMap).map(([slot, itemMap]) => ({ slot, items: Object.entries(itemMap).map(([name, quantity]) => ({ name, quantity })).sort((a, b) => b.quantity - a.quantity) }));
+      // data.slots = [{ slot, batched: [], made_to_order: [] }, ...]
+      const result: PrepSlot[] = (data.slots ?? []).map((s: any) => {
+        const combined = [...(s.batched ?? []), ...(s.made_to_order ?? [])];
+        return {
+          slot: s.slot,
+          items: combined.sort((a: any, b: any) => b.quantity - a.quantity),
+        };
+      });
       setSlots(result);
       if (!activeSlot && result.length) setActive(result[0].slot);
     } catch { /* ignore */ }

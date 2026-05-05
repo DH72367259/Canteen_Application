@@ -2570,7 +2570,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   if (!data) return <div className="page-content"><p style={{ color: "#dc2626" }}>{error ?? "No slot control row found for this canteen."}</p></div>;
 
   const sc = data.slot_control, cap = data.capacity, win = data.windows;
-  const previewMaxOrders  = Math.floor((Number(maxBinsInput) || 0) * 0.75);
+  const previewMaxOrders  = Number(maxBinsInput) || 0;
   const previewBatched    = Math.floor(previewMaxOrders * 0.7);
   const previewMadeToOrd  = previewMaxOrders - previewBatched;
 
@@ -2589,10 +2589,9 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
 
       <div className="dashboard-grid" style={{ marginBottom: "1.5rem" }}>
         <div className="stat-card"><div className="stat-num">{cap.maxBins}</div><div className="stat-label">Max bins (editable)</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>{cap.maxOrdersPerSlot}</div><div className="stat-label">Orders / slot (75%)</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: "var(--blue)" }}>{cap.batchedPreparedCap}</div><div className="stat-label">Batched cap (70%)</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: "var(--orange)" }}>{cap.madeToOrderCap}</div><div className="stat-label">Made-to-order cap (30%)</div></div>
-        <div className="stat-card"><div className="stat-num" style={{ color: "#94a3b8" }}>{cap.bufferBins}</div><div className="stat-label">Buffer bins (25%)</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--green)" }}>{cap.maxOrdersPerSlot}</div><div className="stat-label">Orders per slot</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--blue)" }}>{cap.batchedPreparedCap}</div><div className="stat-label">Batched cap</div></div>
+        <div className="stat-card"><div className="stat-num" style={{ color: "var(--orange)" }}>{cap.madeToOrderCap}</div><div className="stat-label">Made-to-order cap</div></div>
       </div>
 
       <div className="panel" style={{ marginBottom: "1.5rem" }}>
@@ -2613,8 +2612,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           </button>
         </div>
         <p style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "0.85rem" }}>
-          Caps update automatically: <strong>{previewMaxOrders}</strong> orders/slot,{" "}
-          <strong>{previewBatched}</strong> batched, <strong>{previewMadeToOrd}</strong> made-to-order.
+          Capacity updated: <strong>{previewMaxOrders}</strong> orders per slot. For kitchen planning: <strong>{previewBatched}</strong> batched, <strong>{previewMadeToOrd}</strong> made-to-order.
         </p>
 
         <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>
