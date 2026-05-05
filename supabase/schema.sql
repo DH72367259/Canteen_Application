@@ -121,6 +121,38 @@ CREATE TRIGGER trg_menu_items_updated_at
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================
+-- TABLE: slot_control (Per-canteen dynamic configuration)
+-- ============================================================
+-- One row per canteen with all configurable capacity & timing settings.
+-- All numbers are dynamically derived from max_bins via computed columns.
+-- Canteen admins modify this via the "Slot & Bin Control" dashboard.
+CREATE TABLE public.slot_control (
+  canteen_id            uuid        PRIMARY KEY REFERENCES public.canteens(id) ON DELETE CASCADE,
+  max_bins              int         NOT NULL DEFAULT 60 CHECK (max_bins > 0),
+  slot_duration_mins    int         NOT NULL DEFAULT 15 CHECK (slot_duration_mins IN (10, 15, 20)),
+  morning_start         time        NOT NULL DEFAULT '07:00',
+  morning_end           time        NOT NULL DEFAULT '11:00',
+  afternoon_start       time        NOT NULL DEFAULT '11:30',
+  afternoon_end         time        NOT NULL DEFAULT '17:00',
+  evening_start         time        NOT NULL DEFAULT '18:00',
+  evening_end           time        NOT NULL DEFAULT '21:30',
+  grace_period_mins     int         NOT NULL DEFAULT 10 CHECK (grace_period_mins >= 0),
+  extra_bin_fee_paise   int         NOT NULL DEFAULT 200 CHECK (extra_bin_fee_paise >= 0),
+  meals_per_bin         int         NOT NULL DEFAULT 2 CHECK (meals_per_bin > 0),
+  snacks_per_bin        int         NOT NULL DEFAULT 5 CHECK (snacks_per_bin > 0),
+  -- Auto-derived from max_bins (75% rule):
+  max_orders_per_slot   int         GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int) STORED,
+  batched_prepared_cap  int         GENERATED ALWAYS AS (FLOOR(FLOOR(max_bins * 0.75) * 0.70)::int) STORED,
+  made_to_order_cap     int         GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int - FLOOR(FLOOR(max_bins * 0.75) * 0.70)::int) STORED,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_slot_control_updated_at
+  BEFORE UPDATE ON public.slot_control
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
 -- TABLE: time_slots
 -- ============================================================
 CREATE TABLE public.time_slots (
@@ -459,6 +491,7 @@ $$;
 ALTER TABLE public.profiles            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.canteens            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.menu_items          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.slot_control        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_slots          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bins                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders              ENABLE ROW LEVEL SECURITY;
@@ -509,6 +542,22 @@ CREATE POLICY "menu_items: staff manage own canteen"
 CREATE POLICY "menu_items: super_admin all"
   ON public.menu_items FOR ALL
   USING (get_my_role() = 'super_admin');
+
+-- ---- slot_control (dynamic per-canteen configuration) ----
+CREATE POLICY "slot_control: service role all"
+  ON public.slot_control FOR ALL
+  USING (auth.role() = 'service_role');
+
+CREATE POLICY "slot_control: canteen_admin reads & writes own"
+  ON public.slot_control FOR SELECT
+  USING (canteen_id = get_my_canteen_id() OR get_my_role() = 'super_admin');
+
+CREATE POLICY "slot_control: canteen_admin updates own"
+  ON public.slot_control FOR UPDATE
+  USING (
+    (canteen_id = get_my_canteen_id() AND get_my_role() = 'canteen_admin')
+    OR get_my_role() = 'super_admin'
+  );
 
 -- ---- time_slots ----
 CREATE POLICY "time_slots: anyone reads"
