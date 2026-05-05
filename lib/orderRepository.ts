@@ -119,23 +119,24 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
 }
 
 export async function createOrder(
-  order: Omit<{ id: string; uid: string; customerName: string; items: CanteenOrder["items"]; total: number; status: OrderStatus; createdAt: string; updatedAt: string }, "id" | "updatedAt">
+  order: Omit<{ id: string; uid: string; customerName: string; items: CanteenOrder["items"]; total: number; status: OrderStatus; createdAt: string; updatedAt: string }, "id" | "updatedAt">,
+  canteenId?: string
 ): Promise<CanteenOrder> {
   const supabase = createAdminClient();
 
-  // Resolve canteen_id from user profile (defaults to first canteen if not set)
-  const { data: profile } = await supabase.from("profiles").select("canteen_id").eq("id", order.uid).single();
-  let canteenId: string = profile?.canteen_id ?? "";
-  if (!canteenId) {
+  // Resolve canteen_id: use passed parameter, fallback to first canteen
+  // NOTE: Students don't have canteen_id in profile - they can order from any canteen
+  let resolvedCanteenId: string = canteenId ?? "";
+  if (!resolvedCanteenId) {
     const { data: firstCanteen } = await supabase.from("canteens").select("id").limit(1).single();
-    canteenId = firstCanteen?.id ?? "";
+    resolvedCanteenId = firstCanteen?.id ?? "";
   }
 
   const { data: row, error } = await supabase
     .from("orders")
     .insert({
       user_id:      order.uid,
-      canteen_id:   canteenId,
+      canteen_id:   resolvedCanteenId,
       total_amount: order.total,
       status:       order.status ?? "received",
     })
