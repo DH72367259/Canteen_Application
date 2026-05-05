@@ -29,10 +29,10 @@ export const APP_URL       = process.env.APP_BASE_URL ?? "http://localhost:3000"
 
 /** Whitelist accounts kept by scripts/cleanup_db.mjs — safe to reuse. */
 export const WHITELIST = {
-  superAdmin:   { email: "admin@noqx.test",    password: "Admin@12345",   username: "admin_user" },
-  coAdmin:      { email: "coadmin@noqx.test",  password: "Coadmin@12345", username: "coadmin_user" },
-  canteenAdmin: { email: "canteen1@noqx.test", password: "Canteen@12345", username: "canteen_admin_1" },
-  worker:       { email: "worker1@noqx.test",  password: "Worker@12345",  username: "worker_1" },
+  superAdmin:   { email: "admin@noqx.test",    password: "Admin@12345",   username: "admin_user", role: "super_admin" },
+  coAdmin:      { email: "coadmin@noqx.test",  password: "Coadmin@12345", username: "coadmin_user", role: "co_admin" },
+  canteenAdmin: { email: "canteen1@noqx.test", password: "Canteen@12345", username: "canteen_admin_1", role: "canteen_admin" },
+  worker:       { email: "worker1@noqx.test",  password: "Worker@12345",  username: "worker_1", role: "worker" },
 } as const;
 
 export function adminClient(): SupabaseClient {
@@ -75,9 +75,9 @@ export async function provisionStudent(canteenId: string, suffix: string) {
   if (create.error) throw create.error;
   const id = create.data.user.id;
   await admin.from("profiles").upsert({
-    id, name: `E2E ${suffix}`, role: "student", canteen_id: canteenId,
+    id, name: `E2E ${suffix}`, role: "user", canteen_id: canteenId,
   });
-  return { id, email, password };
+  return { id, email, password, role: "user" };
 }
 
 /** Provisions a worker/admin via admin SDK and returns credentials + id. */
@@ -105,7 +105,7 @@ export async function provisionStaff(
     canteen_id: canteenId,
     username,
   });
-  return { id, email, password, username };
+  return { id, email, password, username, role };
 }
 
 export async function deleteUser(id: string) {
