@@ -29,12 +29,21 @@ async function ensureFutureSlot(): Promise<string> {
   const sm = String(startMin % 60).padStart(2, "0");
   const eh = String(Math.floor(Math.min(startMin + 30, 23 * 60 + 59) / 60)).padStart(2, "0");
   const em = String(Math.min(startMin + 30, 23 * 60 + 59) % 60).padStart(2, "0");
+
+  // Fetch slot_control to get dynamic max_orders_per_slot
+  const { data: sc } = await admin
+    .from("slot_control")
+    .select("max_orders_per_slot")
+    .eq("canteen_id", CANTEEN_ID)
+    .single();
+  const maxOrders = Number(sc?.max_orders_per_slot) || 45;
+
   await admin.from("time_slots").insert({
     canteen_id: CANTEEN_ID,
     slot_name: "CAP-E2E",
     start_time: `${sh}:${sm}:00`,
     end_time: `${eh}:${em}:00`,
-    capacity: 60,
+    max_orders: maxOrders,
     is_active: true,
   });
   return "CAP-E2E";

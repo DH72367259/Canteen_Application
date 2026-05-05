@@ -78,27 +78,35 @@
 - [ ] Prefix shows zone abbreviation: RED, YEL, GRE, BLU, PUR, ORA
 - [ ] Number is 3-digit zero-padded position in zone
 
-### ✅ Dynamic Bin Count Per Zone
+### ✅ Dynamic Zone Count (Fixed 12 Bins Per Zone)
 For max_bins = N:
-- [ ] Each zone gets FLOOR(N / 6) bins
-- [ ] First (N % 6) zones get +1 bin
+- [ ] Each zone holds exactly 12 bins (FIXED)
+- [ ] Zones needed = CEIL(N / 12)
+- [ ] Last zone may have < 12 bins (remainder)
+- [ ] Only active zones are created (no empty zones)
 
 **Verify with examples**:
-- [ ] max_bins=12: Each zone gets 2 bins
-  - Red: #RED001-002
-  - Yellow: #YEL001-002
-  - (etc all zones)
+- [ ] max_bins=12: Only 1 zone needed
+  - Red: #RED001-012 (only red, no other colors)
 
-- [ ] max_bins=60: Each zone gets 10 bins
-  - Red: #RED001-010
-  - Yellow: #YEL001-010
-  - (etc)
+- [ ] max_bins=24: 2 zones needed
+  - Red: #RED001-012
+  - Yellow: #YEL001-012
 
-- [ ] max_bins=13: Red+Yellow get 3, others get 2
-  - Red: #RED001-003
-  - Yellow: #YEL001-003
-  - Green: #GRE001-002
-  - (etc)
+- [ ] max_bins=50: 5 zones needed
+  - Red: #RED001-012
+  - Yellow: #YEL001-012
+  - Green: #GRE001-012
+  - Blue: #BLU001-012
+  - Purple: #PUR001-002 (only 2 bins, not 12)
+  - Orange: NOT CREATED (not needed)
+
+- [ ] max_bins=60: 5 zones needed
+  - Red through Purple (all 12 each)
+  - Orange: NOT CREATED
+
+- [ ] max_bins=72: 6 zones needed (all colors)
+  - Red through Orange (all 12 each)
 
 ### ✅ Bin Assignment Algorithm
 - [ ] Orders assigned to bins based on item counts

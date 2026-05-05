@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Color zones for the physical bin rack — matches the PDF (page 10):
- * red, yellow, green, blue, purple, orange. Total bins are distributed
- * as evenly as possible across these zones.
+ * All available color zones for the physical bin rack (from PDF).
+ * Each zone holds exactly 12 bins. Only the zones needed for max_bins are created.
  */
-export const BIN_ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
-export type BinZone = (typeof BIN_ZONES)[number];
+export const ALL_BIN_ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
+export type BinZone = (typeof ALL_BIN_ZONES)[number];
+
+/** Bins per zone (FIXED at 12) */
+export const BINS_PER_ZONE = 12;
 
 /** 3-letter zone abbreviation used in the canonical bin code prefix. */
 export const ZONE_ABBR: Record<BinZone, string> = {
@@ -15,20 +17,48 @@ export const ZONE_ABBR: Record<BinZone, string> = {
 };
 
 /**
- * Canonical bin_code format per the revised workflow PDF (page 10):
- *   `#RED001`, `#YEL012`, `#GRE004`, etc. — `#` + 3-letter zone abbrev +
- *   3-digit zero-padded number. We use this everywhere a bin is shown to
- *   the user, worker, or vendor so "Bin 4" never collides across zones.
+ * Canonical bin_code format per the revised workflow PDF:
+ *   `#RED001` through `#RED012` (red zone has bins 1-12)
+ *   `#YEL001` through `#YEL012` (yellow zone has bins 1-12, if needed)
+ *   etc.
+ * Format: `#` + 3-letter zone abbrev + 3-digit zero-padded number (1-12)
  */
 export function binCode(zone: BinZone, n: number): string {
   return `#${ZONE_ABBR[zone]}${String(n).padStart(3, "0")}`;
 }
 
 /**
+ * Calculate how many color zones are needed for a given number of bins.
+ * Each zone holds exactly 12 bins.
+ * Examples:
+ *   total=12 → 1 zone (red only)
+ *   total=24 → 2 zones (red, yellow)
+ *   total=50 → 5 zones (red, yellow, green, blue, purple: 12+12+12+12+2)
+ *   total=60 → 5 zones (red through purple, all 12 each)
+ */
+export function zonesNeeded(total: number): number {
+  return Math.ceil(total / BINS_PER_ZONE);
+}
+
+/**
+ * Get active color zones for a given bin capacity.
+ * Only returns the zones needed.
+ */
+export function getActiveZones(total: number): BinZone[] {
+  const count = zonesNeeded(total);
+  return ALL_BIN_ZONES.slice(0, count);
+}
+
+/**
  * Idempotently provision physical bins for a canteen.
- * - Splits `total` across the six color zones as evenly as possible.
- * - Inserts only the bins that don't already exist (UNIQUE on canteen_id+bin_code),
- *   so this is safe to call repeatedly when the vendor changes max_bins.
+ * - Each color zone holds exactly 12 bins
+ * - Only creates as many zones as needed for the capacity
+ * - Inserts only the bins that don't already exist (UNIQUE on canteen_id+bin_code)
+ *
+ * Examples:
+ *   total=12:  1 zone  (red 1-12)
+ *   total=24:  2 zones (red 1-12, yellow 1-12)
+ *   total=50:  5 zones (red 1-12, yellow 1-12, green 1-12, blue 1-12, purple 1-2)
  *
  * Returns the number of newly inserted bins.
  */
@@ -38,14 +68,18 @@ export async function ensureBinsForCanteen(
   total: number,
 ): Promise<number> {
   if (!canteenId || !Number.isFinite(total) || total <= 0) return 0;
-  const zones = BIN_ZONES.length;
-  const base = Math.floor(total / zones);
-  const extra = total % zones;
 
+  const activeZones = getActiveZones(total);
   const targetCodes: { bin_code: string; color: BinZone; bin_number: number }[] = [];
-  BIN_ZONES.forEach((zone, idx) => {
-    const count = base + (idx < extra ? 1 : 0);
-    for (let n = 1; n <= count; n++) {
+
+  // For each active zone, add bins 1-12 (or partial for last zone)
+  activeZones.forEach((zone, zoneIdx) => {
+    const isLastZone = zoneIdx === activeZones.length - 1;
+    const binsInThisZone = isLastZone
+      ? (total % BINS_PER_ZONE) || BINS_PER_ZONE  // Remainder or 12 if exact
+      : BINS_PER_ZONE;
+
+    for (let n = 1; n <= binsInThisZone; n++) {
       targetCodes.push({ bin_code: binCode(zone, n), color: zone, bin_number: n });
     }
   });

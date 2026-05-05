@@ -17,21 +17,39 @@ Every numeric value is stored in the `slot_control` table and can be modified by
 **Modifiable by**: Canteen admin
 **When changed**: 
 - API recalculates `max_orders_per_slot` = FLOOR(max_bins * 0.75)
-- API regenerates bins across 6 color zones evenly
+- API regenerates bins with 12 bins per color zone
+- Only creates color zones needed (no empty zones)
 
 **Example scenarios**:
 ```
-max_bins = 12:  2 bins/zone  → #RED001-002, #YEL001-002, ...
-max_bins = 60:  10 bins/zone → #RED001-010, #YEL001-010, ...
-max_bins = 90:  15 bins/zone → #RED001-015, #YEL001-015, ...
-max_bins = 150: 25 bins/zone → #RED001-025, #YEL001-025, ...
+max_bins = 12:   1 zone needed
+  → #RED001-012 (red zone only, 12 bins)
+
+max_bins = 24:   2 zones needed  
+  → #RED001-012 (red), #YEL001-012 (yellow)
+
+max_bins = 50:   5 zones needed
+  → #RED001-012, #YEL001-012, #GRE001-012, #BLU001-012, #PUR001-002
+  → Red through Purple with red-blue having 12 each, purple having 2
+
+max_bins = 60:   5 zones needed
+  → #RED001-012, #YEL001-012, #GRE001-012, #BLU001-012, #PUR001-012
+
+max_bins = 72:   6 zones needed
+  → All 6 zones: red, yellow, green, blue, purple, orange (all 12 each)
 ```
 
 **Calculation**:
 ```
-bins_per_zone = FLOOR(max_bins / 6)
-remainder = max_bins % 6
-// First `remainder` zones get +1 bin
+BINS_PER_ZONE = 12 (FIXED)
+zones_needed = CEIL(max_bins / 12)
+active_zones = available_zones[0..zones_needed-1]
+
+For each active zone:
+  if is_last_zone:
+    bins_in_zone = max_bins % 12 or 12
+  else:
+    bins_in_zone = 12
 ```
 
 ---

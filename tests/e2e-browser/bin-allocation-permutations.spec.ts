@@ -76,6 +76,14 @@ async function ensureSlotLabel(canteenId: string): Promise<string> {
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00`;
   const slotName = `E2E-BIN-PERM-${Date.now().toString().slice(-6)}`;
 
+  // Fetch slot_control to get dynamic max_orders_per_slot
+  const { data: sc } = await admin
+    .from("slot_control")
+    .select("max_orders_per_slot")
+    .eq("canteen_id", canteenId)
+    .single();
+  const maxOrders = Number(sc?.max_orders_per_slot) || 45; // Default 75% of 60
+
   const seed = await admin
     .from("time_slots")
     .insert({
@@ -83,7 +91,7 @@ async function ensureSlotLabel(canteenId: string): Promise<string> {
       slot_name: slotName,
       start_time: fmt(startMin),
       end_time: fmt(endMin),
-      capacity: 60,
+      max_orders: maxOrders,
       is_active: true,
     })
     .select("id, slot_name")
