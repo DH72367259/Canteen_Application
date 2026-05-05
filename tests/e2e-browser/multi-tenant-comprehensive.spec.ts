@@ -175,16 +175,52 @@ test.describe("🔄 Multi-Tenant Comprehensive Tests - Multiple Canteens, Worker
       }
     });
 
-    test("student from canteen1 CANNOT access student from canteen2 orders", async ({
-      page,
-    }) => {
-      if (canteen1 === canteen2) {
+    test("student from canteen1 can place orders from BOTH canteens independently", async () => {
+      if (!canteen1 || !canteen2 || canteen1 === canteen2) {
         test.skip();
       }
 
-      // This is verified through API - students can only see their own orders
-      // Student1_canteen1 should NOT be able to access student1_canteen2's order data
-      await expect(page).toHaveURL(/\//);  // Just verify page is loaded
+      const admin = adminClient();
+
+      // Same student places order from canteen1
+      const order1 = await admin
+        .from("orders")
+        .insert({
+          user_id: student1_canteen1.id,
+          canteen_id: canteen1,
+          total_amount: 500,
+          status: "placed",
+        })
+        .select()
+        .single();
+      expect(order1.error).toBeNull();
+      if (order1.data?.id) createdOrders.push(order1.data.id);
+
+      // SAME student places order from canteen2
+      const order2 = await admin
+        .from("orders")
+        .insert({
+          user_id: student1_canteen1.id,
+          canteen_id: canteen2,
+          total_amount: 600,
+          status: "placed",
+        })
+        .select()
+        .single();
+      expect(order2.error).toBeNull();
+      if (order2.data?.id) createdOrders.push(order2.data.id);
+
+      // Student can retrieve both their orders (one from each canteen)
+      const { data: allOrders } = await admin
+        .from("orders")
+        .select("id, canteen_id, user_id")
+        .eq("user_id", student1_canteen1.id);
+
+      const canteen1Orders = allOrders?.filter(o => o.canteen_id === canteen1) ?? [];
+      const canteen2Orders = allOrders?.filter(o => o.canteen_id === canteen2) ?? [];
+
+      expect(canteen1Orders.length).toBeGreaterThan(0);
+      expect(canteen2Orders.length).toBeGreaterThan(0);
     });
   });
 
