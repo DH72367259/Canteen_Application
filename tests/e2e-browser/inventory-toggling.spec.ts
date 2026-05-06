@@ -11,7 +11,7 @@
  * 4. Availability changes don't break student's existing cart
  */
 import { test, expect } from "@playwright/test";
-import { adminClient, APP_URL } from "./_helpers";
+import { adminClient, APP_URL, loginViaPasswordTab } from "./_helpers";
 
 test.describe("Inventory Toggling & Real-time Availability", () => {
   let canteenId: string;
@@ -91,22 +91,25 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
   });
 
   test("manager can mark item as unavailable and student sees it greyed out", async ({
-    page,
     context,
   }) => {
     const admin = adminClient();
 
     // Student navigates to menu in one context
     const studentPage = await context.newPage();
+
+    // Login as student using proper auth flow
+    await loginViaPasswordTab(
+      studentPage,
+      studentEmail,
+      studentPassword,
+      /\/dashboard/
+    );
+
+    // Navigate to the menu page
     await studentPage.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login as student
-    await studentPage.fill('input[type="email"]', studentEmail);
-    await studentPage.fill('input[type="password"]', studentPassword);
-    await studentPage.locator('button:has-text("Sign In")').click();
-    await studentPage.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Verify item 1 is available (green badge)
     let item1Card = studentPage
@@ -163,15 +166,19 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .eq("id", item1Id);
 
     const studentPage = await context.newPage();
+
+    // Login as student
+    await loginViaPasswordTab(
+      studentPage,
+      studentEmail,
+      studentPassword,
+      /\/dashboard/
+    );
+
+    // Navigate to the menu page
     await studentPage.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login
-    await studentPage.fill('input[type="email"]', studentEmail);
-    await studentPage.fill('input[type="password"]', studentPassword);
-    await studentPage.locator('button:has-text("Sign In")').click();
-    await studentPage.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Verify item is out of stock
     let item1Card = studentPage
@@ -220,15 +227,19 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .eq("canteen_id", canteenId);
 
     const studentPage = await context.newPage();
+
+    // Login as student
+    await loginViaPasswordTab(
+      studentPage,
+      studentEmail,
+      studentPassword,
+      /\/dashboard/
+    );
+
+    // Navigate to the menu page
     await studentPage.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login
-    await studentPage.fill('input[type="email"]', studentEmail);
-    await studentPage.fill('input[type="password"]', studentPassword);
-    await studentPage.locator('button:has-text("Sign In")').click();
-    await studentPage.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Verify both items are available
     let item1Card = studentPage
