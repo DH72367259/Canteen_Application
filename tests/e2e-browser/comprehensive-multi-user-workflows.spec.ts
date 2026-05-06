@@ -97,7 +97,9 @@ async function ensureSlotLabel(canteenId: string, mark: string): Promise<string>
   });
   if (future) return String(future.slot_name);
 
-  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
+  // Create slot 120 minutes (2 hours) in the future to ensure plenty of buffer
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 8 * 60; // Next day 8 AM
   const endMin = Math.min(startMin + 30, 23 * 60 + 59);
   const fmt = (m: number) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00`;

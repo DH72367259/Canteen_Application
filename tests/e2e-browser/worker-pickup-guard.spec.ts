@@ -49,20 +49,21 @@ let slotIdSeeded: string | null = null;
 // Using getAccessToken from _helpers
 
 async function ensureSlot() {
-  const r = await admin.from("time_slots").select("id, slot_name, start_time").eq("canteen_id", CANTEEN_ID);
+  const r = await admin.from("time_slots").select("id, slot_name, start_time").eq("canteen_id", CANTEEN_ID).eq("is_active", true);
   const istNow = (() => { const d = new Date(); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440; })();
   const future = (r.data ?? []).find((s: { start_time: string }) => {
     const [h, m] = s.start_time.split(":").map(Number);
     return h * 60 + m - 15 > istNow;
   });
   if (future) return future.slot_name as string;
-  let startMin = istNow + 30;
-  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 + 30;
+  // Create slot 120 minutes (2 hours) in the future to ensure plenty of buffer
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 8 * 60; // Next day 8 AM
   const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
   const sm = String(startMin % 60).padStart(2, "0");
   const eh = String(Math.floor(Math.min(startMin + 30, 23*60+59) / 60)).padStart(2, "0");
   const em = String(Math.min(startMin + 30, 23*60+59) % 60).padStart(2, "0");
-  const seed = { canteen_id: CANTEEN_ID, slot_name: "PWE2E", start_time: `${sh}:${sm}:00`, end_time: `${eh}:${em}:00`, capacity: 60, is_active: true };
+  const seed = { canteen_id: CANTEEN_ID, slot_name: `PWE2E-${Date.now()}`, start_time: `${sh}:${sm}:00`, end_time: `${eh}:${em}:00`, capacity: 60, is_active: true };
   const ins = await admin.from("time_slots").insert(seed).select().single();
   if (ins.error) throw new Error(ins.error.message);
   slotIdSeeded = ins.data.id;

@@ -56,7 +56,8 @@ async function ensureFutureSlot(canteenId: string, mark: "A" | "B"): Promise<str
   });
   if (future) return String(future.slot_name);
 
-  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 8 * 60;
   const endMin = Math.min(startMin + 30, 23 * 60 + 59);
   const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
   const sm = String(startMin % 60).padStart(2, "0");

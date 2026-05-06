@@ -76,7 +76,8 @@ async function ensureSlotLabel(cidOverride?: string): Promise<string> {
   });
   if (future) return String(future.slot_name);
 
-  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 8 * 60;
   const endMin   = Math.min(startMin + 30, 23 * 60 + 59);
   const fmt = (m: number) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00`;

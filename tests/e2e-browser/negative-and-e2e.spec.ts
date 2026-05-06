@@ -22,14 +22,15 @@ const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
 
 async function ensureFutureSlot(): Promise<string> {
   const admin = adminClient();
-  const r = await admin.from("time_slots").select("slot_name, start_time").eq("canteen_id", CANTEEN_ID);
+  const r = await admin.from("time_slots").select("slot_name, start_time").eq("canteen_id", CANTEEN_ID).eq("is_active", true);
   const istNow = (() => { const d = new Date(); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440; })();
   const future = (r.data ?? []).find((s: { start_time: string }) => {
     const [h, m] = s.start_time.split(":").map(Number);
     return h * 60 + m - 15 > istNow;
   });
   if (future) return future.slot_name as string;
-  const startMin = Math.min(istNow + 30, 23 * 60 + 30);
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 8 * 60;
   const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
   const sm = String(startMin % 60).padStart(2, "0");
   const eh = String(Math.floor(Math.min(startMin + 30, 23*60+59) / 60)).padStart(2, "0");
