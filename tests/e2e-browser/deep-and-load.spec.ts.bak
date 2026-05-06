@@ -25,7 +25,12 @@ import {
 
 const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
 
-// Using getAccessToken from _helpers
+async function loginToken(email: string, password: string): Promise<string> {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(`login ${email}: ${error.message}`);
+  return data.session!.access_token;
+}
 
 // ─── A. BOUNDARY VALUE ──────────────────────────────────────────────────────
 test.describe("A. boundary value", () => {

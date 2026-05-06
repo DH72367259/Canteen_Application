@@ -19,7 +19,12 @@ import { createClient } from "@supabase/supabase-js";
 
 const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
 
-// Using getAccessToken from _helpers
+async function loginToken(email: string, password: string): Promise<string> {
+  const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(error.message);
+  return data.session!.access_token;
+}
 
 function summarise(label: string, ms: number, statuses: number[]) {
   const ok    = statuses.filter(s => s >= 200 && s < 300).length;

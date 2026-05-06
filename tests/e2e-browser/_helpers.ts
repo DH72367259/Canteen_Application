@@ -177,3 +177,22 @@ export async function apiFetch(
 
   return fetch(url, { ...init, headers });
 }
+
+/**
+ * Get an access token for a student/user via REST API password flow.
+ * Used by test suites that need to make authenticated API calls.
+ */
+export async function getAccessToken(email: string, password: string): Promise<string> {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Unknown error" }));
+    throw new Error(`Failed to get token: ${err.message || err.error_description}`);
+  }
+  const data = await res.json() as { access_token?: string };
+  if (!data.access_token) throw new Error("No access token returned");
+  return data.access_token;
+}

@@ -34,7 +34,12 @@ let studentA1: { id: string; email: string; password: string };
 let studentA2: { id: string; email: string; password: string };
 let studentB1: { id: string; email: string; password: string };
 
-// Using getAccessToken from _helpers
+async function loginToken(email: string, password: string): Promise<string> {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(`login ${email}: ${error.message}`);
+  return data.session!.access_token;
+}
 
 async function ensureFutureSlot(canteenId: string, mark: "A" | "B"): Promise<string> {
   const slots = await admin

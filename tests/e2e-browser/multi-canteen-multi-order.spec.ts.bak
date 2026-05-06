@@ -21,7 +21,12 @@ let canteenB = "";
 let seededSlotA: string | null = null;
 let seededSlotB: string | null = null;
 
-// Using getAccessToken from _helpers
+async function loginToken(email: string, password: string) {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(`login ${email}: ${error.message}`);
+  return data.session!.access_token;
+}
 
 async function ensureSlotLabel(canteenId: string): Promise<string> {
   const slots = await admin

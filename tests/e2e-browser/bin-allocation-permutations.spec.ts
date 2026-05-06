@@ -18,36 +18,17 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   APP_URL,
   SUPABASE_URL,
-  SUPABASE_ANON,
   SUPABASE_SVC,
-  WHITELIST,
   apiFetch,
   provisionStudent,
   provisionStaff,
   deleteUser,
+  getAccessToken,
 } from "./_helpers";
-
-// ── Module-level state ────────────────────────────────────────────────────────
-
-let admin: SupabaseClient;
-let canteenA = "";
-let canteenB = "";
-const seededOrderIds: string[] = [];
-const seededStudentIds: string[] = [];
-const seededSlotIds: string[] = [];
-
-// ── Shared helpers ────────────────────────────────────────────────────────────
-
-async function loginToken(email: string, password: string): Promise<string> {
-  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(`loginToken(${email}): ${error.message}`);
-  return data.session!.access_token;
-}
 
 async function ensureSlotLabel(canteenId: string): Promise<string> {
   const slots = await admin
@@ -158,7 +139,7 @@ async function placeOrder(
 async function provisionAndLogin(canteenId: string, suffix: string) {
   const s = await provisionStudent(canteenId, suffix);
   seededStudentIds.push(s.id);
-  const token = await loginToken(s.email, s.password);
+  const token = await getAccessToken(s.email, s.password);
   return { ...s, token };
 }
 
