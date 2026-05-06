@@ -185,7 +185,10 @@ export async function apiFetch(
 export async function getAccessToken(email: string, password: string): Promise<string> {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON,
+    },
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {

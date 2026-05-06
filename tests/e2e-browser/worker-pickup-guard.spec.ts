@@ -72,7 +72,10 @@ async function ensureSlot() {
 async function getAccessToken(email: string, password: string): Promise<string> {
   const res = await fetch(`${URL_}/auth/v1/token?grant_type=password`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      apikey: ANON,
+    },
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
