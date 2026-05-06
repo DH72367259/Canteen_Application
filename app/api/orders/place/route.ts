@@ -52,13 +52,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate every cart item has a string id and positive integer qty
+  // ✅ MAX 7 PER ITEM (hard limit as per requirements)
   for (const item of cartItems) {
     if (!item?.id || typeof item.id !== "string") {
       return Response.json({ error: "Invalid cart item: missing id" }, { status: 400 });
     }
     const qty = Number(item.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 50) {
-      return Response.json({ error: "Invalid quantity in cart" }, { status: 400 });
+    if (!Number.isInteger(qty) || qty < 1 || qty > 7) {
+      return Response.json({ error: "Maximum 7 of each item allowed per order" }, { status: 400 });
     }
   }
 
@@ -423,7 +424,8 @@ export async function POST(req: NextRequest) {
   let claimedBinIds: string[] = [];
   
   if (allocatedIds.length > 0) {
-    const claimResult = await claimFreeBinsAtomic(canteenId, allocatedIds, order.id, binsNeeded);
+    // ✅ CRITICAL FIX: Pass slotLabel to prevent slot A orders from stealing slot B bins
+    const claimResult = await claimFreeBinsAtomic(canteenId, allocatedIds, order.id, binsNeeded, slotLabel);
     if (!claimResult.success) {
       // Race condition: bin claiming failed. For single-bin orders, fall back to synthetic bin
       // to ensure the order succeeds even under high concurrency. Multi-bin orders must fail.

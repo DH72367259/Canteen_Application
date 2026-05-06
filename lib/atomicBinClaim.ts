@@ -24,7 +24,8 @@ export async function claimFreeBinsAtomic(
   canteenId: string,
   binIdsToAttempt: string[],
   orderId: string,
-  requiredCount: number
+  requiredCount: number,
+  slotLabel?: string  // ✅ ADD SLOT FILTERING
 ): Promise<BinClaimResult> {
   if (binIdsToAttempt.length < requiredCount) {
     return {
@@ -38,8 +39,10 @@ export async function claimFreeBinsAtomic(
 
   // Step 1: Atomically claim these N bins in a single UPDATE
   // Only bins that are still free (is_occupied=false) will be updated
+  // ✅ CRITICAL FIX: Filter by slot_label to prevent orders from different slots
+  // stealing bins from each other
   const idsToAttempt = binIdsToAttempt.slice(0, requiredCount);
-  const { error: updateError, data: updateData } = await supabase
+  let query = supabase
     .from("bins")
     .update({
       is_occupied: true,
@@ -49,7 +52,14 @@ export async function claimFreeBinsAtomic(
       updated_at: new Date().toISOString(),
     })
     .eq("canteen_id", canteenId)
-    .eq("is_occupied", false)  // Only free bins
+    .eq("is_occupied", false);  // Only free bins
+
+  // ✅ Add slot filter if provided - ensures slot A bins != slot B bins
+  if (slotLabel) {
+    query = query.eq("slot_label", slotLabel);
+  }
+
+  const { error: updateError, data: updateData } = await query
     .in("id", idsToAttempt)
     .select("id");
 
