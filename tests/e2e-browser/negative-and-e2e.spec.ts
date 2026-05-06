@@ -30,7 +30,7 @@ async function ensureFutureSlot(): Promise<string> {
   });
   if (future) return future.slot_name as string;
   let startMin = istNow + 120;
-  if (startMin >= 23 * 60 + 30) startMin = 8 * 60;
+  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30;
   const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
   const sm = String(startMin % 60).padStart(2, "0");
   const eh = String(Math.floor(Math.min(startMin + 30, 23*60+59) / 60)).padStart(2, "0");
