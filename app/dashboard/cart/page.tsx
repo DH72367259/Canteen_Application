@@ -170,7 +170,7 @@ function CartContent() {
           if (res.ok) {
             const data = await res.json();
             capacityMap[slotOption.id] = {
-              available: !data.slot_full && !data.requires_extra_bin,
+              available: !data.slot_full,
               ordersUsed: data.slot_orders_used || 0,
               maxCapacity: data.slot_capacity?.maxOrdersPerSlot || 0,
             };

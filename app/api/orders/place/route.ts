@@ -52,14 +52,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate every cart item has a string id and positive integer qty
-  // ✅ MAX 7 PER ITEM (hard limit as per requirements)
   for (const item of cartItems) {
     if (!item?.id || typeof item.id !== "string") {
       return Response.json({ error: "Invalid cart item: missing id" }, { status: 400 });
     }
     const qty = Number(item.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 7) {
-      return Response.json({ error: "Maximum 7 of each item allowed per order" }, { status: 400 });
+    if (!Number.isInteger(qty) || qty < 1) {
+      return Response.json({ error: "Invalid item quantity" }, { status: 400 });
     }
   }
 
