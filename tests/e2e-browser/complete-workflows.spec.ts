@@ -173,7 +173,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
       await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
       // Look for Prep Summary tab
-      const prepTab = page.locator('button:has-text(/prep|summary/i)').first();
+      const prepTab = page.getByText(/prep|summary/i).first();
       if (await prepTab.count() > 0) {
         await prepTab.click();
         await expect(page.getByText(/prep|summary/i)).toBeVisible({ timeout: 5_000 });
@@ -201,7 +201,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
         /\/vendor\/dashboard/
       );
 
-      const inventoryTab = page.locator('button:has-text(/inventory/i)').first();
+      const inventoryTab = page.getByText(/inventory/i).first();
       if (await inventoryTab.count() > 0) {
         await inventoryTab.click();
         await expect(page.getByText(/inventory/i)).toBeVisible({ timeout: 10_000 });
@@ -216,12 +216,12 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
         /\/vendor\/dashboard/
       );
 
-      const inventoryTab = page.locator('button:has-text(/inventory/i)').first();
+      const inventoryTab = page.getByText(/inventory/i).first();
       if (await inventoryTab.count() > 0) {
         await inventoryTab.click();
 
         // Find and click a toggle button
-        const toggleButton = page.locator('button:has-text(/in stock|out/i)').first();
+        const toggleButton = page.getByText(/in stock|out/i).first();
         if (await toggleButton.count() > 0) {
           const initialText = await toggleButton.textContent();
           await toggleButton.click();
@@ -241,7 +241,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
         /\/vendor\/dashboard/
       );
 
-      const inventoryTab = page.locator('button:has-text(/inventory/i)').first();
+      const inventoryTab = page.getByText(/inventory/i).first();
       if (await inventoryTab.count() > 0) {
         await inventoryTab.click();
 
