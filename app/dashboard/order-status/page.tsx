@@ -18,6 +18,7 @@ interface OrderData {
   status: string;
   paymentId?: string;
   total?: number;
+  createdAt?: string;
   // Phase 7: per-bin breakdown
   bins?: Array<{
     binIndex: number;
@@ -57,11 +58,13 @@ export default function OrderStatusPage() {
   const [activeOrders, setActiveOrders] = useState<OrderData[]>([]);
   const [phase, setPhase] = useState<Phase>("preparing");
   const [countdown, setCountdown] = useState(3);
+  const [cancelTimerRemaining, setCancelTimerRemaining] = useState(30);
   const [readyTime] = useState(() => {
     const d = new Date(Date.now() + 15 * 60 * 1000);
     return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
   });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load active order from localStorage
   useEffect(() => {
@@ -145,6 +148,21 @@ export default function OrderStatusPage() {
     const t = setTimeout(() => setCountdown(c => c - 1), 1_000);
     return () => clearTimeout(t);
   }, [phase, countdown, order, router, session?.user?.id]);
+
+  // Cancel timer countdown (30 seconds from order creation)
+  useEffect(() => {
+    if (phase !== "preparing" || !order?.createdAt) return;
+    const updateTimer = () => {
+      const createdTime = new Date(order.createdAt!).getTime();
+      const now = Date.now();
+      const elapsedSeconds = Math.floor((now - createdTime) / 1000);
+      const remaining = Math.max(0, 30 - elapsedSeconds);
+      setCancelTimerRemaining(remaining);
+    };
+    updateTimer();
+    cancelTimerRef.current = setInterval(updateTimer, 100);
+    return () => { if (cancelTimerRef.current) clearInterval(cancelTimerRef.current); };
+  }, [phase, order?.createdAt]);
 
   const handleMarkCollected = useCallback(async () => {
     if (!order) return;
@@ -441,12 +459,13 @@ export default function OrderStatusPage() {
           ⚠️ Order confirmed. Cancellation is not available because the canteen will prepare based on your selected slot.
         </div>
 
-        {/* Cancel button — only enabled before the prep batch starts
-            (slot_start - slot_duration). Backend re-validates the cutoff. */}
+        {/* Cancel button — only enabled within 30 seconds of order creation.
+            Backend re-validates the cutoff. */}
         <button
+          disabled={cancelTimerRemaining <= 0}
           onClick={async () => {
-            if (!order || !session?.access_token) return;
-            if (!confirm("Cancel this order? This is only possible before the canteen starts preparing your slot.")) return;
+            if (!order || !session?.access_token || cancelTimerRemaining <= 0) return;
+            if (!confirm("Cancel this order? This is only possible within 30 seconds of placing it.")) return;
             try {
               const res = await fetch(`/api/orders/${order.id}/status`, {
                 method: "PATCH",
@@ -464,9 +483,22 @@ export default function OrderStatusPage() {
               alert("Network error. Try again.");
             }
           }}
-          style={{ background: "#fff", border: "1.5px solid #ef4444", color: "#ef4444", borderRadius: 12, padding: "0.7rem 1rem", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}
+          style={{
+            background: cancelTimerRemaining <= 0 ? "#f3f4f6" : "#fff",
+            border: cancelTimerRemaining <= 0 ? "1.5px solid #d1d5db" : "1.5px solid #ef4444",
+            color: cancelTimerRemaining <= 0 ? "#9ca3af" : "#ef4444",
+            borderRadius: 12,
+            padding: "0.7rem 1rem",
+            fontSize: "0.88rem",
+            fontWeight: 700,
+            cursor: cancelTimerRemaining <= 0 ? "not-allowed" : "pointer",
+            opacity: cancelTimerRemaining <= 0 ? 0.5 : 1,
+            transition: "all 0.3s ease",
+          }}
         >
-          Cancel order
+          {cancelTimerRemaining > 0
+            ? `Cancel order (${cancelTimerRemaining}s)`
+            : "Cancellation window closed"}
         </button>
 
       </div>

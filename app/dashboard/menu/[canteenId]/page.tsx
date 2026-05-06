@@ -139,77 +139,9 @@ export default function CanteenMenuPage() {
   const hiddenByMeal = currentMeal ? visibleItems.length - mealFilteredItems.length : 0;
 
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [slotOptions, setSlotOptions] = useState<Array<{ id: string; label: string }>>([]);
-  const [itemAvailability, setItemAvailability] = useState<Record<string, { isAvailable: boolean; reason: string }>>({});
-
-  // Fetch slots and item availability
-  useEffect(() => {
-    if (!canteenId) return;
-    let cancelled = false;
-    async function fetchSlotsAndAvailability() {
-      try {
-        const res = await fetch(`/api/slots?canteenId=${encodeURIComponent(canteenId)}`);
-        const json = await res.json();
-        if (!cancelled && Array.isArray(json.slots)) {
-          setSlotOptions(json.slots);
-          const first = json.slots.find((s: any) => s.available);
-          if (first) setSelectedSlot(first.id);
-        }
-      } catch { /* ignore */ }
-    }
-    fetchSlotsAndAvailability();
-    return () => { cancelled = true; };
-  }, [canteenId]);
-
-  // Check availability for current slot
-  useEffect(() => {
-    if (!canteenId || !selectedSlot || items.length === 0) {
-      setItemAvailability({});
-      return;
-    }
-    const slotLabel = slotOptions.find(s => s.id === selectedSlot)?.label;
-    if (!slotLabel) return;
-
-    let cancelled = false;
-    async function checkAvailability() {
-      try {
-        const res = await fetch("/api/cart/check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            canteen_id: canteenId,
-            slot: slotLabel,
-            items: items.map(item => ({ id: item.id, quantity: 1 })),
-          }),
-        });
-        const json = await res.json();
-        if (!cancelled) {
-          const avail: Record<string, { isAvailable: boolean; reason: string }> = {};
-          for (const item of items) {
-            const isSoldOut = item.is_sold_out || false;
-            const isBatchedFull = item.availability_type === "batched_prepared" && json.slot_capacity &&
-              json.slot_capacity.batchedPreparedCap > 0 &&
-              json.slot_capacity.batchedPreparedCap <= (json.slot_orders_used || 0);
-            const isMadeToOrderFull = item.availability_type !== "batched_prepared" && json.slot_capacity &&
-              json.slot_capacity.madeToOrderCap > 0 &&
-              json.slot_capacity.madeToOrderCap <= (json.slot_orders_used || 0);
-
-            avail[item.id] = {
-              isAvailable: !isSoldOut && !isBatchedFull && !isMadeToOrderFull,
-              reason: isSoldOut ? "Sold out" : isBatchedFull ? "Batched orders full" : isMadeToOrderFull ? "Made-to-order full" : "",
-            };
-          }
-          setItemAvailability(avail);
-        }
-      } catch { /* ignore */ }
-    }
-    checkAvailability();
-    return () => { cancelled = true; };
-  }, [canteenId, selectedSlot, items, slotOptions]);
 
   const addItem = (item: { id: string; name: string; price: number }) => {
-    if (isClosed || !itemAvailability[item.id]?.isAvailable) return;
+    if (isClosed) return;
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
       if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
@@ -281,42 +213,6 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-      {/* Slot Selector */}
-      {slotOptions.length > 0 && (
-        <div style={{ padding: "0.75rem 1rem 0" }}>
-          <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.4rem", display: "block" }}>
-            Select Pickup Slot
-          </label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
-            {slotOptions.map(slot => {
-              const isSelected = selectedSlot === slot.id;
-              const slotData = slotOptions.find(s => s.id === slot.id) as any;
-              const isFull = slotData?.is_full || false;
-              return (
-                <button
-                  key={slot.id}
-                  onClick={() => !isFull && setSelectedSlot(slot.id)}
-                  disabled={isFull}
-                  style={{
-                    padding: "0.5rem 0.85rem",
-                    borderRadius: 20,
-                    border: isSelected ? "2px solid var(--orange)" : isFull ? "1.5px solid #e5e7eb" : "1.5px solid var(--border)",
-                    background: isSelected ? "var(--orange-light)" : isFull ? "#f3f4f6" : "#fff",
-                    color: isSelected ? "var(--orange-dark)" : isFull ? "var(--ink-3)" : "var(--ink)",
-                    fontWeight: 600,
-                    fontSize: "0.82rem",
-                    cursor: isFull ? "not-allowed" : "pointer",
-                    opacity: isFull ? 0.6 : 1,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {slot.label} {isFull && <span style={{ marginLeft: "0.3rem", color: "#dc2626" }}>🔴 FULL</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Menu items */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem", paddingBottom: cartCount > 0 ? "8rem" : "5rem" }}>
@@ -342,12 +238,9 @@ export default function CanteenMenuPage() {
         )}
         {mealFilteredItems.map(item => {
           const inCart = cart.find(c => c.id === item.id);
-          const availability = itemAvailability[item.id] || { isAvailable: true, reason: "" };
-          // Use is_sold_out flag from server if available, otherwise rely on real-time availability
           const isServerSoldOut = item.is_sold_out ?? false;
-          const isRealtimeSoldOut = !availability.isAvailable;
-          const isOutOfStock = isServerSoldOut || isRealtimeSoldOut;
-          const opacity = isClosed || isOutOfStock ? 0.65 : 1;
+          const isOutOfStock = isClosed || isServerSoldOut;
+          const opacity = isOutOfStock ? 0.65 : 1;
 
           // Determine item state
           let itemState: "available" | "out_of_stock" | "not_available" = "available";
@@ -356,7 +249,7 @@ export default function CanteenMenuPage() {
           let statusBadgeTextColor = "#15803d";
           let statusBadgeBorder = "#a7f3d0";
           let buttonLabel = "ADD";
-          let buttonDisabled = isClosed || isOutOfStock;
+          let buttonDisabled = isOutOfStock;
 
           if (isClosed) {
             itemState = "not_available";
@@ -365,33 +258,13 @@ export default function CanteenMenuPage() {
             statusBadgeTextColor = "#991b1b";
             statusBadgeBorder = "#fca5a5";
             buttonLabel = "CLOSED";
-          } else if (isOutOfStock) {
-            // Distinguish between manager-flagged sold out vs slot capacity exhausted
-            if (isServerSoldOut && !isRealtimeSoldOut) {
-              // Manager explicitly marked as sold out
-              itemState = "out_of_stock";
-              statusBadgeLabel = "⛔ Out of Stock";
-              statusBadgeColor = "#fee2e2";
-              statusBadgeTextColor = "#b91c1c";
-              statusBadgeBorder = "#fca5a5";
-              buttonLabel = "OUT OF STOCK";
-            } else if (isRealtimeSoldOut && !isServerSoldOut) {
-              // Slot capacity or daily cap exhausted
-              itemState = "not_available";
-              statusBadgeLabel = "⏰ Not Available Now";
-              statusBadgeColor = "#fef3c7";
-              statusBadgeTextColor = "#92400e";
-              statusBadgeBorder = "#fde68a";
-              buttonLabel = "NOT NOW";
-            } else {
-              // Both flagged as sold out
-              itemState = "out_of_stock";
-              statusBadgeLabel = "⛔ Out of Stock";
-              statusBadgeColor = "#fee2e2";
-              statusBadgeTextColor = "#b91c1c";
-              statusBadgeBorder = "#fca5a5";
-              buttonLabel = "OUT OF STOCK";
-            }
+          } else if (isServerSoldOut) {
+            itemState = "out_of_stock";
+            statusBadgeLabel = "⛔ Out of Stock";
+            statusBadgeColor = "#fee2e2";
+            statusBadgeTextColor = "#b91c1c";
+            statusBadgeBorder = "#fca5a5";
+            buttonLabel = "OUT OF STOCK";
           }
 
           return (

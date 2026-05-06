@@ -104,10 +104,10 @@ function BottomNav({ tab, onChange }: { tab: string; onChange: (t: "orders" | "b
     { id: "prep"   as const, icon: "📊", label: "Prep Summary" },
   ];
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1px solid #e2e8f0", display: "flex", zIndex: 30, boxShadow: "0 -4px 12px rgba(0,0,0,0.08)" }}>
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1px solid #e2e8f0", display: "flex", zIndex: 30, boxShadow: "0 -4px 12px rgba(0,0,0,0.08)", gap: "0.5rem", padding: "0.5rem" }}>
       {items.map(item => (
-        <button key={item.id} onClick={() => onChange(item.id)} style={{ flex: 1, padding: "0.65rem 0.25rem 0.5rem", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", color: tab === item.id ? "#f97316" : "#94a3b8", fontWeight: tab === item.id ? 700 : 500, fontSize: "0.68rem" }}>
-          <span style={{ fontSize: "1.3rem" }}>{item.icon}</span>{item.label}
+        <button key={item.id} onClick={() => onChange(item.id)} style={{ flex: 1, padding: "1rem 0.5rem", background: tab === item.id ? "#fef3c7" : "none", border: tab === item.id ? "2px solid #f97316" : "1px solid #e2e8f0", borderRadius: 12, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem", color: tab === item.id ? "#f97316" : "#94a3b8", fontWeight: tab === item.id ? 700 : 500, fontSize: "0.8rem", transition: "all 0.2s ease" }}>
+          <span style={{ fontSize: "1.6rem" }}>{item.icon}</span>{item.label}
         </button>
       ))}
     </div>

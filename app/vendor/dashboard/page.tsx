@@ -354,10 +354,10 @@ export default function VendorDashboard() {
     }
   }, [session?.access_token, fetchOrders]);
 
-  // Auto-refresh every 30 seconds (reduced from 5s to lower DB load at scale)
+  // Auto-refresh every 2 seconds for real-time bin availability display
   useEffect(() => {
     void fetchOrders();
-    refreshRef.current = setInterval(fetchOrders, 30_000);
+    refreshRef.current = setInterval(fetchOrders, 2_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
   }, [fetchOrders]);
 
@@ -2598,8 +2598,13 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
         <h3 style={{ marginTop: 0 }}>Adjust capacity</h3>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-            <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Max bins</span>
-            <input type="number" min={1} value={maxBinsInput} onChange={e => setMaxBinsInput(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8, width: 120 }} />
+            <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Max bins per slot</span>
+            <select value={maxBinsInput} onChange={e => setMaxBinsInput(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8, width: 140 }}>
+              <option value="">Select bins...</option>
+              {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(n => (
+                <option key={n} value={String(n)}>{n} bins</option>
+              ))}
+            </select>
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
             <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Slot duration (min)</span>
