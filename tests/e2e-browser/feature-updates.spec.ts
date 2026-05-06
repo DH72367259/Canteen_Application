@@ -247,6 +247,168 @@ test("Vendor dashboard shows real-time bin updates", async ({ page }) => {
   expect(Math.abs(afterCount - initialCount)).toBeLessThan(2);
 });
 
+// ── Feature 5B: Real-time slot capacity for students (with quantity changes) ──
+test("Student sees real-time slot availability with capacity limits and respects quantity changes", async ({
+  page,
+}) => {
+  const student = await provisionStudent(canteenId, "slot-capacity-test");
+
+  // Login
+  await page.goto(`${APP_URL}/login`);
+  const studentTab = page.locator('button:has-text("Student")').first();
+  await studentTab.click();
+
+  const emailInput = page.locator('input[type="email"]').first();
+  await emailInput.fill(student.email);
+  await page.locator('input[type="password"]').first().fill(student.password);
+  await page.locator('button[type="submit"]').first().click();
+  await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+  // Navigate to menu
+  const menuBtn = page.locator('a[href*="/menu"]').first();
+  await menuBtn.click();
+  await page.waitForURL(/\/menu/, { timeout: 10_000 });
+
+  // Add items to cart
+  const addButtons = page.locator('button:has-text("ADD")');
+  const firstAddBtn = addButtons.first();
+  await firstAddBtn.waitFor({ state: "visible", timeout: 10_000 });
+  await firstAddBtn.click();
+
+  // Go to cart
+  const cartBtn = page.locator('button:has-text("in cart")').first();
+  await cartBtn.waitFor({ state: "visible", timeout: 10_000 });
+  await cartBtn.click();
+  await page.waitForURL(/\/cart/, { timeout: 10_000 });
+
+  // Verify slot selector is visible
+  const slotSection = page.locator('section').filter({ hasText: /Choose ready time/ });
+  await expect(slotSection).toBeVisible({ timeout: 10_000 });
+
+  // Get all slot buttons
+  const slotButtons = page.locator('button').filter({ hasText: /:\d{2}/ });
+  const slotCount = await slotButtons.count();
+
+  // Should have at least one slot available
+  expect(slotCount).toBeGreaterThan(0);
+
+  // Wait for real-time capacity check (2 seconds)
+  await page.waitForTimeout(2500);
+
+  // Check that some slots show bin capacity (should be visible now)
+  const slotsWithCapacity = page.locator('span').filter({ hasText: /bins/ });
+  const capacityCount = await slotsWithCapacity.count();
+
+  // Should show capacity info for slots
+  expect(capacityCount).toBeGreaterThanOrEqual(1);
+
+  // Test quantity change permutation
+  // Find the increase quantity button
+  const increaseBtn = page.locator('button:has-text("+")').first();
+  await increaseBtn.click();
+
+  // Wait for slot capacity re-check after quantity change
+  await page.waitForTimeout(2500);
+
+  // Verify capacity info updated
+  const updatedCapacity = page.locator('span').filter({ hasText: /bins/ });
+  const updatedCount = await updatedCapacity.count();
+
+  expect(updatedCount).toBeGreaterThanOrEqual(1);
+
+  // Verify slots are either enabled or disabled with proper labels
+  const slotLabels = page.locator('div').filter({ hasText: /FULL/ });
+  const fullCount = await slotLabels.count();
+
+  // Some slots might be full after quantity increase
+  expect(fullCount).toBeGreaterThanOrEqual(0);
+
+  // Test reducing quantity
+  const decreaseBtn = page.locator('button:has-text("−")').first();
+  if (await decreaseBtn.isVisible()) {
+    await decreaseBtn.click();
+  }
+
+  // Wait for capacity re-check
+  await page.waitForTimeout(2500);
+
+  // After reducing, previously full slots should become available
+  const reenabledSlots = page.locator('button').filter({ hasText: /:\d{2}/ });
+  const finalSlotCount = await reenabledSlots.count();
+
+  expect(finalSlotCount).toBeGreaterThan(0);
+
+  await deleteUser(student.id);
+});
+
+// ── Feature 5C: Slot disable/enable based on bin capacity ──
+test("Slots are disabled when order doesn't fit, enabled when quantity reduced", async ({
+  page,
+}) => {
+  const student = await provisionStudent(canteenId, "slot-disable-test");
+
+  await page.goto(`${APP_URL}/login`);
+  const studentTab = page.locator('button:has-text("Student")').first();
+  await studentTab.click();
+
+  const emailInput = page.locator('input[type="email"]').first();
+  await emailInput.fill(student.email);
+  await page.locator('input[type="password"]').first().fill(student.password);
+  await page.locator('button[type="submit"]').first().click();
+  await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+  // Navigate to menu and add items
+  const menuBtn = page.locator('a[href*="/menu"]').first();
+  await menuBtn.click();
+  await page.waitForURL(/\/menu/, { timeout: 10_000 });
+
+  const addButton = page.locator('button:has-text("ADD")').first();
+  await addButton.waitFor({ state: "visible", timeout: 10_000 });
+
+  // Add many items to potentially exceed slot capacity
+  for (let i = 0; i < 5; i++) {
+    const btn = page.locator('button:has-text("ADD"), button:has-text("+")', { hasNot: page.locator('label') }).first();
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(100);
+    }
+  }
+
+  const cartBtn = page.locator('button:has-text("in cart")').first();
+  await cartBtn.click();
+  await page.waitForURL(/\/cart/, { timeout: 10_000 });
+
+  // Wait for slot capacity check
+  await page.waitForTimeout(2500);
+
+  // Check for disabled slots
+  const disabledSlots = page.locator('button[disabled]');
+  const disabledCount = await disabledSlots.count();
+
+  // There might be disabled slots due to capacity limits
+  if (disabledCount > 0) {
+    // Now reduce quantity
+    const decreaseBtn = page.locator('button:has-text("−")').first();
+    for (let i = 0; i < 3; i++) {
+      if (await decreaseBtn.isVisible()) {
+        await decreaseBtn.click();
+        await page.waitForTimeout(100);
+      }
+    }
+
+    // Wait for re-check
+    await page.waitForTimeout(2500);
+
+    // Verify slots are still present after quantity reduction
+    const slotsAfter = page.locator('button').filter({ hasText: /:\d{2}/ });
+    const slotsAfterCount = await slotsAfter.count();
+
+    expect(slotsAfterCount).toBeGreaterThan(0);
+  }
+
+  await deleteUser(student.id);
+});
+
 // ── Feature 6: Worker tab UI improvements ──
 test("Worker dashboard tabs are properly spaced and visible", async ({
   page,

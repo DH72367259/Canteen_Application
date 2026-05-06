@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
@@ -87,6 +87,8 @@ function CartContent() {
   const [slot,        setSlot]        = useState<string | null>(null);
   const [slots,       setSlots]       = useState<SlotOption[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
+  // Real-time slot availability: maps slot.id → whether it has capacity for current cart
+  const [slotCapacity, setSlotCapacity] = useState<Record<string, { available: boolean; ordersUsed: number; maxCapacity: number }>>({});
   // Wallet / Canteen-cash payments removed from the user app per revised
   // workflow. State hooks deleted to avoid unused-variable lint errors.
   const [isPro,       setIsPro]       = useState(false);
@@ -99,6 +101,7 @@ function CartContent() {
   // when an order needs >1 bin, so the student knows about the +₹2/bin fee
   // before they're charged.
   const [showExtraBinModal, setShowExtraBinModal] = useState(false);
+  const slotCapacityRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const proStatus = localStorage.getItem("noqx_pro_active");
@@ -139,6 +142,54 @@ function CartContent() {
     const timer = setInterval(fetchSlots, 60_000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [canteenId]);
+
+  // ── Real-time slot capacity checking (2 seconds) ─────────────────────────────
+  // Check each slot to see if current cart fits. Disable slots that are full.
+  useEffect(() => {
+    if (!canteenId || cart.length === 0 || !session?.access_token) {
+      setSlotCapacity({});
+      return;
+    }
+
+    const checkSlotCapacity = async () => {
+      try {
+        const capacityMap: Record<string, { available: boolean; ordersUsed: number; maxCapacity: number }> = {};
+
+        // Check each slot for current cart
+        for (const slotOption of slots) {
+          const res = await fetch("/api/cart/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({
+              canteen_id: canteenId,
+              slot: slotOption.label,
+              items: cart.map(c => ({ id: c.id, quantity: c.qty })),
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            capacityMap[slotOption.id] = {
+              available: !data.slot_full && !data.requires_extra_bin,
+              ordersUsed: data.slot_orders_used || 0,
+              maxCapacity: data.slot_capacity?.maxOrdersPerSlot || 0,
+            };
+          }
+        }
+
+        setSlotCapacity(capacityMap);
+      } catch {
+        // Silently ignore errors, keep showing previous state
+      }
+    };
+
+    checkSlotCapacity();
+    slotCapacityRef.current = setInterval(checkSlotCapacity, 2_000);
+
+    return () => {
+      if (slotCapacityRef.current) clearInterval(slotCapacityRef.current);
+    };
+  }, [canteenId, cart, slots, session?.access_token]);
 
   // ── Pre-checkout cart check: slot fullness + extra-bin plan ────────────
   useEffect(() => {
@@ -478,13 +529,71 @@ function CartContent() {
               <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Loading slots…</span>
             ) : slots.length === 0 ? (
               <span style={{ fontSize: "0.82rem", color: "var(--orange)", fontWeight: 600 }}>No slots available right now. Check back later.</span>
-            ) : slots.map(s => (
-              <button key={s.id} disabled={!s.available} onClick={() => setSlot(s.id)}
-                style={{ padding: "0.5rem 0.9rem", borderRadius: 10, border: `1.5px solid ${slot === s.id ? "var(--orange)" : "var(--border)"}`, background: slot === s.id ? "var(--orange)" : "var(--surface)", color: slot === s.id ? "#fff" : s.available ? "var(--ink)" : "var(--ink-3)", fontWeight: 600, fontSize: "0.85rem", cursor: s.available ? "pointer" : "not-allowed", opacity: s.available ? 1 : 0.45 }}>
-                {s.label}{s.is_full && <span style={{ fontSize: "0.7rem", marginLeft: 4 }}>Full</span>}
-              </button>
-            ))}
+            ) : slots.map(s => {
+              const capacity = slotCapacity[s.id];
+              const isFull = capacity && !capacity.available;
+              const isDisabled = !s.available || isFull;
+
+              return (
+                <div key={s.id} style={{ position: "relative" }}>
+                  <button
+                    disabled={isDisabled}
+                    onClick={() => setSlot(s.id)}
+                    title={isFull ? "Not enough bins for your order" : s.label}
+                    style={{
+                      padding: "0.65rem 0.9rem",
+                      borderRadius: 10,
+                      border: `1.5px solid ${slot === s.id ? "var(--orange)" : isFull ? "#d1d5db" : "var(--border)"}`,
+                      background: slot === s.id ? "var(--orange)" : isFull ? "#f9fafb" : "var(--surface)",
+                      color: slot === s.id ? "#fff" : isFull ? "#9ca3af" : "var(--ink)",
+                      fontWeight: 600,
+                      fontSize: "0.85rem",
+                      cursor: isDisabled ? "not-allowed" : "pointer",
+                      opacity: isDisabled ? 0.5 : 1,
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "0.25rem",
+                      minWidth: "80px",
+                    }}
+                  >
+                    <span>{s.label}</span>
+                    {capacity && (
+                      <span style={{ fontSize: "0.68rem", opacity: 0.7, fontWeight: 500 }}>
+                        {capacity.ordersUsed}/{capacity.maxCapacity} bins
+                      </span>
+                    )}
+                  </button>
+                  {isFull && (
+                    <div style={{
+                      position: "absolute",
+                      top: "-20px",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      background: "#dc2626",
+                      color: "#fff",
+                      padding: "0.25rem 0.5rem",
+                      borderRadius: "4px",
+                      fontSize: "0.65rem",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      zIndex: 10,
+                    }}>
+                      FULL 🔴
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+
+          {/* Show available slots hint */}
+          {cart.length > 0 && Object.values(slotCapacity).some(c => !c.available) && (
+            <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.75rem", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, fontSize: "0.78rem", color: "#92400e" }}>
+              <strong>💡 Tip:</strong> Reduce order quantity to enable more slots. Current order doesn't fit in {Object.values(slotCapacity).filter(c => !c.available).length} slots.
+            </div>
+          )}
         </section>
 
         {/* ── Slot full / extra-bin notices ────────────────────────────── */}
