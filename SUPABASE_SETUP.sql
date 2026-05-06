@@ -114,9 +114,9 @@ ALTER TABLE public.slot_control
   DROP COLUMN IF EXISTS made_to_order_cap;
 
 ALTER TABLE public.slot_control
-  ADD COLUMN max_orders_per_slot int GENERATED ALWAYS AS (max_bins) STORED,
-  ADD COLUMN batched_prepared_cap int GENERATED ALWAYS AS (FLOOR(max_bins * 0.70)::int) STORED,
-  ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.70)::int) STORED;
+  ADD COLUMN max_orders_per_slot int GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int) STORED,
+  ADD COLUMN batched_prepared_cap int GENERATED ALWAYS AS (FLOOR(FLOOR(max_bins * 0.75)::int * 0.60)::int) STORED,
+  ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int - FLOOR(FLOOR(max_bins * 0.75)::int * 0.60)::int) STORED;
 
 -- ============================================================
 -- VERIFY SETUP

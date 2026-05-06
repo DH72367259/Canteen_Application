@@ -9,9 +9,9 @@ export interface SlotCapacity {
   maxBins: number;
   /** 75% of maxBins — total orders accepted per slot */
   maxOrdersPerSlot: number;
-  /** 70% of maxOrdersPerSlot — reserved for batched/prepared items */
+  /** 60% of maxOrdersPerSlot — reserved for batched/prepared items */
   batchedPreparedCap: number;
-  /** Remaining 30% — reserved for made-to-order items */
+  /** Remaining 40% — reserved for made-to-order items */
   madeToOrderCap: number;
   /** 25% buffer kept empty for late pickups / grace bins */
   bufferBins: number;
@@ -22,7 +22,7 @@ export function computeSlotCapacity(maxBins: number): SlotCapacity {
     throw new Error('maxBins must be a positive number');
   }
   const maxOrdersPerSlot = Math.floor(maxBins * 0.75);
-  const batchedPreparedCap = Math.floor(maxOrdersPerSlot * 0.7);
+  const batchedPreparedCap = Math.floor(maxOrdersPerSlot * 0.6);
   const madeToOrderCap = maxOrdersPerSlot - batchedPreparedCap;
   const bufferBins = maxBins - maxOrdersPerSlot;
   return {
