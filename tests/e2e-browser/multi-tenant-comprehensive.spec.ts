@@ -163,7 +163,7 @@ test.describe("🔄 Multi-Tenant Comprehensive Tests - Multiple Canteens, Worker
       if (await emailInputs.count() > 0) {
         await emailInputs.first().fill(student1_canteen1.email);
         await page.locator('input[type="password"]').first().fill(student1_canteen1.password);
-        await page.locator('button:has-text("Sign In")').first().click();
+        await page.getByRole("button", { name: /sign in|login/i }).first().click();
         await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
       }
 

@@ -76,12 +76,12 @@ test("Cancel button includes 30-second timer", async ({ page }) => {
   await page.waitForTimeout(1000);
 
   // Look for cancel button with timer
-  const cancelButtons = page.locator('button:has-text("Cancel order")');
-  const count = await cancelButtons.count();
+  const cancelButtons = page.getByText(/cancel order|cancellation/i).first();
+  const isVisible = await cancelButtons.isVisible({ timeout: 2_000 }).catch(() => false);
 
   // If order exists, verify timer format
-  if (count > 0) {
-    const text = await cancelButtons.first().textContent();
+  if (isVisible) {
+    const text = await cancelButtons.textContent();
     expect(text).toMatch(/\(\d+s\)|Cancellation/);
   }
 

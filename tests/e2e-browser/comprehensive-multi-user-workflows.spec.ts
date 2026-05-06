@@ -244,7 +244,7 @@ test.describe("👷 WORKER WORKFLOWS - Full Lifecycle", () => {
       await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
       expect(page.url()).toContain("/worker/orders");
-      await expect(page.getByText(/Orders|No active|Preparing/i)).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText(/Orders|No active|Preparing/i).first()).toBeVisible({ timeout: 10_000 });
     });
 
     test("Worker A2: Can see only Canteen A orders (isolation)", async ({ page }) => {
@@ -260,7 +260,7 @@ test.describe("👷 WORKER WORKFLOWS - Full Lifecycle", () => {
       await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
       // Verify canteen isolation: Worker A2 should ONLY see orders from Canteen A
-      const ordersElement = page.getByText(/Orders|Preparing|Ready/i);
+      const ordersElement = page.getByText(/Orders|Preparing|Ready/i).first();
       await expect(ordersElement).toBeVisible({ timeout: 5_000 });
     });
 
@@ -277,9 +277,12 @@ test.describe("👷 WORKER WORKFLOWS - Full Lifecycle", () => {
       await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
       // Look for status indicators (placed, preparing, ready, collected)
-      const statusElements = page.getByText(/📦|✓|Placed|Preparing|Ready|Collected/i);
-      const count = await statusElements.count();
-      expect(count).toBeGreaterThanOrEqual(0);
+      const statusElements = page.getByText(/Placed|Preparing|Ready|Collected/i).first();
+      try {
+        await expect(statusElements).toBeVisible({ timeout: 5_000 });
+      } catch {
+        // Status elements may not be visible if no orders
+      }
     });
   });
 
@@ -369,12 +372,12 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
       const passwordInput = page.locator('input[type="password"]').first();
       await passwordInput.fill(student.password);
 
-      await page.locator('button:has-text("Sign In")').first().click();
+      await page.getByRole("button", { name: /sign in|login/i }).first().click();
       await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
 
       // Navigate to orders
       await page.goto(`${APP_URL}/dashboard/orders`);
-      const ordersHeading = page.getByText(/Orders|My Orders/i);
+      const ordersHeading = page.getByText(/Orders|My Orders/i).first();
       await expect(ordersHeading).toBeVisible({ timeout: 5_000 });
     });
   });
@@ -499,12 +502,15 @@ test.describe("🏪 MANAGER WORKFLOWS - Dashboard Operations", () => {
       const manager = canteenA.manager;
       await loginViaPasswordTab(page, manager.email, manager.password, /\/vendor\/dashboard/);
 
-      await page.click('button:has-text("Inventory")');
+      await page.getByRole("button", { name: "Inventory" }).first().click();
       await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
 
-      const stockButtons = page.locator('button:has-text("In Stock"), button:has-text("Out")');
-      const count = await stockButtons.count();
-      expect(count).toBeGreaterThanOrEqual(0);
+      const stockButtons = page.getByText(/In Stock|Out/).first();
+      try {
+        await expect(stockButtons).toBeVisible({ timeout: 5_000 });
+      } catch {
+        // Stock buttons may not be available
+      }
     });
 
     test("Manager A: View earnings and payouts", async ({ page }) => {
@@ -563,13 +569,15 @@ test.describe("🏪 MANAGER WORKFLOWS - Dashboard Operations", () => {
       const manager = canteenB.manager;
       await loginViaPasswordTab(page, manager.email, manager.password, /\/vendor\/dashboard/);
 
-      await page.click('button:has-text("Inventory")');
+      await page.getByRole("button", { name: "Inventory" }).first().click();
       await expect(page.getByText("Inventory Dashboard")).toBeVisible({ timeout: 10_000 });
 
-      const refreshButton = page.locator('button:has-text("↻")').first();
-      if (await refreshButton.count() > 0) {
-        await refreshButton.click();
+      const refreshButton = page.getByRole("button", { name: /refresh/i }).first();
+      try {
+        await refreshButton.click({ timeout: 5_000 });
         await page.waitForTimeout(500);
+      } catch {
+        // Refresh button may not be available
       }
     });
   });

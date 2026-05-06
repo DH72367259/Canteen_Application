@@ -136,11 +136,15 @@ test.describe("worker: dashboard responsibilities", () => {
     await expect(page.locator("body")).toContainText(/ORDERS|OTP|No active|Worker|Pickup|Bin/i, { timeout: 20_000 });
 
     // Click every slot pill if present (slot switcher).
-    const slotPills = page.locator('button:has-text(":")');
+    const slotPills = page.getByText(/\d{1,2}:\d{2}/);
     const count = await slotPills.count().catch(() => 0);
     for (let i = 0; i < Math.min(count, 5); i++) {
-      await slotPills.nth(i).click().catch(() => {});
-      await page.waitForTimeout(300);
+      try {
+        await slotPills.nth(i).click({ timeout: 5_000 });
+        await page.waitForTimeout(300);
+      } catch {
+        // Slot pill may not be clickable
+      }
     }
 
     expect(watch.errors, watch.errors.join("\n")).toEqual([]);
