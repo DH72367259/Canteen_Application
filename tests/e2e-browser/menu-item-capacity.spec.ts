@@ -47,7 +47,7 @@ async function ensureFutureSlot(): Promise<string> {
 
 test.describe("menu metadata and cap enforcement", () => {
   test("added item retains meal and capacity metadata", async () => {
-    const adminToken = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
+    const adminToken = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
     const uniqueName = `Curd Rice Meta ${Date.now()}`;
     let itemId = "";
 
@@ -92,7 +92,7 @@ test.describe("menu metadata and cap enforcement", () => {
 
   test("slot cap hides item and blocks over-cap order", async () => {
     const admin = adminClient();
-    const adminToken = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
+    const adminToken = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
     const slotName = await ensureFutureSlot();
     const uniqueName = `Cap Item ${Date.now()}`;
 
@@ -121,7 +121,7 @@ test.describe("menu metadata and cap enforcement", () => {
       expect(createRes.status, JSON.stringify(created)).toBe(201);
       itemId = created.item.id;
 
-      const tokA = await loginToken(stuA.email, stuA.password);
+      const tokA = await getAccessToken(stuA.email, stuA.password);
       const first = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tokA}` },
@@ -141,7 +141,7 @@ test.describe("menu metadata and cap enforcement", () => {
       const stillVisible = (menuBody.items as Array<{ id: string }>).some((it) => it.id === itemId);
       expect(stillVisible).toBe(false);
 
-      const tokB = await loginToken(stuB.email, stuB.password);
+      const tokB = await getAccessToken(stuB.email, stuB.password);
       const overCap = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tokB}` },

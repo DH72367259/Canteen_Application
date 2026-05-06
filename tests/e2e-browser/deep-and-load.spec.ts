@@ -36,7 +36,7 @@ test.describe("A. boundary value", () => {
     try {
       const meal = await admin.from("menu_items").select("id")
         .eq("canteen_id", CANTEEN_ID).eq("is_meal", true).eq("is_available", true).limit(1).single();
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -63,7 +63,7 @@ test.describe("A. boundary value", () => {
   test("cart with exactly 21 items is rejected (over MAX_CART_ITEMS)", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "bv-21");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const cart = Array.from({ length: 21 }, (_, i) => ({ id: `x${i}`, qty: 1 }));
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
@@ -79,7 +79,7 @@ test.describe("A. boundary value", () => {
   test("qty exactly 50 is accepted by validator; qty 51 is rejected", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "bv-qty");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       // qty=51 must 400.
       const bad = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
@@ -104,7 +104,7 @@ test.describe("A. boundary value", () => {
   test("very long canteenId (>100 chars) rejected", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "bv-long");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -120,7 +120,7 @@ test.describe("A. boundary value", () => {
 // ─── B. ADMIN CRUD LIFECYCLE ────────────────────────────────────────────────
 test.describe("B. admin CRUD lifecycle (create / list / modify / reset / login / delete)", () => {
   test("super_admin: full worker lifecycle via /api/admin/users", async () => {
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const admin = adminClient();
     const ts = Date.now();
     const email = `crud-worker-${ts}@noqx.test`;
@@ -173,7 +173,7 @@ test.describe("B. admin CRUD lifecycle (create / list / modify / reset / login /
       expect(reset.status).toBeLessThan(400);
 
       // 5. LOGIN with the new password
-      const newTok = await loginToken(email, newPwd);
+      const newTok = await getAccessToken(email, newPwd);
       expect(newTok).toBeTruthy();
 
       // 6. ASSIGN to no canteen, then back
@@ -202,7 +202,7 @@ test.describe("B. admin CRUD lifecycle (create / list / modify / reset / login /
   });
 
   test("super_admin cannot delete their own account (self-protection)", async () => {
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const admin = adminClient();
     const me = await admin.from("profiles").select("id").eq("email", WHITELIST.superAdmin.email).single();
     const r = await apiFetch(`${APP_URL}/api/admin/users`, {
@@ -216,7 +216,7 @@ test.describe("B. admin CRUD lifecycle (create / list / modify / reset / login /
   });
 
   test("co_admin cannot create or delete users (RBAC)", async () => {
-    const tok = await loginToken(WHITELIST.coAdmin.email, WHITELIST.coAdmin.password);
+    const tok = await getAccessToken(WHITELIST.coAdmin.email, WHITELIST.coAdmin.password);
     const create = await apiFetch(`${APP_URL}/api/admin/users`, {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -255,7 +255,7 @@ test.describe("C. load & concurrency", () => {
   test("orders-place rate limit (10/min) actually throttles", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "rl");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       // Fire 25 requests with a known-bad cart (cheaper than a real order).
       // The validator returns 400, but the rate limiter intercepts BEFORE
       // the validator — so requests beyond the 10/min budget should 429.
@@ -285,7 +285,7 @@ test.describe("D. exploratory & security", () => {
   test("SQL-injection-style cart id is rejected as invalid item, not executed", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "sec-sqli");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -310,7 +310,7 @@ test.describe("D. exploratory & security", () => {
     // Admin creates a worker whose name contains a script tag. The API stores
     // it verbatim (HTML escaping is the renderer's job). We only check the
     // server doesn't 500 and the value round-trips intact.
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const admin = adminClient();
     const ts = Date.now();
     const payload = "<script>alert('xss')</script>Bob";
@@ -338,7 +338,7 @@ test.describe("D. exploratory & security", () => {
   });
 
   test("duplicate phone number on create returns 4xx (not 500)", async () => {
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const admin = adminClient();
     const ts = Date.now();
     const phone = `7${String(ts).slice(-9)}`;
@@ -374,7 +374,7 @@ test.describe("D. exploratory & security", () => {
   });
 
   test("invalid role on create returns 400", async () => {
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const r = await apiFetch(`${APP_URL}/api/admin/users`, {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${adminTok}` },
@@ -389,7 +389,7 @@ test.describe("D. exploratory & security", () => {
   });
 
   test("phone validation: bad formats rejected, valid 10-digit accepted", async () => {
-    const adminTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+    const adminTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
     const admin = adminClient();
     const ts = Date.now();
     for (const bad of ["abc", "123", "+", "++91999"]) {

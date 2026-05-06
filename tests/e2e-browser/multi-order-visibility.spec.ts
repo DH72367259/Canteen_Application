@@ -8,6 +8,7 @@ import {
   WHITELIST,
   apiFetch,
   loginViaPasswordTab,
+  getAccessToken,
 } from "./_helpers";
 
 const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
@@ -96,7 +97,7 @@ test.beforeAll(async () => {
   if (meal.error) throw meal.error;
 
   const slotLabel = await ensureSlotLabel();
-  const studentToken = await loginToken(studentEmail, studentPassword);
+  const studentToken = await getAccessToken(studentEmail, studentPassword);
 
   for (let i = 0; i < 2; i++) {
     const res = await apiFetch(`${APP_URL}/api/orders/place`, {
@@ -143,7 +144,7 @@ test("two same-canteen orders remain visible for student, canteen admin, and sup
   await expect(page.locator("body")).toContainText(new RegExp(order2Id.slice(-6).toUpperCase(), "i"), { timeout: 20_000 });
 
   // Student API should return both orders.
-  const studentToken = await loginToken(studentEmail, studentPassword);
+  const studentToken = await getAccessToken(studentEmail, studentPassword);
   const studentOrdersRes = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${studentToken}` },
   });
@@ -154,7 +155,7 @@ test("two same-canteen orders remain visible for student, canteen admin, and sup
   expect(studentIds.has(order2Id)).toBeTruthy();
 
   // Canteen admin API should also see both live orders for their canteen.
-  const managerToken = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
+  const managerToken = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
   const managerOrdersRes = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${managerToken}` },
   });
@@ -165,7 +166,7 @@ test("two same-canteen orders remain visible for student, canteen admin, and sup
   expect(managerIds.has(order2Id)).toBeTruthy();
 
   // Super admin global order feed should include both orders.
-  const superToken = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+  const superToken = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const adminOrdersRes = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${superToken}` },
   });

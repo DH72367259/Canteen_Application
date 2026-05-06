@@ -30,6 +30,15 @@ import {
   getAccessToken,
 } from "./_helpers";
 
+// ── Module-level state ────────────────────────────────────────────────────────
+
+let admin: SupabaseClient;
+let canteenA = "";
+let canteenB = "";
+const seededOrderIds: string[] = [];
+const seededStudentIds: string[] = [];
+const seededSlotIds: string[] = [];
+
 async function ensureSlotLabel(canteenId: string): Promise<string> {
   const slots = await admin
     .from("time_slots")
@@ -338,7 +347,7 @@ test.describe("Bin Allocation Permutations", () => {
         // Provision a canteen_admin for canteenB and verify isolation.
         const adminB = await provisionStaff("canteen_admin", canteenB, "p6-admin");
         seededStudentIds.push(adminB.id);
-        const adminBTok = await loginToken(adminB.email, adminB.password);
+        const adminBTok = await getAccessToken(adminB.email, adminB.password);
         const admBResp = await apiFetch(`${APP_URL}/api/orders`, {
           headers: { Authorization: `Bearer ${adminBTok}` },
         });

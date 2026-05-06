@@ -172,9 +172,9 @@ test.afterAll(async () => {
 });
 
 test("multi-tenant users + auto-accept timing + scoped visibility", async ({ page }) => {
-  const studentA1Token = await loginToken(studentA1.email, studentA1.password);
-  const studentA2Token = await loginToken(studentA2.email, studentA2.password);
-  const studentB1Token = await loginToken(studentB1.email, studentB1.password);
+  const studentA1Token = await getAccessToken(studentA1.email, studentA1.password);
+  const studentA2Token = await getAccessToken(studentA2.email, studentA2.password);
+  const studentB1Token = await getAccessToken(studentB1.email, studentB1.password);
 
   const orderA1 = await placeOrder(studentA1Token, canteenA, slotA, menuA, 1);
   const orderA2 = await placeOrder(studentA2Token, canteenA, slotA, menuA, 1);
@@ -185,10 +185,10 @@ test("multi-tenant users + auto-accept timing + scoped visibility", async ({ pag
   const toAge = [orderA1, orderA2, orderB1];
   await admin.from("orders").update({ status: "placed", created_at: oldIso }).in("id", toAge);
 
-  const workerAToken = await loginToken(workerA.email, workerA.password);
-  const workerBToken = await loginToken(workerB.email, workerB.password);
-  const adminAToken = await loginToken(adminA.email, adminA.password);
-  const adminBToken = await loginToken(adminB.email, adminB.password);
+  const workerAToken = await getAccessToken(workerA.email, workerA.password);
+  const workerBToken = await getAccessToken(workerB.email, workerB.password);
+  const adminAToken = await getAccessToken(adminA.email, adminA.password);
+  const adminBToken = await getAccessToken(adminB.email, adminB.password);
 
   const workerARes = await apiFetch(`${APP_URL}/api/orders?worker=true`, {
     headers: { Authorization: `Bearer ${workerAToken}` },

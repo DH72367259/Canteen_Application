@@ -205,7 +205,7 @@ test.beforeAll(async () => {
   const s = await provisionStudent(canteenId, "slotcap");
   studentId    = s.id;
   studentEmail = s.email;
-  studentToken = await loginToken(s.email, s.password);
+  studentToken = await getAccessToken(s.email, s.password);
 });
 
 test.afterAll(async () => {

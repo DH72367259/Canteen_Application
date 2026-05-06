@@ -87,7 +87,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: student cannot transition order to staff-only status (403)", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-rbac");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/00000000-0000-0000-0000-000000000000/status`, {
         method: "PATCH",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -102,7 +102,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: empty cart rejected with 400", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-cart");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -119,7 +119,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: missing canteenId rejected with 400", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-canteen");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -136,7 +136,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: invalid quantity (0, negative, huge) rejected with 400", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-qty");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       for (const qty of [0, -1, 999]) {
         const r = await apiFetch(`${APP_URL}/api/orders/place`, {
           method: "POST",
@@ -153,7 +153,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: oversized cart (>20 items) rejected with 400", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-big");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const cart = Array.from({ length: 25 }, (_, i) => ({ id: `x${i}`, qty: 1 }));
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
@@ -169,7 +169,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: malformed JSON body rejected", async () => {
     const stu = await provisionStudent(CANTEEN_ID, "neg-json");
     try {
-      const tok = await loginToken(stu.email, stu.password);
+      const tok = await getAccessToken(stu.email, stu.password);
       const r = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -184,7 +184,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
   test("API: worker cannot verify OTP for an order in another canteen", async () => {
     // Worker1 belongs to CANTEEN_ID. Try verifying a non-existent order in
     // a different canteen — endpoint must not 200.
-    const tok = await loginToken(WHITELIST.worker.email, WHITELIST.worker.password);
+    const tok = await getAccessToken(WHITELIST.worker.email, WHITELIST.worker.password);
     const r = await fetch(`${APP_URL}/api/orders/00000000-0000-0000-0000-000000000000/verify-otp`, {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${tok}` },
@@ -208,7 +208,7 @@ test.describe("end-to-end: full order lifecycle", () => {
         .eq("canteen_id", CANTEEN_ID).eq("is_meal", true).eq("is_available", true).limit(1).single();
       expect(meal.error, meal.error?.message).toBeFalsy();
 
-      const stuTok = await loginToken(stu.email, stu.password);
+      const stuTok = await getAccessToken(stu.email, stu.password);
       const place = await apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${stuTok}` },
@@ -222,8 +222,8 @@ test.describe("end-to-end: full order lifecycle", () => {
       expect(otp).toMatch(/^\d{4,6}$/);
 
       // Walk worker state machine.
-      const wTok = await loginToken(WHITELIST.worker.email, WHITELIST.worker.password);
-      const mTok = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
+      const wTok = await getAccessToken(WHITELIST.worker.email, WHITELIST.worker.password);
+      const mTok = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
       for (const status of ["preparing", "ready_for_placement", "placed_in_bin"]) {
         const r = await apiFetch(`${APP_URL}/api/orders/${orderId}/status`, {
           method: "PATCH",

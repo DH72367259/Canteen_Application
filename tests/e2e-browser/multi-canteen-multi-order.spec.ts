@@ -8,6 +8,7 @@ import {
   WHITELIST,
   apiFetch,
   loginViaPasswordTab,
+  getAccessToken,
 } from "./_helpers";
 
 let admin: SupabaseClient;
@@ -132,7 +133,7 @@ test.beforeAll(async () => {
     canteen_id: canteenA,
   });
 
-  const studentToken = await loginToken(studentEmail, studentPassword);
+  const studentToken = await getAccessToken(studentEmail, studentPassword);
   orderA = await placeOneOrder(studentToken, canteenA);
   orderB = await placeOneOrder(studentToken, canteenB);
 });
@@ -158,7 +159,7 @@ test("same student can hold active orders across multiple canteens without losin
   expect(canteenA).not.toBe(canteenB);
 
   // Student API should include both orders.
-  const stuTok = await loginToken(studentEmail, studentPassword);
+  const stuTok = await getAccessToken(studentEmail, studentPassword);
   const studentOrdersRes = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${stuTok}` },
   });
@@ -175,7 +176,7 @@ test("same student can hold active orders across multiple canteens without losin
   await expect(page.locator("body")).toContainText(new RegExp(orderB.slice(-6).toUpperCase(), "i"), { timeout: 20_000 });
 
   // Manager for canteen_admin account should only see their own canteen orders.
-  const managerTok = await loginToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
+  const managerTok = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
   const mgr = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${managerTok}` },
   });
@@ -186,7 +187,7 @@ test("same student can hold active orders across multiple canteens without losin
   expect(mgrIds.has(orderA) || mgrIds.has(orderB)).toBeTruthy();
 
   // Super admin should see both orders globally.
-  const superTok = await loginToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
+  const superTok = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const all = await apiFetch(`${APP_URL}/api/orders`, {
     headers: { Authorization: `Bearer ${superTok}` },
   });

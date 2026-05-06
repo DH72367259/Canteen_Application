@@ -87,7 +87,7 @@ test.describe("campus-scale load profile (15k DAU model)", () => {
       // already authenticated when they tap "Order"; this also avoids
       // tripping Supabase Auth's signin rate limit during the burst.
       const tokens: string[] = [];
-      for (const s of students) tokens.push(await loginToken(s.email, s.password));
+      for (const s of students) tokens.push(await getAccessToken(s.email, s.password));
       const t0 = Date.now();
       const results = await Promise.all(tokens.map(tok =>
         apiFetch(`${APP_URL}/api/orders/place`, {

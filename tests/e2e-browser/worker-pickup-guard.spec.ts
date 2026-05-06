@@ -69,6 +69,21 @@ async function ensureSlot() {
   return seed.slot_name;
 }
 
+async function getAccessToken(email: string, password: string): Promise<string> {
+  const res = await fetch(`${URL_}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Unknown error" }));
+    throw new Error(`Failed to get token: ${err.message || err.error_description}`);
+  }
+  const data = await res.json() as { access_token?: string };
+  if (!data.access_token) throw new Error("No access token returned");
+  return data.access_token;
+}
+
 test.beforeAll(async () => {
   admin = createClient(URL_, SVC, { auth: { persistSession: false } });
 
@@ -91,7 +106,7 @@ test.beforeAll(async () => {
     .eq("canteen_id", CANTEEN_ID).eq("is_meal", true).eq("is_available", true).limit(1).single();
   if (meal.error) throw new Error(`no meal: ${meal.error.message}`);
 
-  const studentToken = await loginToken(STUDENT_EMAIL, STUDENT_PASS);
+  const studentToken = await getAccessToken(STUDENT_EMAIL, STUDENT_PASS);
 
   // Place order #1 (qty 1)
   const place1 = await fetch(`${APP}/api/orders/place`, {
@@ -116,7 +131,7 @@ test.beforeAll(async () => {
 
   // Walk ONLY order #1 to placed_in_bin via API (worker UI clicks would
   // do the same but driving 3 PATCHes via REST is faster + deterministic).
-  const workerToken = await loginToken(WORKER_EMAIL, WORKER_PASS);
+  const workerToken = await getAccessToken(WORKER_EMAIL, WORKER_PASS);
   for (const step of ["preparing", "ready_for_placement", "placed_in_bin"]) {
     const r = await fetch(`${APP}/api/orders/${order1Id}/status`, {
       method: "PATCH",
@@ -158,7 +173,7 @@ test("worker UI has no OTP verification and worker API verify-otp is forbidden",
   await expect(page.locator('input[inputmode="numeric"]').first()).not.toBeVisible({ timeout: 5_000 }).catch(() => {});
 
   // Manager-only OTP verification endpoint must reject worker role.
-  const workerToken = await loginToken(WORKER_EMAIL, WORKER_PASS);
+  const workerToken = await getAccessToken(WORKER_EMAIL, WORKER_PASS);
   const forbidden = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },

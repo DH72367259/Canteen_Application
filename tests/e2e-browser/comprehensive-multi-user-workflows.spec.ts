@@ -301,7 +301,7 @@ test.describe("👷 WORKER WORKFLOWS - Full Lifecycle", () => {
 
     test("Worker B1 CANNOT access Canteen A orders", async () => {
       const worker = canteenB.workers[0];
-      const token = await loginToken(worker.email, worker.password);
+      const token = await getAccessToken(worker.email, worker.password);
 
       // Try to fetch Canteen A orders (should fail or return empty)
       const response = await apiFetch(`${APP_URL}/api/worker/orders?canteen_id=${canteenA.id}`, {
@@ -319,7 +319,7 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
   test.describe("Canteen A Students", () => {
     test("Student A1: Browse Menu → Select Slot → Add to Cart → Checkout", async ({ page }) => {
       const student = canteenA.students[0];
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
       const slotLabel = await ensureSlotLabel(canteenA.id, "A1");
       const menuItem = await getAvailableMenuItem(canteenA.id);
 
@@ -334,7 +334,7 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
 
     test("Student A2: Place order → Track status → See bins assigned", async () => {
       const student = canteenA.students[1];
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
       const slotLabel = await ensureSlotLabel(canteenA.id, "A2");
       const menuItem = await getAvailableMenuItem(canteenA.id);
 
@@ -388,7 +388,7 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
 
     test("Student B1 CANNOT see Canteen A menu or orders", async () => {
       const student = canteenB.students[0];
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
 
       // Try to fetch Canteen A orders (should fail or return empty)
       const response = await apiFetch(`${APP_URL}/api/orders?canteen_id=${canteenA.id}`, {
@@ -403,8 +403,8 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
     test("Student B2 & B3: Concurrent orders in same slot (capacity test)", async () => {
       const student1 = canteenB.students[1];
       const student2 = canteenB.students[2];
-      const token1 = await loginToken(student1.email, student1.password);
-      const token2 = await loginToken(student2.email, student2.password);
+      const token1 = await getAccessToken(student1.email, student1.password);
+      const token2 = await getAccessToken(student2.email, student2.password);
       const slotLabel = await ensureSlotLabel(canteenB.id, "B-CONCURRENT");
       const menuItem = await getAvailableMenuItem(canteenB.id);
 
@@ -535,7 +535,7 @@ test.describe("🏪 MANAGER WORKFLOWS - Dashboard Operations", () => {
 
     test("Manager A: Cannot access Canteen B operations", async () => {
       const manager = canteenA.manager;
-      const token = await loginToken(manager.email, manager.password);
+      const token = await getAccessToken(manager.email, manager.password);
 
       // Try to fetch Canteen B slot control (should fail)
       const response = await apiFetch(
@@ -651,7 +651,7 @@ test.describe("👨‍💼 CO-ADMIN WORKFLOWS - Platform Administration", () => 
 test.describe("🔐 MULTI-CANTEEN ISOLATION TESTS", () => {
   test("Worker A cannot modify Canteen B orders", async () => {
     const worker = canteenA.workers[0];
-    const token = await loginToken(worker.email, worker.password);
+    const token = await getAccessToken(worker.email, worker.password);
 
     // Try to get Canteen B orders (should be restricted)
     const response = await apiFetch(`${APP_URL}/api/worker/orders?canteen_id=${canteenB.id}`, {
@@ -664,7 +664,7 @@ test.describe("🔐 MULTI-CANTEEN ISOLATION TESTS", () => {
 
   test("Student A cannot view Canteen B orders", async () => {
     const student = canteenA.students[0];
-    const token = await loginToken(student.email, student.password);
+    const token = await getAccessToken(student.email, student.password);
 
     // Try to fetch Canteen B orders
     const response = await apiFetch(`${APP_URL}/api/orders?canteen_id=${canteenB.id}`, {
@@ -677,7 +677,7 @@ test.describe("🔐 MULTI-CANTEEN ISOLATION TESTS", () => {
 
   test("Manager A cannot access Canteen B slot control", async () => {
     const manager = canteenA.manager;
-    const token = await loginToken(manager.email, manager.password);
+    const token = await getAccessToken(manager.email, manager.password);
 
     // Try to modify Canteen B slot control
     const response = await apiFetch(`${APP_URL}/api/canteen/slot-control`, {
@@ -723,7 +723,7 @@ test.describe("⚡ CONCURRENT OPERATIONS & REAL-TIME", () => {
     const menuItem = await getAvailableMenuItem(canteenA.id);
 
     const promises = canteenA.students.map(async (student) => {
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
       return apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
@@ -758,7 +758,7 @@ test.describe("⚡ CONCURRENT OPERATIONS & REAL-TIME", () => {
 
     // Place orders concurrently in both canteens
     const promisesA = canteenA.students.slice(0, 2).map(async (student) => {
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
       return apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
@@ -771,7 +771,7 @@ test.describe("⚡ CONCURRENT OPERATIONS & REAL-TIME", () => {
     });
 
     const promisesB = canteenB.students.slice(0, 2).map(async (student) => {
-      const token = await loginToken(student.email, student.password);
+      const token = await getAccessToken(student.email, student.password);
       return apiFetch(`${APP_URL}/api/orders/place`, {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
@@ -829,7 +829,7 @@ test.describe("✅ VERIFICATION & AUDIT TESTS", () => {
   test("Each role has correct access levels", async () => {
     // Worker should not be able to access student API
     const worker = canteenA.workers[0];
-    const token = await loginToken(worker.email, worker.password);
+    const token = await getAccessToken(worker.email, worker.password);
 
     const response = await apiFetch(`${APP_URL}/api/canteen/menu`, {
       headers: { Authorization: `Bearer ${token}` },
