@@ -140,28 +140,6 @@ export default function CanteenMenuPage() {
 
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // ── Slot selector on menu page ──────────────────────────────────────────
-  const [slots, setSlots] = useState<Array<{ id: string; slot_name: string; available: boolean }>>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string>("");
-  const [slotsLoading, setSlotsLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSlotsLoading(true);
-    fetch(`/api/slots?canteenId=${encodeURIComponent(canteenId)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(j => {
-        if (!cancelled && j?.slots) {
-          setSlots(j.slots);
-          const first = j.slots.find((s: { available: boolean }) => s.available);
-          if (first) setSelectedSlot(first.id);
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setSlotsLoading(false); });
-    return () => { cancelled = true; };
-  }, [canteenId]);
-
   const addItem = (item: { id: string; name: string; price: number }) => {
     if (isClosed) return;
     setCart(prev => {
@@ -217,25 +195,6 @@ export default function CanteenMenuPage() {
       {liveError && !live && (
         <div style={{ margin: "0.75rem 1rem 0", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "0.6rem 0.85rem", fontSize: "0.78rem", color: "#92400e" }}>
           ⚠️ {liveError} Showing limited info.
-        </div>
-      )}
-
-      {/* Slot selector */}
-      {slots.length > 0 && (
-        <div style={{ margin: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-          <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--ink-3)" }}>Select Pickup Slot</label>
-          <select
-            value={selectedSlot}
-            onChange={(e) => setSelectedSlot(e.target.value)}
-            style={{ padding: "0.5rem", fontSize: "0.9rem", borderRadius: 8, border: "1px solid var(--border)" }}
-            role="combobox"
-          >
-            {slots.map((slot) => (
-              <option key={slot.id} value={slot.id}>
-                {slot.slot_name} {!slot.available ? " (FULL)" : ""}
-              </option>
-            ))}
-          </select>
         </div>
       )}
 
