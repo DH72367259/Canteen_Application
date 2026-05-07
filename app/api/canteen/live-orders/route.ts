@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { assignDeferredBins } from "@/lib/deferredBinAssign";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +192,10 @@ export async function GET(request: Request) {
   }
 
   // Sort order: Placed (oldest first) -> Preparing -> ready_for_placement
+  // Assign physical bins to orders whose slot start time has arrived.
+  // Runs on every poll so vendors see bin numbers appear automatically.
+  await assignDeferredBins(supabase, canteenId).catch(() => {});
+
   const STATUS_RANK: Record<string, number> = {
     placed_in_bin: 0,
     ready_for_pickup: 1,
