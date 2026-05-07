@@ -1640,6 +1640,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancellingItemId, setCancellingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState(false);
 
   const ZONES = ["red", "yellow", "green", "blue", "purple", "orange"] as const;
   const ZONE_LABEL: Record<string, string> = {
@@ -1674,6 +1675,21 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
       setLoading(false);
     }
   }, [session?.access_token]);
+
+  const releaseAllBins = useCallback(async () => {
+    if (!confirm("Release ALL occupied bins back to free? Only do this at the start of a fresh day or after all orders are collected.")) return;
+    setReleasing(true);
+    try {
+      const res = await fetch("/api/canteen/bins/release-all", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const j = await res.json();
+      if (!res.ok) { setError(j.error || "Failed to release bins"); return; }
+      await refresh();
+    } catch { setError("Network error releasing bins"); }
+    finally { setReleasing(false); }
+  }, [session?.access_token, refresh]);
 
   useEffect(() => {
     void refresh();
@@ -1774,8 +1790,17 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
     <div className="page-content">
       <div className="page-header">
         <h2>Bin Management</h2>
-        <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
-          Adjust rack size via <strong>Slot and Bin Control → Max Bins</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>
+            Adjust rack size via <strong>Slot and Bin Control → Max Bins</strong>
+          </div>
+          <button
+            onClick={releaseAllBins}
+            disabled={releasing}
+            style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem", background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, cursor: releasing ? "not-allowed" : "pointer", opacity: releasing ? 0.6 : 1, fontWeight: 600 }}
+          >
+            {releasing ? "Releasing…" : "Release All Bins"}
+          </button>
         </div>
       </div>
 
@@ -2571,7 +2596,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
 
   const sc = data.slot_control, cap = data.capacity, win = data.windows;
   const previewMaxOrders  = Number(maxBinsInput) || 0;
-  const previewBatched    = Math.floor(previewMaxOrders * 0.7);
+  const previewBatched    = Math.floor(previewMaxOrders * 0.6);
   const previewMadeToOrd  = previewMaxOrders - previewBatched;
 
   return (
