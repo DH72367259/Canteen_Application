@@ -511,7 +511,7 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
 
     // Add a default time slot + bin
     await supabase.from("time_slots").insert({
-      canteen_id: data.id, slot_name: "Lunch", start_time: "12:00:00", end_time: "14:00:00", duration_minutes: 15, max_orders: 50, is_active: true,
+      canteen_id: data.id, slot_name: "Lunch", start_time: "12:00:00", end_time: "14:00:00", duration_minutes: 15, is_active: true,
     });
     await supabase.from("bins").insert({
       canteen_id: data.id, bin_code: "BLU001", color: "blue", is_occupied: false,

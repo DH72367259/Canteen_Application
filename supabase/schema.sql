@@ -162,7 +162,6 @@ CREATE TABLE public.time_slots (
   start_time        time        NOT NULL,
   end_time          time        NOT NULL,
   duration_minutes  int         NOT NULL DEFAULT 15,
-  max_orders        int         NOT NULL DEFAULT 50,
   is_active         boolean     NOT NULL DEFAULT true,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
