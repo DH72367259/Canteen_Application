@@ -190,13 +190,13 @@ export async function POST(req: NextRequest) {
   // ── Slot control (fetched once, reused for cap + bin plan + cutoff) ─────
   const sc = await ensureSlotControl(supabase, canteenId);
   // maxOrdersPerSlot is derived from the canteen manager's max_bins setting
-  // via computeSlotCapacity (75% rule). Canteen managers control this through
+  // via computeSlotCapacity (100% capacity). Canteen managers control this through
   // the Slot & Bin Control panel — changing max_bins changes the cap in real time.
   const maxBins          = Number(sc?.max_bins) || 60;
   const { maxOrdersPerSlot, batchedPreparedCap, madeToOrderCap } = computeSlotCapacity(maxBins);
 
   // ── MADE-TO-ORDER vs BATCHED-PREPARED SPLIT (enforce slot-level caps) ────
-  // The 75% maxOrdersPerSlot is split: 70% for batched/prepared, 30% for made-to-order.
+  // Split: 60% for batched/prepared, 40% for made-to-order.
   // Enforce this split so concurrent orders can't exhaust one type.
   if (slotLabel) {
     const slotUsage = await getSlotAvailabilityUsage(supabase, canteenId, String(slotLabel));
