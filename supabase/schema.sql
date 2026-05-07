@@ -140,10 +140,10 @@ CREATE TABLE public.slot_control (
   extra_bin_fee_paise   int         NOT NULL DEFAULT 200 CHECK (extra_bin_fee_paise >= 0),
   meals_per_bin         int         NOT NULL DEFAULT 2 CHECK (meals_per_bin > 0),
   snacks_per_bin        int         NOT NULL DEFAULT 5 CHECK (snacks_per_bin > 0),
-  -- Auto-derived from max_bins (75% rule):
-  max_orders_per_slot   int         GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int) STORED,
-  batched_prepared_cap  int         GENERATED ALWAYS AS (FLOOR(FLOOR(max_bins * 0.75) * 0.70)::int) STORED,
-  made_to_order_cap     int         GENERATED ALWAYS AS (FLOOR(max_bins * 0.75)::int - FLOOR(FLOOR(max_bins * 0.75) * 0.70)::int) STORED,
+  -- Auto-derived from max_bins (100% capacity per slot, 60/40 split for kitchen planning):
+  max_orders_per_slot   int         GENERATED ALWAYS AS (max_bins) STORED,
+  batched_prepared_cap  int         GENERATED ALWAYS AS (FLOOR(max_bins * 0.60)::int) STORED,
+  made_to_order_cap     int         GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.60)::int) STORED,
   created_at            timestamptz NOT NULL DEFAULT now(),
   updated_at            timestamptz NOT NULL DEFAULT now()
 );

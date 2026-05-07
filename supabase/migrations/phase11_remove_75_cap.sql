@@ -10,11 +10,11 @@ ALTER TABLE public.slot_control
   DROP COLUMN IF EXISTS made_to_order_cap;
 
 -- Recreate with new formula: 100% of bins available per slot
--- Keep batched_prepared_cap and made_to_order_cap for kitchen planning (70/30 split)
+-- Keep batched_prepared_cap and made_to_order_cap for kitchen planning (60/40 split)
 ALTER TABLE public.slot_control
   ADD COLUMN max_orders_per_slot int GENERATED ALWAYS AS (max_bins) STORED,
-  ADD COLUMN batched_prepared_cap int GENERATED ALWAYS AS (FLOOR(max_bins * 0.70)::int) STORED,
-  ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.70)::int) STORED;
+  ADD COLUMN batched_prepared_cap int GENERATED ALWAYS AS (FLOOR(max_bins * 0.60)::int) STORED,
+  ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.60)::int) STORED;
 
 -- Verify the change
 SELECT
