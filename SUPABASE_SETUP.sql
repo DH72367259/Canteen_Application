@@ -119,6 +119,20 @@ ALTER TABLE public.slot_control
   ADD COLUMN made_to_order_cap int GENERATED ALWAYS AS (max_bins - FLOOR(max_bins * 0.60)::int) STORED;
 
 -- ============================================================
+-- PHASE 12: Add slot_label to bins table
+-- CRITICAL: Without this column every bin claim and release silently
+-- fails because PostgREST rejects UPDATEs with unknown columns.
+-- This causes all orders to fall back to the synthetic bin and
+-- leaves bins permanently stuck in Reserved state.
+-- ============================================================
+ALTER TABLE public.bins
+  ADD COLUMN IF NOT EXISTS slot_label text;
+
+CREATE INDEX IF NOT EXISTS idx_bins_slot_label
+  ON public.bins(canteen_id, slot_label)
+  WHERE slot_label IS NOT NULL;
+
+-- ============================================================
 -- VERIFY SETUP
 -- ============================================================
 select p.email, p.role, p.name, p.username, u.email_confirmed_at is not null as confirmed
