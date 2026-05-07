@@ -130,22 +130,45 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: `Failed to load orders: ${orderErr.message}` }, { status: 500 });
   }
 
-  // Auto-release bins whose orders have reached a terminal state.
-  // Runs on every poll (every 5s) so stale bins are freed without manual intervention.
+  // Auto-release stale bins on every poll.
+  // A bin is stale if it has been occupied for more than 2 hours OR its linked
+  // order is no longer active (terminal: collected/cancelled/failed/refunded,
+  // OR the order was created on a previous calendar day in IST).
   {
-    const occupiedBinIds = (bins ?? [])
-      .filter(b => b.is_occupied && b.current_order_id)
-      .map(b => b.current_order_id as string);
+    const occupiedBins = (bins ?? []).filter(b => b.is_occupied);
+    if (occupiedBins.length > 0) {
+      const now = new Date();
+      // IST = UTC+5:30 → today's date string in IST
+      const istOffset = 330 * 60_000;
+      const todayIST = new Date(now.getTime() + istOffset).toISOString().slice(0, 10);
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60_000).toISOString();
 
-    if (occupiedBinIds.length > 0) {
-      const { data: doneOrders } = await supabase
+      // Find active order IDs for this canteen today so we know which bins are legitimately held
+      const { data: activeOrders } = await supabase
         .from("orders")
-        .select("id, bin_id")
-        .in("id", occupiedBinIds)
-        .in("status", ["collected", "cancelled", "failed", "refunded"]);
+        .select("id")
+        .eq("canteen_id", canteenId)
+        .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
+        .gte("created_at", `${todayIST}T00:00:00+05:30`);
 
-      const staleOrderIds = (doneOrders ?? []).map(o => o.id);
-      if (staleOrderIds.length > 0) {
+      const activeOrderIds = new Set((activeOrders ?? []).map(o => o.id));
+
+      // A bin should be freed if its linked order is NOT actively in-progress today
+      const binsToFree = occupiedBins.filter(b => {
+        const linkedOrderId = b.current_order_id;
+        if (!linkedOrderId) return true;           // orphaned — no order linked
+        if (activeOrderIds.has(linkedOrderId)) return false; // legitimately held
+        return true;                               // order finished / old / cancelled
+      });
+
+      // Also free any bin occupied for more than 2 hours regardless (safety net)
+      const overtimeBins = occupiedBins.filter(b =>
+        b.updated_at && b.updated_at < twoHoursAgo && !activeOrderIds.has(b.current_order_id ?? "")
+      );
+
+      const allToFree = [...new Set([...binsToFree, ...overtimeBins].map(b => b.id))];
+
+      if (allToFree.length > 0) {
         await supabase
           .from("bins")
           .update({
@@ -154,17 +177,14 @@ export async function GET(request: Request) {
             assigned_order_id: null,
             slot_label: null,
             status: "empty",
-            updated_at: new Date().toISOString(),
+            updated_at: now.toISOString(),
           })
           .eq("canteen_id", canteenId)
-          .in("order_id", staleOrderIds);
+          .in("id", allToFree);
 
-        // Refresh bins list after cleanup so the response reflects freed bins
+        // Refresh bin list so response is already clean
         const refreshed = await supabase
-          .from("bins")
-          .select("*")
-          .eq("canteen_id", canteenId)
-          .order("bin_code");
+          .from("bins").select("*").eq("canteen_id", canteenId).order("bin_code");
         if (!refreshed.error) {
           bins = ((refreshed.data ?? []) as Array<Record<string, unknown>>).map(b => ({
             id: String(b.id ?? ""),
@@ -175,8 +195,7 @@ export async function GET(request: Request) {
             current_order_id:
               (b.current_order_id as string | null) ??
               (b.assigned_order_id as string | null) ??
-              (b.order_id as string | null) ??
-              null,
+              (b.order_id as string | null) ?? null,
             updated_at: b.updated_at as string | undefined,
           }));
         }
