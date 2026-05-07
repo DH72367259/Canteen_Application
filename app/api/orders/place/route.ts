@@ -247,10 +247,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
-  const mealsPerBin    = Number(sc?.meals_per_bin)        || 2;
-  const snacksPerBin   = Number(sc?.snacks_per_bin)       || 5;
+  // New bin packing: 1 meal + up to 3 snacks per bin, or 5 snacks alone
+  const mealsPerBin    = 1;  // 1 meal per bin (fixed)
+  const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;  // Snacks paired with meal
   const extraFeePaise0 = Number(sc?.extra_bin_fee_paise)  || 200;
-  const binPlan = assignBins(cartLines, mealsPerBin, snacksPerBin, extraFeePaise0);
+  const binPlan = assignBins(cartLines, mealsPerBin, snacksWithMealPerBin, extraFeePaise0);
 
   const extraBinFeeRupees = Math.round(binPlan.extraFeePaise) / 100;
   let serverTotal = serverSubtotal + extraBinFeeRupees;
