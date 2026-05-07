@@ -147,9 +147,11 @@ CREATE TABLE IF NOT EXISTS public.noqx_pro_subscriptions (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.noqx_pro_subscriptions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "users read own subscription"
+DROP POLICY IF EXISTS "users read own subscription" ON public.noqx_pro_subscriptions;
+CREATE POLICY "users read own subscription"
   ON public.noqx_pro_subscriptions FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY IF NOT EXISTS "service full noqx_pro_subscriptions"
+DROP POLICY IF EXISTS "service full noqx_pro_subscriptions" ON public.noqx_pro_subscriptions;
+CREATE POLICY "service full noqx_pro_subscriptions"
   ON public.noqx_pro_subscriptions FOR ALL USING (auth.role() = 'service_role');
 CREATE INDEX IF NOT EXISTS idx_noqx_pro_user
   ON public.noqx_pro_subscriptions(user_id, status);
@@ -171,7 +173,8 @@ CREATE TABLE IF NOT EXISTS public.campaigns (
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "service full campaigns"
+DROP POLICY IF EXISTS "service full campaigns" ON public.campaigns;
+CREATE POLICY "service full campaigns"
   ON public.campaigns FOR ALL USING (auth.role() = 'service_role');
 
 CREATE TABLE IF NOT EXISTS public.cart_items (
@@ -184,9 +187,11 @@ CREATE TABLE IF NOT EXISTS public.cart_items (
   UNIQUE (user_id, menu_item_id)
 );
 ALTER TABLE public.cart_items ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "users manage own cart"
+DROP POLICY IF EXISTS "users manage own cart" ON public.cart_items;
+CREATE POLICY "users manage own cart"
   ON public.cart_items FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY IF NOT EXISTS "service full cart_items"
+DROP POLICY IF EXISTS "service full cart_items" ON public.cart_items;
+CREATE POLICY "service full cart_items"
   ON public.cart_items FOR ALL USING (auth.role() = 'service_role');
 CREATE INDEX IF NOT EXISTS idx_cart_items_user ON public.cart_items(user_id);
 
