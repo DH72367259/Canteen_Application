@@ -692,12 +692,12 @@ export default function VendorDashboard() {
         {activeNav === "prep-summary" && <VendorPrepSummaryView session={session} />}
         {activeNav === "menu" && <VendorMenuView session={session} />}
         {activeNav === "inventory" && <VendorInventoryView session={session} />}
-        {activeNav === "slots" && <VendorSlotsView />}
+        {activeNav === "slots" && <VendorSlotsView session={session} onNavigate={setActiveNav} />}
         {activeNav === "sales" && <VendorSalesView session={session} />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
         {activeNav === "bins" && <VendorBinsView session={session} canteenId={user?.canteenId ?? null} />}
         {activeNav === "logs" && <VendorLogsView session={session} />}
-        {activeNav === "settings" && <VendorSettingsView canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
+        {activeNav === "settings" && <VendorSettingsView session={session} canteenOpen={canteenOpen} setCanteenOpen={setCanteenOpen} />}
         {activeNav === "support" && <VendorSupportView />}
       </main>
 
@@ -1119,119 +1119,102 @@ function VendorMenuView({ session }: { session: { access_token: string } | null 
   );
 }
 
-function VendorSlotsView() {
-  type Slot = { id: string; time: string; type: "Breakfast" | "Lunch" | "Dinner" | "Snacks"; capacity: number; booked: number; enabled: boolean };
-  const INIT: Slot[] = [];
-  const [slots, setSlots] = useState<Slot[]>(INIT);
-  const [modal, setModal] = useState<Slot | null | false>(false); // null = add new
-  const [form, setForm] = useState({ time: "", type: "Lunch" as Slot["type"], capacity: "" });
-  const [saved, setSaved] = useState(false);
+function VendorSlotsView({ session, onNavigate }: { session: Session | null; onNavigate?: (tab: string) => void }) {
+  const [data, setData] = useState<SlotControlResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const openEdit = (s: Slot) => { setModal(s); setForm({ time: s.time, type: s.type, capacity: String(s.capacity) }); };
-  const openAdd = () => { setModal(null); setForm({ time: "", type: "Lunch", capacity: "" }); };
-  const closeModal = () => setModal(false);
+  const load = useCallback(async () => {
+    if (!session) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch("/api/canteen/slot-control", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed to load slots");
+      setData(j);
+    } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setLoading(false); }
+  }, [session]);
 
-  const handleSaveConfiguration = () => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("vendor_slots_configured", "true");
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
+  useEffect(() => { void load(); }, [load]);
 
-  const saveModal = () => {
-    if (!form.time.trim()) return;
-    if (modal !== null && modal !== false) {
-      setSlots(prev => prev.map(s => s.id === modal.id ? { ...s, time: form.time, type: form.type, capacity: Number(form.capacity) || s.capacity } : s));
-    } else {
-      setSlots(prev => [...prev, { id: `s${Date.now()}`, time: form.time, type: form.type, capacity: Number(form.capacity) || 20, booked: 0, enabled: true }]);
-    }
-    closeModal();
-  };
+  if (loading) return <div className="page-content"><p>Loading time slots…</p></div>;
+  if (error || !data) return (
+    <div className="page-content">
+      <p style={{ color: "var(--red)" }}>{error ?? "No slot configuration found."}</p>
+      <button className="btn btn-ghost" onClick={load}>Retry</button>
+    </div>
+  );
 
-  const toggleSlot = (id: string) => setSlots(prev => prev.map(s => s.id === id ? { ...s, enabled: !s.enabled } : s));
-  const deleteSlot = (id: string) => setSlots(prev => prev.filter(s => s.id !== id));
+  const { windows, capacity, slot_control: sc } = data;
+  const cap = capacity.maxOrdersPerSlot;
 
-  const typeTag: Record<Slot["type"], string> = { Breakfast: "tag-orange", Lunch: "tag-blue", Dinner: "tag-gray", Snacks: "tag-yellow" };
+  const periods = [
+    { key: "morning",   label: "Morning",   range: `${sc.morning_start.slice(0,5)} – ${sc.morning_end.slice(0,5)}`,       slots: windows.morning },
+    { key: "afternoon", label: "Afternoon", range: `${sc.afternoon_start.slice(0,5)} – ${sc.afternoon_end.slice(0,5)}`, slots: windows.afternoon },
+    { key: "evening",   label: "Evening",   range: `${sc.evening_start.slice(0,5)} – ${sc.evening_end.slice(0,5)}`,       slots: windows.evening },
+  ] as const;
+
+  const periodColor: Record<string, string> = { morning: "#f59e0b", afternoon: "#3b82f6", evening: "#8b5cf6" };
+  const periodTag: Record<string, string> = { morning: "tag-yellow", afternoon: "tag-blue", evening: "tag-gray" };
+
+  const totalSlots = periods.reduce((n, p) => n + p.slots.length, 0);
 
   return (
     <div className="page-content">
       <div className="page-header">
         <h2>Time Slots</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          {saved && <span style={{ fontSize: "0.78rem", color: "var(--green)", fontWeight: 600 }}>✅ Configuration saved!</span>}
-          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={openAdd}>+ Add Slot</button>
-          <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={handleSaveConfiguration}>
-            Save Configuration
-          </button>
+          <button className="btn btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={load}>↻ Refresh</button>
+          {onNavigate && (
+            <button className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }} onClick={() => onNavigate("slot-control")}>
+              Configure Slots →
+            </button>
+          )}
         </div>
       </div>
-      <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: "0.6rem 0.9rem", fontSize: "0.78rem", color: "#92400e", marginBottom: "0.75rem" }}>
-        ⚡ You must click <strong>Save Configuration</strong> before you can turn the canteen ON.
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>TIME</th><th>TYPE</th><th>CAPACITY</th><th>BOOKED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
-          <tbody>
-            {slots.map(s => (
-              <tr key={s.id}>
-                <td style={{ fontWeight: 600 }}>{s.time}</td>
-                <td><span className={`tag ${typeTag[s.type]}`}>{s.type}</span></td>
-                <td>{s.capacity}</td>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <div style={{ flex: 1, height: 6, background: "var(--border)", borderRadius: 999, maxWidth: 80 }}>
-                      <div style={{ width: `${Math.min((s.booked / s.capacity) * 100, 100)}%`, height: "100%", background: s.booked / s.capacity > 0.8 ? "var(--red)" : "var(--orange)", borderRadius: 999 }} />
-                    </div>
-                    <span style={{ fontSize: "0.78rem" }}>{s.booked}/{s.capacity}</span>
-                  </div>
-                </td>
-                <td>
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={s.enabled} onChange={() => toggleSlot(s.id)} />
-                    <span className="toggle-track" />
-                  </label>
-                </td>
-                <td style={{ display: "flex", gap: "0.25rem" }}>
-                  <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem" }} onClick={() => openEdit(s)}>✏ Edit</button>
-                  <button className="btn btn-ghost" style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem", color: "var(--red)" }} onClick={() => deleteSlot(s.id)}>✕</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem 0.9rem", fontSize: "0.78rem", color: "#166534", marginBottom: "0.75rem" }}>
+        <strong>{totalSlots} slots</strong> auto-generated · <strong>{sc.slot_duration_mins} min</strong> each · <strong>{cap} orders</strong> per slot capacity.
+        To adjust windows or capacity, use <strong>Slot and Bin Control</strong>.
       </div>
 
-      {modal !== false && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <h3>{modal ? "Edit Slot" : "Add New Slot"}</h3>
-              <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div>
-                <label className="form-label">Time Range (e.g. 1:00 PM – 1:15 PM)</label>
-                <input className="form-input" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} placeholder="e.g. 2:00 PM – 2:15 PM" />
-              </div>
-              <div>
-                <label className="form-label">Meal Type</label>
-                <select className="form-input" value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as Slot["type"] }))}>
-                  <option>Breakfast</option>
-                  <option>Lunch</option>
-                  <option>Snacks</option>
-                  <option>Dinner</option>
-                </select>
-              </div>
-              <div>
-                <label className="form-label">Max Capacity (orders)</label>
-                <input className="form-input" type="number" value={form.capacity} onChange={e => setForm(p => ({ ...p, capacity: e.target.value }))} placeholder="e.g. 25" />
-              </div>
-              <button className="btn btn-primary btn-full" onClick={saveModal} style={{ marginTop: "0.5rem" }}>
-                {modal ? "Save Changes" : "Add Slot"}
-              </button>
-            </div>
+      {periods.map(p => p.slots.length === 0 ? null : (
+        <div key={p.key} style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <span style={{ width: 10, height: 10, borderRadius: "50%", background: periodColor[p.key], display: "inline-block" }} />
+            <strong style={{ fontSize: "0.92rem" }}>{p.label}</strong>
+            <span className={`tag ${periodTag[p.key]}`} style={{ fontSize: "0.72rem" }}>{p.range}</span>
+            <span style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginLeft: "auto" }}>{p.slots.length} slots</span>
           </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>TIME SLOT</th>
+                  <th>PERIOD</th>
+                  <th>CAPACITY</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.slots.map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600, fontFamily: "monospace" }}>{s.start} – {s.end}</td>
+                    <td><span className={`tag ${periodTag[p.key]}`}>{p.label}</span></td>
+                    <td>{cap} orders max</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {totalSlots === 0 && (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>
+          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🕐</div>
+          <p>No slots configured yet.</p>
+          {onNavigate && <button className="btn btn-primary" onClick={() => onNavigate("slot-control")}>Set Up Slot Windows</button>}
         </div>
       )}
     </div>
@@ -1730,11 +1713,28 @@ function VendorLogsView({ session }: { session: Session | null }) {
   );
 }
 
-function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: boolean; setCanteenOpen: (v: boolean) => void }) {
+function VendorSettingsView({ session, canteenOpen, setCanteenOpen }: { session: Session | null; canteenOpen: boolean; setCanteenOpen: (v: boolean) => void }) {
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [phone, setPhone] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  useEffect(() => {
+    if (!session) return;
+    fetch("/api/canteen/profile", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(r => r.json())
+      .then(j => {
+        if (j.canteen) {
+          setName(j.canteen.name ?? "");
+          setLocation(j.canteen.address ?? j.canteen.location ?? "");
+        }
+        setPhone(j.phone ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
+  }, [session]);
 
   // Operating hours — editable, stored in localStorage
   type HourRow = { day: string; opens: string; closes: string; active: boolean };
@@ -1757,7 +1757,23 @@ function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: bool
     setTimeout(() => setHoursSaved(false), 2000);
   };
 
-  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const save = async () => {
+    if (!session) return;
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/canteen/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ name, address: location, location, phone }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Save failed");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save");
+    }
+  };
 
   // Format HH:MM to display as "7:30 AM"
   const fmt = (t: string) => {
@@ -1793,23 +1809,28 @@ function VendorSettingsView({ canteenOpen, setCanteenOpen }: { canteenOpen: bool
 
       <div className="card" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginBottom: "1rem", fontSize: "0.9rem", fontWeight: 700 }}>Canteen Profile</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <div>
-            <label className="form-label">Canteen Name</label>
-            <input className="form-input" value={name} onChange={e => setName(e.target.value)} />
+        {profileLoading ? (
+          <p style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Loading profile…</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div>
+              <label className="form-label">Canteen Name</label>
+              <input className="form-input" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div>
+              <label className="form-label">Location / Block</label>
+              <input className="form-input" value={location} onChange={e => setLocation(e.target.value)} />
+            </div>
+            <div>
+              <label className="form-label">Contact Phone</label>
+              <input className="form-input" value={phone} onChange={e => setPhone(e.target.value)} />
+            </div>
+            {saveError && <p style={{ fontSize: "0.8rem", color: "var(--red)", margin: 0 }}>{saveError}</p>}
+            <button className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.5rem 1.5rem" }} onClick={() => void save()}>
+              {saved ? "✓ Saved!" : "Save Changes"}
+            </button>
           </div>
-          <div>
-            <label className="form-label">Location / Block</label>
-            <input className="form-input" value={location} onChange={e => setLocation(e.target.value)} />
-          </div>
-          <div>
-            <label className="form-label">Contact Phone</label>
-            <input className="form-input" value={phone} onChange={e => setPhone(e.target.value)} />
-          </div>
-          <button className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.5rem 1.5rem" }} onClick={save}>
-            {saved ? "✓ Saved!" : "Save Changes"}
-          </button>
-        </div>
+        )}
       </div>
 
       <div className="card">
