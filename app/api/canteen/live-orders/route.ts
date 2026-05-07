@@ -131,42 +131,29 @@ export async function GET(request: Request) {
   }
 
   // Auto-release stale bins on every poll.
-  // A bin is stale if it has been occupied for more than 2 hours OR its linked
-  // order is no longer active (terminal: collected/cancelled/failed/refunded,
-  // OR the order was created on a previous calendar day in IST).
+  // A bin is legitimately held only if its linked order is BOTH in an active
+  // status AND was created within the last 90 minutes (one slot cycle).
+  // Anything older → free the bin regardless of order status.
   {
     const occupiedBins = (bins ?? []).filter(b => b.is_occupied);
     if (occupiedBins.length > 0) {
       const now = new Date();
-      // IST = UTC+5:30 → today's date string in IST
-      const istOffset = 330 * 60_000;
-      const todayIST = new Date(now.getTime() + istOffset).toISOString().slice(0, 10);
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60_000).toISOString();
+      const ninetyMinsAgo = new Date(now.getTime() - 90 * 60_000).toISOString();
 
-      // Find active order IDs for this canteen today so we know which bins are legitimately held
-      const { data: activeOrders } = await supabase
+      // Orders that are genuinely in-flight right now (placed within last 90 min)
+      const { data: recentActive } = await supabase
         .from("orders")
         .select("id")
         .eq("canteen_id", canteenId)
         .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
-        .gte("created_at", `${todayIST}T00:00:00+05:30`);
+        .gte("created_at", ninetyMinsAgo);
 
-      const activeOrderIds = new Set((activeOrders ?? []).map(o => o.id));
+      const activeOrderIds = new Set((recentActive ?? []).map(o => o.id));
 
-      // A bin should be freed if its linked order is NOT actively in-progress today
-      const binsToFree = occupiedBins.filter(b => {
-        const linkedOrderId = b.current_order_id;
-        if (!linkedOrderId) return true;           // orphaned — no order linked
-        if (activeOrderIds.has(linkedOrderId)) return false; // legitimately held
-        return true;                               // order finished / old / cancelled
-      });
-
-      // Also free any bin occupied for more than 2 hours regardless (safety net)
-      const overtimeBins = occupiedBins.filter(b =>
-        b.updated_at && b.updated_at < twoHoursAgo && !activeOrderIds.has(b.current_order_id ?? "")
-      );
-
-      const allToFree = [...new Set([...binsToFree, ...overtimeBins].map(b => b.id))];
+      // Free any bin whose linked order is not in the active set
+      const allToFree = occupiedBins
+        .filter(b => !activeOrderIds.has(b.current_order_id ?? ""))
+        .map(b => b.id);
 
       if (allToFree.length > 0) {
         await supabase
