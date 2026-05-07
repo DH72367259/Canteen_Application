@@ -27,8 +27,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway up --ci \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --service "${{ secrets.RAILWAY_SERVICE_ID }}" \
-            --environment "${{ secrets.RAILWAY_ENVIRONMENT_ID }}"
+          railway up --detach \
+            --project "9ecacfbc-a63e-4962-b2e7-69565b15b131" \
+            --environment "589f6d0e-7ae1-4cc1-8546-94050d099009"
 
