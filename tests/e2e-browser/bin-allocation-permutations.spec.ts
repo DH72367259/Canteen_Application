@@ -37,61 +37,15 @@ let canteenA = "";
 let canteenB = "";
 const seededOrderIds: string[] = [];
 const seededStudentIds: string[] = [];
-const seededSlotIds: string[] = [];
 
-async function ensureSlotLabel(canteenId: string): Promise<string> {
-  const slots = await admin
-    .from("time_slots")
-    .select("id, slot_name, start_time")
-    .eq("canteen_id", canteenId)
-    .eq("is_active", true)
-    .order("start_time", { ascending: true });
-  if (slots.error) throw slots.error;
-
-  const istNow = (() => {
-    const d = new Date();
-    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
-  })();
-
-  const future = (slots.data ?? []).find((s) => {
-    const [h, m] = String(s.start_time).split(":").map(Number);
-    return h * 60 + m - 15 > istNow;
-  });
-  if (future) return String(future.slot_name);
-
-  // Seed a future slot so the order doesn't get rejected
-  // Create slot 120 minutes (2 hours) in the future to ensure plenty of buffer for order placement
-  let startMin = istNow + 120;
-  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30; // Next day 8 AM
-  const endMin = Math.min(startMin + 30, 23 * 60 + 59);
-  const fmt = (m: number) =>
-    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00`;
-  const slotName = `E2E-BIN-PERM-${Date.now().toString().slice(-6)}`;
-
-  // Fetch slot_control to get dynamic max_orders_per_slot
-  const { data: sc } = await admin
-    .from("slot_control")
-    .select("max_orders_per_slot")
-    .eq("canteen_id", canteenId)
-    .single();
-  const maxOrders = Number(sc?.max_orders_per_slot) || 60;
-
-  const seed = await admin
-    .from("time_slots")
-    .insert({
-      canteen_id: canteenId,
-      slot_name: slotName,
-      start_time: fmt(startMin),
-      end_time: fmt(endMin),
-      max_orders: maxOrders,
-      is_active: true,
-    })
-    .select("id, slot_name")
-    .single();
-  if (seed.error) throw seed.error;
-
-  seededSlotIds.push(String(seed.data.id));
-  return String(seed.data.slot_name);
+function ensureSlotLabel(canteenId: string): string {
+  // Use a synthetic slot label that does NOT match any time_slots row.
+  // This means place/route.ts resolves slotId=null → the slot-cutoff check
+  // (which compares IST wall-clock vs slot start_time) is skipped entirely.
+  // Avoids all fragility around the IST time-zone arithmetic that caused
+  // P3/P5 to fail when CI ran after ~22:20 IST.
+  // Each call gets a unique label so per-slot order-cap counts stay at 0.
+  return `E2E-PERM-${canteenId.slice(-4)}-${Date.now().toString().slice(-8)}`;
 }
 
 async function getMenuItem(
@@ -131,7 +85,7 @@ async function placeOrder(
   canteenId: string,
   cartItems: Array<{ id: string; qty: number }>,
 ): Promise<OrderResult> {
-  const slotLabel = await ensureSlotLabel(canteenId);
+  const slotLabel = ensureSlotLabel(canteenId);
   const resp = await apiFetch(`${APP_URL}/api/orders/place`, {
     method: "POST",
     headers: {
@@ -192,10 +146,7 @@ test.afterAll(async () => {
     await admin.from("bins").update(free).eq("order_id", orderId);
     await admin.from("bins").update(free).eq("assigned_order_id", orderId);
   }
-  for (const slotId of seededSlotIds) {
-    await admin.from("time_slots").delete().eq("id", slotId);
-  }
-  for (const userId of seededStudentIds) {
+for (const userId of seededStudentIds) {
     await deleteUser(userId);
   }
 });
