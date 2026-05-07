@@ -3,10 +3,9 @@ import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
-import { assignBins, computeSlotCapacity, type CartLine, type BinAssignment } from "@/lib/slotCapacity";
+import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
-import { claimFreeBinsAtomic } from "@/lib/atomicBinClaim";
 
 export const dynamic = "force-dynamic";
 
@@ -261,84 +260,10 @@ export async function POST(req: NextRequest) {
   // Generate 4-digit OTP
   const otp = String(Math.floor(1000 + Math.random() * 9000));
 
-  // ── Allocate N free bins (one per binPlan.bins entry) ────────────────────
-  // Prod canteens have many physical bins per slot; if the canteen is so
-  // saturated that there aren't enough free bins, fail loudly so the user
-  // can pick a different slot rather than silently losing items.
+  // Bin plan tells us how many bins this order will need (for bin_count).
+  // Physical bins are NOT claimed at order time — they are deferred until
+  // the slot's start time arrives (see lib/deferredBinAssign.ts).
   const binsNeeded = binPlan.bins.length;
-  // Pull the entire free bin pool ordered by colour-zone then bin number so
-  // we can hand out same-colour ADJACENT bins for multi-bin orders ("Place
-  // Part 1 in #RED004, Part 2 in #RED005"). Falls back to any free bins if
-  // no contiguous run exists.
-  const { data: freeBins } = await supabase
-    .from("bins")
-    .select("id, bin_code, color, zone_color, bin_number")
-    .eq("canteen_id", canteenId)
-    .eq("is_occupied", false)
-    .order("zone_color", { ascending: true })
-    .order("bin_number", { ascending: true });
-
-  type FreeBin = { id: string; bin_code: string; color: string | null; zone_color: string | null; bin_number: number | null };
-  const pool = (freeBins ?? []) as FreeBin[];
-
-  // Pick same-colour adjacent run when possible.
-  function pickContiguous(n: number): FreeBin[] | null {
-    if (n <= 1) return pool.length >= 1 ? [pool[0]] : null;
-    const byZone = new Map<string, FreeBin[]>();
-    for (const b of pool) {
-      const z = (b.zone_color || b.color || "_").toLowerCase();
-      if (!byZone.has(z)) byZone.set(z, []);
-      byZone.get(z)!.push(b);
-    }
-    for (const list of byZone.values()) {
-      list.sort((a, b) => (a.bin_number ?? 0) - (b.bin_number ?? 0));
-      for (let i = 0; i + n <= list.length; i++) {
-        let ok = true;
-        for (let k = 1; k < n; k++) {
-          const prev = list[i + k - 1].bin_number ?? -1;
-          const cur  = list[i + k].bin_number ?? -2;
-          if (cur !== prev + 1) { ok = false; break; }
-        }
-        if (ok) return list.slice(i, i + n);
-      }
-    }
-    return null;
-  }
-
-  const allocated: FreeBin[] = pickContiguous(binsNeeded) ?? pool.slice(0, binsNeeded);
-  if (allocated.length < binsNeeded) {
-    // Reject orders when there aren't enough configured bins available.
-    // Check total bins configured for this canteen to distinguish between
-    // "no bins in test canteen" vs "no free bins during peak load".
-    const { count: totalBinsCount } = await supabase
-      .from("bins")
-      .select("*", { count: "exact", head: true })
-      .eq("canteen_id", canteenId);
-
-    const hasNoConfiguredBins = (totalBinsCount ?? 0) === 0;
-
-    if (binsNeeded === 1 && allocated.length === 0 && hasNoConfiguredBins) {
-      // Test data: synth a placeholder ONLY if canteen has ZERO bins configured
-      allocated.push({
-        id: "",
-        bin_code: "SYNTH-001",
-        color: "blue",
-        zone_color: null,
-        bin_number: null,
-      });
-    } else if (allocated.length < binsNeeded) {
-      return Response.json({
-        error: `All physical bins are in use right now — workers are still clearing the previous slot. Please wait a moment and try again, or pick a different slot.`,
-        bins_exhausted: true,
-      }, { status: 409 });
-    }
-  }
-
-  // Map BinPlan.bins[i] → allocated[i] (keep original 1-based bin_index for display)
-  const firstBin = allocated[0];
-  const firstBinId    = firstBin.id || null;
-  const firstBinLabel = firstBin.bin_code;
-  const firstBinColor = firstBin.color ?? "blue";
 
   // ── Order cutoff (PDF requirement) ───────────────────────────────────────
   // A slot closes for new orders one slot_duration BEFORE its start time.
@@ -360,13 +285,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── ATOMIC BIN CLAIMING ──────────────────────────────────────────────────
-  // We'll claim bins AFTER creating the order so we have a real order_id.
-  // First, create order with placeholder bin info (will update after claiming).
-  
-  // Create the order using the server-calculated total
-  // (Note: bin_id, bin_label, bin_color are provisional from first allocated bin;
-  //  we'll update them after atomically claiming the actual physical bins)
+  // ── Create the order (no bin assigned yet — deferred until slot time) ──────
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .insert({
@@ -377,13 +296,10 @@ export async function POST(req: NextRequest) {
       otp,
       payment_id: (typeof paymentId === "string" && paymentId.length <= 100) ? paymentId : null,
       slot_id: slotId,
-      bin_id: firstBinId,
-      bin_label: firstBinLabel,
-      bin_color: firstBinColor,
+      bin_id: null,
+      bin_label: null,
+      bin_color: null,
       slot_label: slotLabel ? String(slotLabel).slice(0, 100) : null,
-      // Phase 7 rollups (older DBs without these columns will still accept the insert
-      // because Supabase ignores unknown columns when using the admin client only if
-      // the column exists — if not, the migration must be applied. See phase7_extra_bin_workflow.sql).
       bin_count: binsNeeded,
       extra_bin_fee_paise: binPlan.extraFeePaise,
     })
@@ -395,9 +311,6 @@ export async function POST(req: NextRequest) {
   }
 
   // ── POST-CREATION CAPACITY CHECK (atomic race condition guard) ──────────────
-  // Even though we checked capacity before creating the order, concurrent requests
-  // can both read count=N, both pass, and both create. Verify again now that the
-  // order exists. If we've exceeded capacity, delete this order and reject.
   if (slotLabel) {
     const { count: slotCountAfter } = await supabase
       .from("orders")
@@ -408,48 +321,12 @@ export async function POST(req: NextRequest) {
       .not("status", "in", '("cancelled","failed","refunded")');
 
     if ((slotCountAfter ?? 0) > maxOrdersPerSlot) {
-      // Exceeded capacity — delete this order and reject
       await supabase.from("orders").delete().eq("id", order.id);
       return Response.json({
         error: "This time slot is full. Please select a different slot.",
         slot_full: true,
       }, { status: 409 });
     }
-  }
-
-  // Step 2: Atomically claim N free bins for this order using the real order_id.
-  // This uses a single UPDATE with WHERE is_occupied=false to prevent race conditions
-  // where two concurrent requests could claim the same bin.
-  const allocatedIds = allocated.map(b => b.id).filter((x): x is string => !!x);
-  let claimedBinIds: string[] = [];
-  
-  if (allocatedIds.length > 0) {
-    // ✅ CRITICAL FIX: Pass slotLabel to prevent slot A orders from stealing slot B bins
-    const claimResult = await claimFreeBinsAtomic(canteenId, allocatedIds, order.id, binsNeeded, slotLabel);
-    if (!claimResult.success) {
-      // Race condition: bin claiming failed. For single-bin orders, fall back to synthetic bin
-      // to ensure the order succeeds even under high concurrency. Multi-bin orders must fail.
-      if (binsNeeded === 1) {
-        // Synthetic bin fallback — don't fail the order
-        claimedBinIds = [""];
-      } else {
-        // Multi-bin order failed — mark it as failed and return 409
-        await supabase
-          .from("orders")
-          .update({ status: "failed" })
-          .eq("id", order.id);
-
-        return Response.json({
-          error: claimResult.message || "Not enough free bins available. Please try a different slot.",
-          slot_full: true,
-        }, { status: 409 });
-      }
-    } else {
-      claimedBinIds = claimResult.claimedIds;
-    }
-  } else if (binsNeeded === 1) {
-    // Synthetic bin (test data) — no need to claim
-    claimedBinIds = [""];
   }
 
   // Insert order items with server-verified prices
@@ -464,47 +341,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Insert per-bin allocations (Phase 7) ─────────────────────────────────
-  // Use claimedBinIds to match actual claimed bins, not the allocated array
-  // to avoid reusing the same physical bin multiple times if claiming failed
-  // for some bins
-  const orderBinRows = binPlan.bins.map((b: BinAssignment, i: number) => {
-    const claimedBinId = claimedBinIds[i] || null;
-    // For synthetic bins or fallback cases, claimedBinId will be ""
-    // Find the corresponding allocated bin for metadata (code, color)
-    const phys = allocated[i] || allocated[0] || {
-      id: "",
-      bin_code: "FALLBACK",
-      color: "blue",
-      zone_color: null,
-      bin_number: null,
-    };
-    return {
-      order_id:  order.id,
-      bin_id:    claimedBinId || null,  // Use claimed ID, not allocated
-      bin_index: b.binIndex,
-      bin_code:  phys.bin_code,
-      bin_color: phys.color ?? "blue",
-      items: [
-        ...b.meals.map((m) => ({ name: m.name, quantity: m.quantity, isMeal: true })),
-        ...b.snacks.map((s) => ({ name: s.name, quantity: s.quantity, isMeal: false })),
-      ],
-    };
-  });
-  if (orderBinRows.length > 0) {
-    const { error: obErr } = await supabase.from("order_bins").insert(orderBinRows);
-    if (obErr) {
-      // Don't fail the whole order — log so we can investigate, but the order is
-      // already paid for. Single-bin (legacy) data is still on `orders` columns.
-      console.error("[orders/place] order_bins insert failed:", obErr.message);
-    }
-  }
-
   // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
-  // We snapshot the commission split RIGHT NOW so future tariff changes
-  // never retroactively rewrite history. Idempotent on razorpay_payment_id —
-  // safe even if the webhook fires before/after this. Failure here must NOT
-  // fail the order (the user has already paid); we just log it.
   if (
     typeof paymentId === "string" && RZP_PAYMENT_RE.test(paymentId) &&
     typeof razorpayOrderId === "string" && RZP_ORDER_RE.test(razorpayOrderId)
@@ -521,30 +358,21 @@ export async function POST(req: NextRequest) {
         status:              "captured",
       });
     } catch (e) {
-      // Order is already created and paid — never bubble this to the user.
       console.error("[orders/place] payment-ledger insert failed:", e);
     }
   }
 
-  // Build the per-bin response payload (the cart UI saves this in localStorage
-  // for the order-status screen + workers see the same breakdown).
-  const binsResponse = orderBinRows.map((row) => ({
-    binIndex: row.bin_index,
-    binLabel: row.bin_code,
-    binCode:  row.bin_code,
-    binColor: row.bin_color,
-    items:    row.items,
-  }));
-
+  // Bin label is deferred — student order-status page already shows
+  // "Bin and OTP will appear when ready" until the status moves to ready_for_pickup.
   return Response.json({
     orderId: order.id,
     otp,
-    binLabel: firstBinLabel,
-    binCode:  firstBinLabel,
-    binColor: firstBinColor,
+    binLabel: null,
+    binCode:  null,
+    binColor: null,
     total:    serverTotal,
     extraBinFeePaise: binPlan.extraFeePaise,
     binCount: binsNeeded,
-    bins:     binsResponse,
+    bins:     [],
   });
 }

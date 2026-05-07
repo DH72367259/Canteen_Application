@@ -4,6 +4,7 @@ import { canManageOrders } from "@/lib/roleChecks";
 import { menuItems } from "@/lib/menu";
 import { autoAcceptPlacedOrders } from "@/lib/orderAutoAccept";
 import { createAdminClient } from "@/lib/supabase-server";
+import { assignDeferredBins } from "@/lib/deferredBinAssign";
 import { createOrder, listOrdersForUser, listRecentOrders } from "@/lib/orderRepository";
 import type {
   CreateOrderRequest,
@@ -64,14 +65,17 @@ export async function GET(request: Request) {
 
     try {
       const isPlatformAdmin = (context.role === "super_admin" || context.role === "co_admin") && !context.canteenId;
+      const adminSupa = createAdminClient();
       if (canManageOrders(context.role)) {
         if (isPlatformAdmin) {
-          await autoAcceptPlacedOrders({ supabase: createAdminClient() });
+          await autoAcceptPlacedOrders({ supabase: adminSupa });
         } else if (context.canteenId) {
-          await autoAcceptPlacedOrders({ supabase: createAdminClient(), canteenId: context.canteenId });
+          await autoAcceptPlacedOrders({ supabase: adminSupa, canteenId: context.canteenId });
+          // Assign bins to orders whose slot time has arrived (deferred bin assignment)
+          await assignDeferredBins(adminSupa, context.canteenId).catch(() => {});
         }
       } else {
-        await autoAcceptPlacedOrders({ supabase: createAdminClient(), userId: context.uid });
+        await autoAcceptPlacedOrders({ supabase: adminSupa, userId: context.uid });
       }
     } catch (e) {
       // Auto-accept is best-effort; listing orders should still work.
