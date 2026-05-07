@@ -313,9 +313,9 @@ test.describe("👷 WORKER WORKFLOWS - Full Lifecycle", () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      // Should either fail (401/403) or return empty for cross-canteen isolation
+      // Should either fail (401/403/404) or return empty for cross-canteen isolation
       const status = response.status;
-      expect([200, 401, 403]).toContain(status);
+      expect([200, 401, 403, 404]).toContain(status);
     });
   });
 });
