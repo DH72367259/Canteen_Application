@@ -315,7 +315,8 @@ test.describe("👤 STUDENT WORKFLOWS - Full Lifecycle", () => {
       if (placeRes.ok) {
         const order = await placeRes.json();
         expect(order.orderId).toBeTruthy();
-        expect(order.binCode).toBeTruthy();
+        // binCode is null at placement (deferred bin assignment — bins assigned at slot time)
+        expect(order.otp).toMatch(/^\d{4}$/);
         createdOrderIds.push(String(order.orderId));
       }
     });
