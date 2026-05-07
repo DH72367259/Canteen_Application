@@ -130,6 +130,60 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: `Failed to load orders: ${orderErr.message}` }, { status: 500 });
   }
 
+  // Auto-release bins whose orders have reached a terminal state.
+  // Runs on every poll (every 5s) so stale bins are freed without manual intervention.
+  {
+    const occupiedBinIds = (bins ?? [])
+      .filter(b => b.is_occupied && b.current_order_id)
+      .map(b => b.current_order_id as string);
+
+    if (occupiedBinIds.length > 0) {
+      const { data: doneOrders } = await supabase
+        .from("orders")
+        .select("id, bin_id")
+        .in("id", occupiedBinIds)
+        .in("status", ["collected", "cancelled", "failed", "refunded"]);
+
+      const staleOrderIds = (doneOrders ?? []).map(o => o.id);
+      if (staleOrderIds.length > 0) {
+        await supabase
+          .from("bins")
+          .update({
+            is_occupied: false,
+            order_id: null,
+            assigned_order_id: null,
+            slot_label: null,
+            status: "empty",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("canteen_id", canteenId)
+          .in("order_id", staleOrderIds);
+
+        // Refresh bins list after cleanup so the response reflects freed bins
+        const refreshed = await supabase
+          .from("bins")
+          .select("*")
+          .eq("canteen_id", canteenId)
+          .order("bin_code");
+        if (!refreshed.error) {
+          bins = ((refreshed.data ?? []) as Array<Record<string, unknown>>).map(b => ({
+            id: String(b.id ?? ""),
+            bin_code: String(b.bin_code ?? ""),
+            color: (b.color as string | null) ?? null,
+            status: (b.status as string | null) ?? null,
+            is_occupied: Boolean(b.is_occupied),
+            current_order_id:
+              (b.current_order_id as string | null) ??
+              (b.assigned_order_id as string | null) ??
+              (b.order_id as string | null) ??
+              null,
+            updated_at: b.updated_at as string | undefined,
+          }));
+        }
+      }
+    }
+  }
+
   // Sort order: Placed (oldest first) -> Preparing -> ready_for_placement
   const STATUS_RANK: Record<string, number> = {
     placed_in_bin: 0,
