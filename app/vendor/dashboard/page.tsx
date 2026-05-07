@@ -75,7 +75,6 @@ export default function VendorDashboard() {
   const router = useRouter();
   const { user, logout, session, loading } = useAuth();
   const [activeNav, setActiveNav] = useState("live");
-  const [activeSlot, setActiveSlot] = useState("all");
   // Live Orders status filter — PDF page 14 vocabulary: Reserved / Occupied / Late Pickup
   const [statusFilter, setStatusFilter] = useState<"all" | "reserved" | "occupied" | "late">("all");
   // Live wall clock shown in the toolbar (updates every second)
@@ -427,19 +426,12 @@ export default function VendorDashboard() {
   // Show spinner while auth loads or while redirecting
   if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
 
-  const slotBins = activeSlot === "all"
-    ? bins
-    : bins.filter(b => b.slot === activeSlot);
-
-  // Per spec: only show bins that have an assigned order, and sort placed → preparing → just-now (bottom)
+  // Group active bins by slot label for slot-by-slot section rendering.
   const STATUS_ORDER: Record<BinStatus, number> = { placed: 0, preparing: 1, completed: 2, delayed: 3, empty: 99 };
-  const visibleSlotBins = [...slotBins]
+  const visibleBins = bins
     .filter(b => b.status !== "empty" && !!b.orderId)
     .filter(b => {
       if (statusFilter === "all") return true;
-      // PDF vocabulary mapping: just-placed / preparing → Reserved (kitchen has
-      // it, food not in bin yet); completed (in bin, awaiting pickup) → Occupied;
-      // delayed (past grace period) → Late Pickup.
       if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
       if (statusFilter === "occupied") return b.status === "completed";
       if (statusFilter === "late")     return b.status === "delayed";
@@ -448,104 +440,20 @@ export default function VendorDashboard() {
     .sort((a, b) => {
       const sa = STATUS_ORDER[a.status]; const sb = STATUS_ORDER[b.status];
       if (sa !== sb) return sa - sb;
-      // Within same status, newest ("just now") goes to the bottom
       const ta = a.placedAt ? Date.parse(a.placedAt) : 0;
       const tb = b.placedAt ? Date.parse(b.placedAt) : 0;
       return ta - tb;
     });
 
-  // Full bin grid for Live Orders (client request 2026-04-30): show every
-  // physical bin 1..maxBins. Bins with an active order use the order's
-  // status; the rest render as "empty". Status filter narrows the visible
-  // set including empty (which is filtered out unless the user chose "all").
-  // Map active orders by bin number for O(1) lookup.
-  const activeBinByNum = new Map<number, Bin>();
-  for (const b of slotBins) {
-    if (b.status !== "empty" && b.orderId) activeBinByNum.set(b.number, b);
+  const slotGroupMap = new Map<string, Bin[]>();
+  for (const b of visibleBins) {
+    const key = b.slot ?? "Unknown Slot";
+    if (!slotGroupMap.has(key)) slotGroupMap.set(key, []);
+    slotGroupMap.get(key)!.push(b);
   }
-  const fullBinGrid: Bin[] = [];
-  for (let i = 1; i <= maxBins; i++) {
-    const active = activeBinByNum.get(i);
-    if (active) {
-      fullBinGrid.push(active);
-    } else {
-      fullBinGrid.push({
-        id: `empty-${i}`,
-        number: i,
-        status: "empty",
-        orderId: null,
-        customerName: null,
-        slot: null,
-        items: null,
-        otp: null,
-        binLabel: null,
-        binColor: null,
-        placedAt: null,
-      });
-    }
-  }
-  const filteredFullGrid = fullBinGrid.filter(b => {
-    if (statusFilter === "all") return true;
-    if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
-    if (statusFilter === "occupied") return b.status === "completed";
-    if (statusFilter === "late")     return b.status === "delayed";
-    return true;
-  });
-
-  const filteredSlotBins = slotBins
-    .filter(b => b.status !== "empty" && !!b.orderId)
-    .filter(b => {
-      if (statusFilter === "all") return true;
-      if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
-      if (statusFilter === "occupied") return b.status === "completed";
-      if (statusFilter === "late")     return b.status === "delayed";
-      return true;
-    });
-
-  const showFullRack = activeSlot === "all" && statusFilter === "all";
-
-  // ── Phase 8: rack-style colour rows ───────────────────────────────────
-  // Split the bins into the 6 colour zones in the same order as the physical
-  // rack (red→orange) so the manager sees one row per colour. Distribution
-  // mirrors lib/binProvisioning.ts: floor(max/6) per zone + 1 extra to the
-  // first `max%6` zones.
-  const RACK_ZONES = [
-    { key: "red",    label: "RED",    abbr: "RED", color: "#dc2626" },
-    { key: "yellow", label: "YELLOW", abbr: "YEL", color: "#eab308" },
-    { key: "green",  label: "GREEN",  abbr: "GRE", color: "#16a34a" },
-    { key: "blue",   label: "BLUE",   abbr: "BLU", color: "#2563eb" },
-    { key: "purple", label: "PURPLE", abbr: "PUR", color: "#9333ea" },
-    { key: "orange", label: "ORANGE", abbr: "ORA", color: "#ea580c" },
-  ] as const;
-  type RackBin = Bin & { zoneKey: string; zoneAbbr: string; zoneColor: string; zoneNumber: number };
-  const rackRows: { zone: typeof RACK_ZONES[number]; bins: RackBin[] }[] = [];
-  if (maxBins > 0) {
-    const base = Math.floor(maxBins / 6);
-    const extra = maxBins % 6;
-    let cursor = 0;
-    RACK_ZONES.forEach((zone, zi) => {
-      const count = base + (zi < extra ? 1 : 0);
-      const row: RackBin[] = [];
-      for (let n = 1; n <= count; n++) {
-        const flatIdx = cursor + n; // 1-based across the whole rack
-        const src = showFullRack
-          ? (filteredFullGrid.find(b => b.number === flatIdx) ?? fullBinGrid[flatIdx - 1])
-          : filteredSlotBins.find(b => b.number === flatIdx);
-        if (!src) continue;
-        row.push({
-          ...src,
-          zoneKey:    zone.key,
-          zoneAbbr:   zone.abbr,
-          zoneColor:  zone.color,
-          zoneNumber: n,
-        });
-      }
-      cursor += count;
-      rackRows.push({ zone, bins: row });
-    });
-  }
-
-  const uniqueSlots = Array.from(new Set(bins.filter(b => b.slot).map(b => b.slot as string)));
+  const slotGroups = Array.from(slotGroupMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([slot, slotBins]) => ({ slot, bins: slotBins }));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
 
   return (
@@ -664,29 +572,9 @@ export default function VendorDashboard() {
               </div>
             </div>
 
-            {/* Slot selector + status sorter (per PDF: Live Orders → pick a slot, sort by status) */}
+            {/* Status filter — PDF page 14: Reserved / Occupied / Late Pickup */}
             <div className="slot-tabs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
-              {/* Slot dropdown — replaces the old "All Bins" pill so manager can
-                  jump straight into a specific time-slot's bin view (PDF spec). */}
-              <select
-                value={activeSlot}
-                onChange={e => setActiveSlot(e.target.value)}
-                style={{
-                  padding: "0.45rem 0.8rem", border: "1.5px solid var(--orange)", borderRadius: 8,
-                  fontSize: "0.85rem", fontWeight: 700, background: "#fff7ed", color: "var(--orange-dark)",
-                  cursor: "pointer", minWidth: 180,
-                }}
-                title="Select a slot to view its bins"
-              >
-                <option value="all">All slots ▾</option>
-                {uniqueSlots.map(s => (
-                  <option key={s} value={s}>{s} ▾</option>
-                ))}
-              </select>
-              {/* Status sorter — PDF page 14: Reserved / Occupied / Late Pickup
-                  (Empty bins live in the Bin Management tab; Live Orders only
-                  shows bins that currently have an order). */}
-              <div style={{ display: "flex", gap: "0.3rem", marginLeft: "auto", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
                 {([
                   { id: "reserved", label: "Reserved",     color: "var(--blue)" },
                   { id: "occupied", label: "Occupied",     color: "var(--green)" },
@@ -719,119 +607,75 @@ export default function VendorDashboard() {
               <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "var(--red)", marginRight: 4 }} />Late Pickup</span>
             </div>
 
-            {/* Bin grid — full grid showing every physical bin (1..maxBins).
-                When the canteen has not configured a slot-control max yet,
-                fall back to just the bins that have active orders. */}
+            {/* Slot-by-slot bin sections */}
             {ordersLoading ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>Loading live orders…</div>
-            ) : (maxBins === 0 && visibleSlotBins.length === 0) ? (
+            ) : visibleBins.length === 0 ? (
               <div className="empty-state" style={{ padding: "2.5rem", textAlign: "center", color: "var(--ink-3)" }}>
                 <div style={{ fontSize: "2rem" }}>📦</div>
                 <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
-                <p style={{ fontSize: "0.82rem" }}>Configure Slot and Bin Control → Max Bins to display the full bin grid here.</p>
+                <p style={{ fontSize: "0.82rem" }}>Orders will appear here grouped by slot once students place them.</p>
               </div>
-            ) : (maxBins > 0) ? (
-              // ── Phase 8 colour rack: 6 horizontal colour rows, each with
-              //     pill cards numbered 1..n inside that zone. Empty bins
-              //     stay tinted in their zone colour so the rack reads as a
-              //     real physical rack at a glance.
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem", padding: "0.5rem 0" }}>
-                {rackRows.map(({ zone, bins: zoneBins }) => zoneBins.length > 0 && (
-                  <div key={zone.key} style={{ display: "flex", alignItems: "stretch", gap: "0.6rem" }}>
-                    <div style={{
-                      minWidth: 84, padding: "0.5rem 0.6rem", borderRadius: 10,
-                      background: zone.color, color: "#fff", fontWeight: 800,
-                      fontSize: "0.78rem", display: "flex", alignItems: "center",
-                      justifyContent: "center", letterSpacing: "0.5px",
-                    }}>{zone.label}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: "0.5rem", flex: 1 }}>
-                      {zoneBins.map(bin => {
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "0.5rem 0" }}>
+                {slotGroups.map(({ slot, bins: slotBins }) => (
+                  <div key={slot}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
+                      <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#1e293b" }}>{slot}</span>
+                      <span style={{ background: "#f1f5f9", borderRadius: 20, padding: "0.15rem 0.55rem", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
+                        {slotBins.length} order{slotBins.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="bin-grid">
+                      {slotBins.map(bin => {
                         const badgeLabel =
                           bin.status === "placed" || bin.status === "preparing" ? "Reserved" :
                           bin.status === "completed" ? "Occupied" :
-                          bin.status === "delayed"   ? "Late Pickup" :
-                          "Empty";
+                          bin.status === "delayed"   ? "Late Pickup" : "Empty";
                         const badgeKey =
                           bin.status === "placed" || bin.status === "preparing" ? "reserved" :
                           bin.status === "completed" ? "occupied" :
-                          bin.status === "delayed"   ? "late" :
-                          "empty";
+                          bin.status === "delayed"   ? "late" : "empty";
+                        const zoneColor = bin.binColor === "red" ? "#dc2626" : bin.binColor === "yellow" ? "#eab308" : bin.binColor === "green" ? "#16a34a" : bin.binColor === "blue" ? "#2563eb" : bin.binColor === "purple" ? "#9333ea" : bin.binColor === "orange" ? "#ea580c" : "#94a3b8";
                         return (
                           <div
                             key={bin.id}
                             className={`bin-card ${bin.status}`}
-                            onClick={() => bin.status !== "empty" && handleBinClick(bin)}
-                            style={{
-                              cursor: bin.status === "empty" ? "default" : "pointer",
-                              borderLeft: `4px solid ${bin.zoneColor}`,
-                              opacity: bin.status === "empty" ? 0.78 : 1,
-                            }}
+                            onClick={() => handleBinClick(bin)}
+                            style={{ cursor: "pointer", borderLeft: `4px solid ${zoneColor}` }}
                           >
                             <span className={`bin-status-badge ${badgeKey}`}>{badgeLabel}</span>
                             <div className="bin-number" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                              {bin.status !== "empty" && <span className="bin-status-dot" />}
-                              <span style={{ color: bin.zoneColor, fontWeight: 800 }}>#{bin.zoneAbbr}{String(bin.zoneNumber).padStart(3, "0")}</span>
+                              <span className="bin-status-dot" />
+                              <span style={{ color: zoneColor, fontWeight: 800 }}>{bin.binLabel ?? `Bin #${bin.number}`}</span>
                             </div>
-                            {bin.orderId ? (
+                            <div className="bin-order-id">{bin.orderId}</div>
+                            <div className="bin-customer">{bin.customerName}</div>
+                            <div className="bin-slot">{bin.items}</div>
+                            {(bin.binCount ?? 1) > 1 && (
+                              <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
+                                📦 {bin.binCount} bins
+                              </div>
+                            )}
+                            {bin.status === "placed" && bin.rawOrderId && (
+                              <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                                <button onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✓ Accept</button>
+                                <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
+                              </div>
+                            )}
+                            {bin.status === "preparing" && bin.rawOrderId && (
+                              <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                                <button onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✓ Mark Ready</button>
+                                <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
+                              </div>
+                            )}
+                            {bin.status === "completed" && (
                               <>
-                                <div className="bin-order-id">{bin.orderId}</div>
-                                <div className="bin-customer">{bin.customerName}</div>
-                                <div className="bin-slot">{bin.slot} · {bin.items}</div>
-                                {(bin.binCount ?? 1) > 1 && (
-                                  <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
-                                    📦 {bin.binCount} bins required
-                                  </div>
-                                )}
-                                {bin.status === "placed" && bin.rawOrderId && (
-                                  <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
-                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                    >
-                                      ✓ Accept
-                                    </button>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                    >
-                                      ✕ Cancel
-                                    </button>
-                                  </div>
-                                )}
-                                {bin.status === "preparing" && bin.rawOrderId && (
-                                  <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
-                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                    >
-                                      ✓ Mark Ready
-                                    </button>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                                      style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                    >
-                                      ✕ Cancel
-                                    </button>
-                                  </div>
-                                )}
-                                {bin.status === "completed" && (
-                                  <>
-                                    <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
-                                      Ready for pickup — tap to verify OTP
-                                    </div>
-                                    {bin.rawOrderId && (
-                                      <button
-                                        onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                                        style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                                      >
-                                        ✕ Cancel
-                                      </button>
-                                    )}
-                                  </>
+                                <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>Ready for pickup — tap to verify OTP</div>
+                                {bin.rawOrderId && (
+                                  <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
                                 )}
                               </>
-                            ) : (
-                              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Available</div>
                             )}
                           </div>
                         );
@@ -840,96 +684,6 @@ export default function VendorDashboard() {
                   </div>
                 ))}
               </div>
-            ) : (
-            <div className="bin-grid">
-              {visibleSlotBins.map(bin => {
-                const badgeLabel =
-                  bin.status === "placed" || bin.status === "preparing" ? "Reserved" :
-                  bin.status === "completed" ? "Occupied" :
-                  bin.status === "delayed"   ? "Late Pickup" :
-                  "Empty";
-                const badgeKey =
-                  bin.status === "placed" || bin.status === "preparing" ? "reserved" :
-                  bin.status === "completed" ? "occupied" :
-                  bin.status === "delayed"   ? "late" :
-                  "empty";
-                return (
-                <div
-                  key={bin.id}
-                  className={`bin-card ${bin.status}`}
-                  onClick={() => bin.status !== "empty" && handleBinClick(bin)}
-                  style={bin.status === "empty" ? { cursor: "default", opacity: 0.78 } : undefined}
-                >
-                  <span className={`bin-status-badge ${badgeKey}`}>{badgeLabel}</span>
-                  <div className="bin-number">
-                    {bin.status !== "empty" && <span className="bin-status-dot" />}
-                    Bin #{bin.number}
-                  </div>
-                  {bin.orderId ? (
-                    <>
-                      <div className="bin-order-id">{bin.orderId}</div>
-                      <div className="bin-customer">{bin.customerName}</div>
-                      <div className="bin-slot">{bin.slot} · {bin.items}</div>
-                      {(bin.binCount ?? 1) > 1 && (
-                        <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
-                          📦 {bin.binCount} bins required
-                        </div>
-                      )}
-                      {bin.status === "placed" && bin.rawOrderId && (
-                        <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
-                          <button
-                            onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }}
-                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                          >
-                            ✓ Accept
-                          </button>
-                          <button
-                            onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                          >
-                            ✕ Cancel
-                          </button>
-                        </div>
-                      )}
-                      {bin.status === "preparing" && bin.rawOrderId && (
-                        <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
-                          <button
-                            onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }}
-                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                          >
-                            ✓ Mark Ready
-                          </button>
-                          <button
-                            onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                            style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                          >
-                            ✕ Cancel
-                          </button>
-                        </div>
-                      )}
-                      {bin.status === "completed" && (
-                        <>
-                          <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "var(--green)", opacity: 0.9 }}>
-                            Ready for pickup — tap to verify OTP
-                          </div>
-                          {bin.rawOrderId && (
-                            <button
-                              onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }}
-                              style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}
-                            >
-                              ✕ Cancel
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>Available</div>
-                  )}
-                </div>
-                );
-              })}
-            </div>
             )}
           </>
         )}
