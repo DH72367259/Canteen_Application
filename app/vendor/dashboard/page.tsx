@@ -427,9 +427,11 @@ export default function VendorDashboard() {
   if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
 
   // Group active bins by slot label for slot-by-slot section rendering.
+  // Pending = order placed but bin not yet assigned (slot start time not reached).
+  const pendingBins = bins.filter(b => !b.binLabel && !!b.orderId && b.status !== "empty");
   const STATUS_ORDER: Record<BinStatus, number> = { placed: 0, preparing: 1, completed: 2, delayed: 3, empty: 99 };
   const visibleBins = bins
-    .filter(b => b.status !== "empty" && !!b.orderId)
+    .filter(b => b.status !== "empty" && !!b.orderId && !!b.binLabel)
     .filter(b => {
       if (statusFilter === "all") return true;
       if (statusFilter === "reserved") return b.status === "placed" || b.status === "preparing";
@@ -610,7 +612,7 @@ export default function VendorDashboard() {
             {/* Slot-by-slot bin sections */}
             {ordersLoading ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--ink-3)" }}>Loading live orders…</div>
-            ) : visibleBins.length === 0 ? (
+            ) : visibleBins.length === 0 && pendingBins.length === 0 ? (
               <div className="empty-state" style={{ padding: "2.5rem", textAlign: "center", color: "var(--ink-3)" }}>
                 <div style={{ fontSize: "2rem" }}>📦</div>
                 <h3 style={{ fontWeight: 700, fontSize: "0.95rem", marginTop: "0.4rem" }}>No active orders</h3>
@@ -618,6 +620,57 @@ export default function VendorDashboard() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "0.5rem 0" }}>
+                {/* Queued orders — slot time not yet reached, bins assigned automatically on arrival */}
+                {pendingBins.length > 0 && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem", borderBottom: "2px solid #fbbf24", paddingBottom: "0.4rem" }}>
+                      <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#92400e" }}>⏳ Queued — Awaiting Bin Assignment</span>
+                      <span style={{ background: "#fef3c7", borderRadius: 20, padding: "0.15rem 0.55rem", fontSize: "0.75rem", fontWeight: 600, color: "#92400e" }}>
+                        {pendingBins.length} order{pendingBins.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="bin-grid">
+                      {pendingBins.map(bin => (
+                        <div
+                          key={bin.id}
+                          className="bin-card placed"
+                          style={{ borderLeft: "4px solid #f59e0b", background: "#fffbeb" }}
+                        >
+                          <span className="bin-status-badge" style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24" }}>Queued</span>
+                          <div className="bin-number" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                            <span style={{ color: "#f59e0b", fontWeight: 800 }}>⏳ Bin pending</span>
+                          </div>
+                          <div className="bin-order-id">{bin.orderId}</div>
+                          <div className="bin-customer">{bin.customerName}</div>
+                          {bin.slot && (
+                            <div style={{ fontSize: "0.75rem", color: "#92400e", fontWeight: 600, marginTop: "0.2rem" }}>Slot: {bin.slot}</div>
+                          )}
+                          <div className="bin-slot">{bin.items}</div>
+                          {(bin.binCount ?? 1) > 1 && (
+                            <div style={{ marginTop: "0.25rem", display: "inline-block", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}>
+                              📦 {bin.binCount} bins
+                            </div>
+                          )}
+                          <div style={{ marginTop: "0.3rem", fontSize: "0.7rem", color: "#92400e", fontStyle: "italic" }}>
+                            Bin assigned automatically at slot start
+                          </div>
+                          {bin.status === "placed" && bin.rawOrderId && (
+                            <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                              <button onClick={e => { e.stopPropagation(); handleAccept(bin.rawOrderId!); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✓ Accept</button>
+                              <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
+                            </div>
+                          )}
+                          {bin.status === "preparing" && bin.rawOrderId && (
+                            <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.4rem" }}>
+                              <button onClick={e => { e.stopPropagation(); handleMarkReady(bin.rawOrderId!); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--orange)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✓ Mark Ready</button>
+                              <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {slotGroups.map(({ slot, bins: slotBins }) => (
                   <div key={slot}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
