@@ -76,13 +76,9 @@ test.describe("Slot Full Indicator", () => {
       // Slot section may not be visible
     }
 
-    // At least one slot should exist
-    const slotSelector = page.locator("select").first();
-    try {
-      await expect(slotSelector).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // Slot selector may not exist
-    }
+    // Menu page should have loaded successfully
+    await expect(page).toHaveURL(/\/dashboard\/menu/, { timeout: 5_000 });
+    await expect(page.locator("body")).toBeVisible();
   });
 
   test("full slot displays FULL badge and is disabled", async ({
@@ -153,16 +149,9 @@ test.describe("Slot Full Indicator", () => {
       // Full badge may not be visible
     }
 
-    // Full slot button should be disabled or full indicator shown
-    const slotSelector = page.locator("select").first();
-    try {
-      const isDisabled = await slotSelector.isDisabled().catch(() => false);
-      if (isDisabled) {
-        expect(isDisabled).toBe(true);
-      }
-    } catch {
-      // Slot selector may not be disabled
-    }
+    // Menu page should have loaded; slot selection happens at checkout
+    await expect(page).toHaveURL(/\/dashboard\/menu/, { timeout: 5_000 });
+    await expect(page.locator("body")).toBeVisible();
   });
 
   test.afterAll(async () => {
