@@ -204,15 +204,15 @@ describe("POST /api/cart/check", () => {
 
     const res = await cartCheckPOST(reqBody({
       canteen_id: "11111111-1111-1111-1111-111111111111", slot: "12:30 PM",
-      items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 5 }], // 5 meals → 3 bins (2+2+1)
+      items: [{ id: "22222222-2222-2222-2222-222222222222", quantity: 5 }], // 5 meals → 5 bins (1 per bin)
     }));
     const j = await res.json();
     expect(res.status).toBe(200);
     expect(j.slot_available).toBe(true);
     expect(j.requires_extra_bin).toBe(true);
-    expect(j.bin_plan.bins).toHaveLength(3);
-    expect(j.extra_fee_paise).toBe(400); // 2 extra bins × ₹2
-    expect(j.slot_capacity.maxOrdersPerSlot).toBe(45);
+    expect(j.bin_plan.bins).toHaveLength(5); // 1 meal per bin = 5 bins
+    expect(j.extra_fee_paise).toBe(800); // 4 extra bins × ₹2
+    expect(j.slot_capacity.maxOrdersPerSlot).toBe(60); // 100% capacity
   });
 
   it("flags slot_full when existing orders >= maxOrdersPerSlot", async () => {
@@ -222,8 +222,8 @@ describe("POST /api/cart/check", () => {
     menuQB.in = jest.fn().mockResolvedValueOnce({
       data: [{ id: "22222222-2222-2222-2222-222222222222", name: "Samosa", is_meal: false, canteen_id: "11111111-1111-1111-1111-111111111111" }], error: null,
     });
-    // 45 existing orders → at cap (called twice: once in getMenuItemUsageForToday, once in getSlotAvailabilityUsage)
-    const existingOrders = Array.from({ length: 45 }, (_, i) => ({ id: `o${i}` }));
+    // 60 existing orders → at cap (called twice: once in getMenuItemUsageForToday, once in getSlotAvailabilityUsage)
+    const existingOrders = Array.from({ length: 60 }, (_, i) => ({ id: `o${i}` }));
     ordersQB.not = jest.fn()
       .mockResolvedValueOnce({ data: existingOrders, error: null })
       .mockResolvedValueOnce({ data: existingOrders, error: null });
@@ -236,6 +236,6 @@ describe("POST /api/cart/check", () => {
     expect(res.status).toBe(200);
     expect(j.slot_full).toBe(true);
     expect(j.slot_available).toBe(false);
-    expect(j.slot_orders_used).toBe(45);
+    expect(j.slot_orders_used).toBe(60); // 100% capacity
   });
 });

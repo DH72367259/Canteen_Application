@@ -81,7 +81,7 @@ describe("GET /api/canteen/slot-control", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.capacity).toEqual({
-      maxBins: 60, maxOrdersPerSlot: 45, batchedPreparedCap: 31, madeToOrderCap: 14, bufferBins: 15,
+      maxBins: 60, maxOrdersPerSlot: 60, batchedPreparedCap: 36, madeToOrderCap: 24, bufferBins: 0,
     });
     expect(json.windows.morning.length).toBe(16);
   });
@@ -115,7 +115,7 @@ describe("PATCH /api/canteen/slot-control", () => {
     }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.capacity.maxOrdersPerSlot).toBe(75);
+    expect(json.capacity.maxOrdersPerSlot).toBe(100); // 100% of 100
     expect(scQB.upsert).toHaveBeenCalled();
     const updateArg = (scQB.upsert as jest.Mock).mock.calls[0][0];
     expect(updateArg.max_bins).toBe(100);
