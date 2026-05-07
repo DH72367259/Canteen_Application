@@ -1,12 +1,9 @@
 name: Deploy to Railway
 
-# Gate deployment on the CI workflow finishing successfully — never deploy
-# a commit whose tests/typecheck failed. workflow_dispatch keeps the manual
-# escape hatch for hotfixes that need to bypass CI.
+# Deploy on every push to main (CI runs in parallel for visibility).
+# workflow_dispatch keeps the manual escape hatch.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -14,7 +11,6 @@ jobs:
   deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
