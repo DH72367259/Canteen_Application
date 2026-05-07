@@ -25,7 +25,7 @@ export async function claimFreeBinsAtomic(
   binIdsToAttempt: string[],
   orderId: string,
   requiredCount: number,
-  slotLabel?: string  // ✅ ADD SLOT FILTERING
+  slotLabel?: string
 ): Promise<BinClaimResult> {
   if (binIdsToAttempt.length < requiredCount) {
     return {
@@ -37,29 +37,22 @@ export async function claimFreeBinsAtomic(
 
   const supabase = createAdminClient();
 
-  // Step 1: Atomically claim these N bins in a single UPDATE
-  // Only bins that are still free (is_occupied=false) will be updated
-  // ✅ CRITICAL FIX: Filter by slot_label to prevent orders from different slots
-  // stealing bins from each other
+  // Claim bins atomically: mark as occupied and record which slot/order owns them.
+  // Do NOT filter by slot_label — free bins have no slot assigned yet; we SET
+  // the slot_label here so workers can see which slot each bin belongs to.
   const idsToAttempt = binIdsToAttempt.slice(0, requiredCount);
-  let query = supabase
+  const { error: updateError, data: updateData } = await supabase
     .from("bins")
     .update({
       is_occupied: true,
       order_id: orderId,
       assigned_order_id: orderId,
       status: "reserved",
+      ...(slotLabel ? { slot_label: slotLabel } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("canteen_id", canteenId)
-    .eq("is_occupied", false);  // Only free bins
-
-  // ✅ Add slot filter if provided - ensures slot A bins != slot B bins
-  if (slotLabel) {
-    query = query.eq("slot_label", slotLabel);
-  }
-
-  const { error: updateError, data: updateData } = await query
+    .eq("is_occupied", false)
     .in("id", idsToAttempt)
     .select("id");
 
