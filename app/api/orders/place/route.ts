@@ -464,11 +464,23 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Insert per-bin allocations (Phase 7) ─────────────────────────────────
+  // Use claimedBinIds to match actual claimed bins, not the allocated array
+  // to avoid reusing the same physical bin multiple times if claiming failed
+  // for some bins
   const orderBinRows = binPlan.bins.map((b: BinAssignment, i: number) => {
-    const phys = allocated[i] ?? allocated[allocated.length - 1];
+    const claimedBinId = claimedBinIds[i] || null;
+    // For synthetic bins or fallback cases, claimedBinId will be ""
+    // Find the corresponding allocated bin for metadata (code, color)
+    const phys = allocated[i] || allocated[0] || {
+      id: "",
+      bin_code: "FALLBACK",
+      color: "blue",
+      zone_color: null,
+      bin_number: null,
+    };
     return {
       order_id:  order.id,
-      bin_id:    phys.id || null,
+      bin_id:    claimedBinId || null,  // Use claimed ID, not allocated
       bin_index: b.binIndex,
       bin_code:  phys.bin_code,
       bin_color: phys.color ?? "blue",
