@@ -39,8 +39,6 @@ function tint(hex: string, alpha: string): string {
   return `${hex}${alpha}`;
 }
 
-// Parses "8:10 AM - 8:25 AM" into { startMin, endMin } in IST minutes from midnight.
-// Returns null for legacy / unparseable slot names.
 function parseSlotRange(label: string): { startMin: number; endMin: number } | null {
   const m = label.match(
     /^(\d{1,2}):(\d{2})\s*(AM|PM)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i,
@@ -65,29 +63,29 @@ function getNowISTMin(): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
 
-// Returns true if a slot's window has already ended (end time ≤ now).
-function isSlotEnded(slotLabel: string | null | undefined): boolean {
-  if (!slotLabel) return false;
-  const range = parseSlotRange(slotLabel);
-  if (!range) return false;
-  return getNowISTMin() >= range.endMin;
-}
-
-// Keep the order visible if:
-//   • no slot / unparseable slot → always show
-//   • slot has already ended   → show only if order still needs action (OTP / late pickup)
-//   • slot is currently active → show always
-//   • slot starts within the next 15 minutes → show so worker can start prep
-//   (anything more than 15 min away is hidden — reduces cognitive load for workers)
-function isSlotRelevant(slotLabel: string | null | undefined): boolean {
+// Orders tab: show late, current, or slots starting within the next 60 min (unchanged).
+function isOrderRelevant(slotLabel: string | null | undefined): boolean {
   if (!slotLabel) return true;
   const range = parseSlotRange(slotLabel);
-  if (!range) return true; // e.g. "ANY", "E2E-…" — always show
+  if (!range) return true;
   const now = getNowISTMin();
   const isLate     = range.endMin <= now;
   const isCurrent  = range.startMin <= now && range.endMin > now;
-  const isUpcoming = range.startMin > now && range.startMin <= now + 15;
+  const isUpcoming = range.startMin > now && range.startMin <= now + 60;
   return isLate || isCurrent || isUpcoming;
+}
+
+// Prep tab: show only the immediately upcoming slot (within 15 min before start)
+// or the currently active slot. Past/ended slots are excluded so the worker
+// only sees what to prepare next — not stale info from previous slots.
+function isPrepRelevant(slotLabel: string | null | undefined): boolean {
+  if (!slotLabel) return true;
+  const range = parseSlotRange(slotLabel);
+  if (!range) return true;
+  const now = getNowISTMin();
+  const isCurrent  = range.startMin <= now && range.endMin > now;
+  const isUpcoming = range.startMin > now && range.startMin <= now + 15;
+  return isCurrent || isUpcoming;
 }
 
 function aggregateBySlot(orders: WorkerOrder[]): SlotAggregate[] {
@@ -138,6 +136,7 @@ export default function WorkerOrdersPage() {
   const [orders, setOrders]         = useState<WorkerOrder[]>([]);
   const [fetching, setFetching]     = useState(true);
   const [updating, setUpdating]     = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<string>("__all__");
   const [tab, setTab]               = useState<"orders" | "prep">("orders");
   const [otpModal, setOtpModal]     = useState<string | null>(null);
   const [otpInput, setOtpInput]     = useState("");
@@ -229,27 +228,17 @@ export default function WorkerOrdersPage() {
     } finally { setOtpSubmitting(false); }
   }
 
-  // Active orders: slot not yet ended (current window or upcoming within 15 min)
-  const activeOrders = orders.filter((o) => isSlotRelevant(o.pickup_slot) && !isSlotEnded(o.pickup_slot));
+  // Orders tab: same wide window as before (late + current + 60-min upcoming)
+  const relevantOrders = orders.filter((o) => isOrderRelevant(o.pickup_slot));
+  const slots = [...new Set(relevantOrders.map((o) => o.pickup_slot).filter((s): s is string => Boolean(s)))].sort();
+  const displayedOrders = activeSlot === "__all__"
+    ? relevantOrders
+    : relevantOrders.filter((o) => o.pickup_slot === activeSlot);
 
-  // Late orders: slot has ended but order still needs OTP completion
-  const lateOrders = orders.filter(
-    (o) => isSlotRelevant(o.pickup_slot) && isSlotEnded(o.pickup_slot) &&
-    ["confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"].includes(o.status),
-  );
-
-  // Group active orders by slot, sorted chronologically
-  const activeBySlot: [string, WorkerOrder[]][] = Array.from(
-    activeOrders.reduce((map, o) => {
-      const s = o.pickup_slot ?? "Unknown";
-      map.set(s, [...(map.get(s) ?? []), o]);
-      return map;
-    }, new Map<string, WorkerOrder[]>()),
-  ).sort(([a], [b]) => a.localeCompare(b));
-
-  // Prep tab: only aggregate active (non-ended) slots
-  const slotSummary = aggregateBySlot(activeOrders);
-  const selectedSummary = slotSummary[0] ?? null;
+  // Prep tab: only the immediately upcoming slot (15-min window, no past slots)
+  const prepOrders = orders.filter((o) => isPrepRelevant(o.pickup_slot));
+  const prepSummary = aggregateBySlot(prepOrders);
+  const selectedSummary = prepSummary[0] ?? null;
 
   if (loading || fetching) return <div className="page-loading"><div className="spinner" /></div>;
 
@@ -269,160 +258,139 @@ export default function WorkerOrdersPage() {
         </div>
       </div>
 
-      {/* Orders list */}
+      {/* Slot dropdown — orders tab only */}
+      {tab === "orders" && (
+        <div style={{ background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.6rem 1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <label htmlFor="slot-select" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>Slot:</label>
+          <select
+            id="slot-select"
+            value={activeSlot}
+            onChange={(e) => setActiveSlot(e.target.value)}
+            style={{ flex: 1, padding: "0.45rem 0.7rem", borderRadius: 10, border: "1.5px solid #cbd5e1", background: "#f8fafc", fontSize: "0.85rem", fontWeight: 600, color: "#0f172a", cursor: "pointer", outline: "none", appearance: "auto" }}
+          >
+            <option value="__all__">All relevant ({relevantOrders.length})</option>
+            {slots.map((slot) => (
+              <option key={slot} value={slot}>{slot} ({relevantOrders.filter((o) => o.pickup_slot === slot).length})</option>
+            ))}
+          </select>
+          {orders.length !== relevantOrders.length && (
+            <span style={{ fontSize: "0.74rem", color: "#94a3b8", whiteSpace: "nowrap" }}>{orders.length - relevantOrders.length} hidden (future)</span>
+          )}
+        </div>
+      )}
+
+      {/* Content */}
       <div style={{ padding: "1rem", paddingBottom: "5rem" }}>
+
+        {/* ── ORDERS TAB (unchanged from original) ── */}
         {tab === "orders" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            {activeBySlot.length === 0 && lateOrders.length === 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+            {displayedOrders.length === 0 && (
               <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 0", fontSize: "0.9rem" }}>
                 No orders for this slot.
               </div>
             )}
-            {/* Active / upcoming slot sections — one section per slot */}
-            {activeBySlot.map(([slot, slotOrders]) => {
-              const range = parseSlotRange(slot);
-              const now = getNowISTMin();
-              const isPrep = range ? range.startMin > now : false; // starts in <15 min (prep window)
+            {displayedOrders.map((order) => {
+              const assignments =
+                order.bin_assignments && order.bin_assignments.length > 0
+                  ? order.bin_assignments
+                  : [{ binIndex: 1, binLabel: order.bin_label ?? "Unassigned", binColor: order.bin_color ?? "orange", items: order.items }];
+
               return (
-                <div key={slot}>
-                  {/* Slot section header */}
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: "0.5rem",
-                    background: isPrep ? "#fef9c3" : "#dcfce7",
-                    border: `1.5px solid ${isPrep ? "#fde047" : "#86efac"}`,
-                    borderRadius: 10, padding: "0.5rem 0.85rem", marginBottom: "0.65rem",
-                  }}>
-                    <span style={{ fontSize: "1rem" }}>{isPrep ? "⏰" : "🟢"}</span>
-                    <span style={{ fontWeight: 800, fontSize: "0.88rem", color: isPrep ? "#854d0e" : "#166534" }}>
-                      {isPrep ? "PREP NOW" : "ACTIVE"} — {slot}
-                    </span>
-                    <span style={{ marginLeft: "auto", fontSize: "0.78rem", color: "#64748b", fontWeight: 600 }}>
-                      {slotOrders.length} order{slotOrders.length !== 1 ? "s" : ""}
-                    </span>
+                <div key={order.id} style={{ background: "#fff", borderRadius: 16, boxShadow: "0 3px 10px rgba(0,0,0,0.09)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>Student: {order.customer_name || "Unknown"}</div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
+                      Order #{order.id.slice(-6).toUpperCase()} · Slot {order.pickup_slot ?? "—"}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-                    {slotOrders.map((order) => {
-                      const assignments: { binIndex: number; binLabel: string; binColor: string; items: { name: string; quantity: number }[] }[] =
-                        order.bin_assignments && order.bin_assignments.length > 0
-                          ? order.bin_assignments
-                          : [{ binIndex: 1, binLabel: order.bin_label ?? "Unassigned", binColor: order.bin_color ?? "orange", items: order.items }];
+
+                  <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
+                    {assignments.map((a) => {
+                      const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
                       return (
-                        <div key={order.id} style={{ background: "#fff", borderRadius: 16, boxShadow: "0 3px 10px rgba(0,0,0,0.09)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
-                          <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
-                            <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
-                              Student: {order.customer_name || "Unknown"}
-                            </div>
-                            <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
-                              Order #{order.id.slice(-6).toUpperCase()}
-                            </div>
+                        <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
+                          <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.6rem" }}>
+                            <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
+                            <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-6).toUpperCase()}</span>
                           </div>
-                          <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
-                            {assignments.map((a) => {
-                              const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
-                              return (
-                                <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
-                                  <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.6rem" }}>
-                                    <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
-                                    <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-6).toUpperCase()}</span>
-                                  </div>
-                                  <div style={{ padding: "0.55rem 0.7rem" }}>
-                                    {a.items.map((it, idx) => (
-                                      <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
-                                        <span>{it.name}</span>
-                                        <span style={{ color: "#b45309" }}>x{it.quantity}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            {(order.status === "confirmed" || order.status === "preparing" || order.status === "ready_for_placement") && (
-                              <button
-                                disabled={updating === order.id}
-                                onClick={() => { if (confirm(`Place order in correct bin?\n\nBin: ${order.bin_label || "Unknown"}`)) updateStatus(order.id, "placed_in_bin"); }}
-                                style={{ background: "#eab308", color: "#000", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                              >
-                                {updating === order.id ? "..." : "🟡 Placed in Bin"}
-                              </button>
-                            )}
-                            {order.status === "placed_in_bin" && (
-                              <button onClick={() => { setOtpModal(order.id); setOtpInput(""); }} style={{ background: "#dcfce7", color: "#166534", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
-                                🔐 Enter OTP to Complete
-                              </button>
-                            )}
-                            {order.status === "ready_for_pickup" && (
-                              <div style={{ background: "#dbeafe", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "#164e63", fontWeight: 700, textAlign: "center" }}>
-                                ✓ Order Completed
+                          <div style={{ padding: "0.55rem 0.7rem" }}>
+                            {a.items.map((it, idx) => (
+                              <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
+                                <span>{it.name}</span>
+                                <span style={{ color: "#b45309" }}>x{it.quantity}</span>
                               </div>
-                            )}
+                            ))}
                           </div>
                         </div>
                       );
                     })}
                   </div>
+
+                  <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {(order.status === "confirmed" || order.status === "preparing" || order.status === "ready_for_placement") && (
+                      <button
+                        disabled={updating === order.id}
+                        onClick={() => {
+                          if (confirm(`Are you sure the order is placed in the correct bin?\n\nBin: ${order.bin_label || "Unknown"}`)) {
+                            updateStatus(order.id, "placed_in_bin");
+                          }
+                        }}
+                        style={{ background: "#eab308", color: "#000", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                      >
+                        {updating === order.id ? "..." : "🟡 Placed in Bin"}
+                      </button>
+                    )}
+                    {order.status === "placed_in_bin" && (
+                      <button
+                        onClick={() => { setOtpModal(order.id); setOtpInput(""); }}
+                        style={{ background: "#dcfce7", color: "#166534", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        🔐 Enter OTP to Complete
+                      </button>
+                    )}
+                    {order.status === "ready_for_pickup" && (
+                      <div style={{ background: "#dbeafe", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", color: "#164e63", fontWeight: 700, textAlign: "center" }}>
+                        ✓ Order Completed
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
-
-            {/* Late pickup section — ended slots with pending OTP only */}
-            {lateOrders.length > 0 && (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#f1f5f9", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "0.5rem 0.85rem", marginBottom: "0.65rem" }}>
-                  <span style={{ fontSize: "1rem" }}>🔒</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.88rem", color: "#475569" }}>LATE PICKUP — Slot Ended</span>
-                  <span style={{ marginLeft: "auto", fontSize: "0.78rem", color: "#94a3b8", fontWeight: 600 }}>{lateOrders.length} pending</span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", opacity: 0.75 }}>
-                  {lateOrders.map((order) => (
-                    <div key={order.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-                      <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
-                        <div style={{ fontWeight: 800, color: "#475569", fontSize: "0.95rem" }}>Student: {order.customer_name || "Unknown"}</div>
-                        <div style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 2 }}>Order #{order.id.slice(-6).toUpperCase()} · {order.pickup_slot ?? "—"}</div>
-                      </div>
-                      <div style={{ padding: "0.75rem" }}>
-                        {order.items.map((it, idx) => (
-                          <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 600, padding: "0.15rem 0", color: "#64748b" }}>
-                            <span>{it.name}</span><span>x{it.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {order.status === "placed_in_bin" && (
-                        <div style={{ padding: "0 0.75rem 0.75rem" }}>
-                          <button onClick={() => { setOtpModal(order.id); setOtpInput(""); }} style={{ width: "100%", background: "#dcfce7", color: "#166534", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
-                            🔐 Enter OTP to Complete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
+        {/* ── PREP TAB — only shows the next upcoming slot (15-min window) ── */}
         {tab === "prep" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
             {!selectedSummary && (
               <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 0", fontSize: "0.9rem" }}>
-                No active orders for prep planning.
+                No upcoming orders yet — prep info appears 15 min before the next slot.
               </div>
             )}
             {selectedSummary && (
               <>
+                {/* Slot header */}
+                <div style={{ background: "#dcfce7", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.55rem 0.9rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "1.1rem" }}>⏰</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#166534" }}>
+                    PREP NOW — {selectedSummary.slot}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: "0.78rem", color: "#64748b", fontWeight: 600 }}>
+                    {prepOrders.filter((o) => o.pickup_slot === selectedSummary.slot).length} orders
+                  </span>
+                </div>
+
+                {/* Item totals */}
                 <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
                   <div style={{ background: "#0f172a", color: "#fff", padding: "0.7rem 0.9rem" }}>
-                    <div style={{ fontWeight: 800, fontSize: "0.9rem" }}>Slot Prep Totals · {selectedSummary.slot}</div>
-                    <div style={{ fontSize: "0.76rem", opacity: 0.85 }}>Holistic quantity view (example: chapati 10, rice 5)</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.9rem" }}>What to Prepare</div>
+                    <div style={{ fontSize: "0.76rem", opacity: 0.85 }}>Total quantities for this slot</div>
                   </div>
                   <div style={{ padding: "0.75rem 0.9rem" }}>
                     {selectedSummary.itemTotals.map((it, idx) => (
-                      <div
-                        key={`${it.name}-${idx}`}
-                        style={{ display: "flex", justifyContent: "space-between", padding: "0.32rem 0", borderBottom: idx < selectedSummary.itemTotals.length - 1 ? "1px solid #e2e8f0" : "none", fontWeight: 700 }}
-                      >
+                      <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", padding: "0.32rem 0", borderBottom: idx < selectedSummary.itemTotals.length - 1 ? "1px solid #e2e8f0" : "none", fontWeight: 700 }}>
                         <span>{it.name}</span>
                         <span style={{ color: "#ea580c" }}>{it.quantity}</span>
                       </div>
@@ -430,34 +398,27 @@ export default function WorkerOrdersPage() {
                   </div>
                 </div>
 
+                {/* Bin placement plan */}
                 <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
                   <div style={{ background: "#f8fafc", padding: "0.7rem 0.9rem", borderBottom: "1px solid #e2e8f0" }}>
                     <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0f172a" }}>Bin Placement Plan</div>
-                    <div style={{ fontSize: "0.76rem", color: "#64748b" }}>Which items go into which bins for this slot</div>
+                    <div style={{ fontSize: "0.76rem", color: "#64748b" }}>Which items go into which bins</div>
                   </div>
                   <div style={{ padding: "0.75rem" }}>
                     {selectedSummary.binPlans.length === 0 && (
-                      <div style={{ color: "#64748b", fontSize: "0.84rem" }}>No bin assignments available.</div>
+                      <div style={{ color: "#64748b", fontSize: "0.84rem" }}>Bins will be assigned at slot start time.</div>
                     )}
                     {selectedSummary.binPlans.map((bp, idx) => {
                       const c = BIN_COLORS[bp.binColor] ?? "#f97316";
                       return (
-                        <div
-                          key={`${bp.orderId}-${bp.binLabel}-${idx}`}
-                          style={{ border: `1.5px solid ${c}`, borderRadius: 12, marginBottom: "0.55rem", overflow: "hidden" }}
-                        >
-                          <div
-                            style={{ background: tint(c, "20"), padding: "0.45rem 0.65rem", display: "flex", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}
-                          >
+                        <div key={`${bp.orderId}-${bp.binLabel}-${idx}`} style={{ border: `1.5px solid ${c}`, borderRadius: 12, marginBottom: "0.55rem", overflow: "hidden" }}>
+                          <div style={{ background: tint(c, "20"), padding: "0.45rem 0.65rem", display: "flex", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
                             <strong style={{ color: c }}>Bin {bp.binLabel}</strong>
                             <span style={{ color: "#334155" }}>Order #{bp.orderId.slice(-6).toUpperCase()} · {bp.studentName}</span>
                           </div>
                           <div style={{ padding: "0.5rem 0.65rem" }}>
                             {bp.items.map((it, i) => (
-                              <div
-                                key={`${it.name}-${i}`}
-                                style={{ display: "flex", justifyContent: "space-between", fontSize: "0.86rem", fontWeight: 700, borderBottom: i < bp.items.length - 1 ? "1px dashed #cbd5e1" : "none", padding: "0.2rem 0" }}
-                              >
+                              <div key={`${it.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.86rem", fontWeight: 700, borderBottom: i < bp.items.length - 1 ? "1px dashed #cbd5e1" : "none", padding: "0.2rem 0" }}>
                                 <span>{it.name}</span>
                                 <span>x{it.quantity}</span>
                               </div>
@@ -484,26 +445,11 @@ export default function WorkerOrdersPage() {
       {/* OTP Verification Modal */}
       {otpModal && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
           onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
         >
           <div
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              padding: "1.5rem",
-              width: "90%",
-              maxWidth: 320,
-              boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
-            }}
+            style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "90%", maxWidth: 320, boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink-3)", marginBottom: "0.5rem", textTransform: "uppercase" }}>
@@ -519,50 +465,20 @@ export default function WorkerOrdersPage() {
               placeholder="0000"
               autoFocus
               disabled={otpSubmitting}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "0.8rem",
-                fontSize: "1.8rem",
-                letterSpacing: "0.3rem",
-                textAlign: "center",
-                border: "2px solid var(--border)",
-                borderRadius: 12,
-                marginBottom: "1rem",
-                fontWeight: 700,
-                boxSizing: "border-box",
-              }}
+              style={{ display: "block", width: "100%", padding: "0.8rem", fontSize: "1.8rem", letterSpacing: "0.3rem", textAlign: "center", border: "2px solid var(--border)", borderRadius: 12, marginBottom: "1rem", fontWeight: 700, boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button
                 onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
                 disabled={otpSubmitting}
-                style={{
-                  flex: 1,
-                  padding: "0.7rem",
-                  border: "1.5px solid #e5e7eb",
-                  background: "#f3f4f6",
-                  borderRadius: 10,
-                  fontWeight: 700,
-                  cursor: otpSubmitting ? "not-allowed" : "pointer",
-                  opacity: otpSubmitting ? 0.5 : 1,
-                }}
+                style={{ flex: 1, padding: "0.7rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: otpSubmitting ? "not-allowed" : "pointer", opacity: otpSubmitting ? 0.5 : 1 }}
               >
                 Cancel
               </button>
               <button
                 onClick={() => verifyOtp(otpModal)}
                 disabled={otpInput.length < 4 || otpSubmitting}
-                style={{
-                  flex: 1,
-                  padding: "0.7rem",
-                  background: otpInput.length < 4 ? "#e5e7eb" : "#16a34a",
-                  color: otpInput.length < 4 ? "var(--ink-3)" : "#fff",
-                  border: "none",
-                  borderRadius: 10,
-                  fontWeight: 700,
-                  cursor: otpInput.length < 4 ? "not-allowed" : "pointer",
-                }}
+                style={{ flex: 1, padding: "0.7rem", background: otpInput.length < 4 ? "#e5e7eb" : "#16a34a", color: otpInput.length < 4 ? "var(--ink-3)" : "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: otpInput.length < 4 ? "not-allowed" : "pointer" }}
               >
                 {otpSubmitting ? "Verifying..." : "Verify"}
               </button>
