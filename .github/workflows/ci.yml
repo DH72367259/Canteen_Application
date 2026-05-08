@@ -6,20 +6,81 @@ on:
   pull_request:
     branches: [main]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 1 — TypeScript type-check (fast, no secrets needed)
+# ─────────────────────────────────────────────────────────────────────────────
 jobs:
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate next-env.d.ts
+        # next-env.d.ts is gitignored but tsc needs it to resolve Next.js types.
+        # The content is always the same two reference lines.
+        run: |
+          printf '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n' > next-env.d.ts
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 2 — Backend unit tests (Jest, all mocked — no live Supabase needed)
+# ─────────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Unit tests mock Supabase, but modules reference these vars at import
+      # time — placeholder values prevent module-load errors.
+      NEXT_PUBLIC_SUPABASE_URL:      https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY:     placeholder-service-role-key
+      NEXT_PUBLIC_APP_URL:           http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test -- --ci --forceExit --passWithNoTests
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 3 — E2E browser tests (Playwright against the deployed Railway app)
+# ─────────────────────────────────────────────────────────────────────────────
   e2e:
     name: E2E Browser Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     env:
-      # Names must match exactly what _helpers.ts reads from process.env
+      # Exact names that _helpers.ts reads from process.env
       NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      # helpers.ts: APP_URL = process.env.APP_BASE_URL
-      # Add secret "APP_URL" in GitHub → Settings → Secrets → Actions
-      # Value: your Railway deployment URL, e.g. https://canteen-app.up.railway.app
+      # _helpers.ts: APP_URL = process.env.APP_BASE_URL
+      # Add secret "APP_URL" → GitHub Settings → Secrets → Actions
+      # Value: Railway deployment URL, e.g. https://canteen.up.railway.app
       APP_BASE_URL:                  ${{ secrets.APP_URL }}
 
     steps:
@@ -43,6 +104,7 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Write .env.local for cleanup scripts
+        # cleanup-db-deep.mjs and cleanup-complete.mjs read .env.local directly
         run: |
           printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n'      "$NEXT_PUBLIC_SUPABASE_URL"      >> .env.local
           printf 'NEXT_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env.local
