@@ -11,6 +11,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { assignBins, type CartLine } from "@/lib/slotCapacity";
 
 function nowISTMinutes(): number {
   const now = new Date();
@@ -132,6 +133,47 @@ export async function assignDeferredBins(
         .in("id", pickIds);
       continue;
     }
+
+    // Populate order_bins with per-bin item assignments so the worker app
+    // can display which items go into which physical bin.
+    type OIRow = {
+      menu_item_id: string;
+      quantity: number;
+      menu_items: { name: string; is_meal: boolean | null } | null;
+    };
+    const { data: oiRows } = await supabase
+      .from("order_items")
+      .select("menu_item_id, quantity, menu_items(name, is_meal)")
+      .eq("order_id", order.id);
+
+    const cartLines: CartLine[] = ((oiRows ?? []) as unknown as OIRow[]).map((oi) => ({
+      itemId:   String(oi.menu_item_id),
+      name:     String(oi.menu_items?.name ?? oi.menu_item_id),
+      quantity: Number(oi.quantity ?? 1),
+      isMeal:   Boolean(oi.menu_items?.is_meal),
+    }));
+
+    const binPlan = assignBins(cartLines);
+
+    const orderBinsRows = pick.map((physicalBin, idx) => {
+      const slot = binPlan.bins[idx];
+      const items = [
+        ...(slot?.meals  ?? []).map((m) => ({ name: m.name, quantity: m.quantity, isMeal: true })),
+        ...(slot?.snacks ?? []).map((s) => ({ name: s.name, quantity: s.quantity, isMeal: false })),
+      ];
+      return {
+        order_id:  order.id,
+        bin_id:    physicalBin.id,
+        bin_index: idx + 1,
+        bin_code:  physicalBin.bin_code,
+        bin_color: physicalBin.color ?? "blue",
+        items,
+      };
+    });
+
+    await supabase
+      .from("order_bins")
+      .upsert(orderBinsRows, { onConflict: "order_id,bin_index" });
 
     assigned++;
   }
