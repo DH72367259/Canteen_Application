@@ -11,42 +11,52 @@ function oldEnough(): string {
 
 /** Returns a slot label string whose start is `offsetMs` ms from now in IST. */
 function slotLabelOffset(offsetMs: number): string {
-  const utcMs  = Date.now() + offsetMs;
-  const istMs  = utcMs + IST_MS;
-  const ist    = new Date(istMs);
-  const h      = ist.getUTCHours();
-  const m      = ist.getUTCMinutes();
-  const ampm   = h >= 12 ? "PM" : "AM";
-  const h12    = h % 12 || 12;
-  const mm     = String(m).padStart(2, "0");
+  const utcMs = Date.now() + offsetMs;
+  const istMs = utcMs + IST_MS;
+  const ist   = new Date(istMs);
+  const h     = ist.getUTCHours();
+  const m     = ist.getUTCMinutes();
+  const ampm  = h >= 12 ? "PM" : "AM";
+  const h12   = h % 12 || 12;
+  const mm    = String(m).padStart(2, "0");
   return `${h12}:${mm} ${ampm} - end`;
 }
 
 // ── Mock factory ───────────────────────────────────────────────────────────
 //
-// New flow: SELECT placed orders → client-side filter by slot time → UPDATE in(ids)
+// The Supabase query builder is thenable: `await q` works at any point in the
+// chain. We reproduce that by adding `.then` to every builder object returned
+// after `.select()`, so `await q` resolves to { data, error: null } whether
+// the chain ends at one `.eq()` or several.
 //
-// Chain: from("orders").select(...).eq("status","placed")[.eq(...)...]
-//        from("orders").update({...}).in("id",[...]).eq("status","placed").select("id")
+// Chain built by the implementation:
+//   from("orders").select(...).eq("status","placed")[.eq(...)...]   → await → data
+//   from("orders").update({...}).in("id",[...]).eq("status","placed").select("id") → await → data
 
 function createMock(
   placedOrders: Array<{ id: string; slot_label: string; created_at: string }>,
   updateReturns: Array<{ id: string }> = [],
 ) {
-  // select chain — each .eq() returns an object that still has .eq() and resolves on .select()
-  const selectResolve = jest.fn().mockResolvedValue({ data: placedOrders, error: null });
-  const eqBuilder: Record<string, jest.Mock> = {};
-  const makeEq = (): jest.Mock => jest.fn(() => ({ eq: makeEq(), select: selectResolve }));
-  const selectFn = jest.fn(() => ({ eq: makeEq() }));
+  const selectData = { data: placedOrders, error: null as null };
+
+  // Each .eq() call returns a thenable builder so `await q` works at any depth
+  function makeEq(): jest.Mock {
+    return jest.fn(() => ({
+      eq: makeEq(),
+      then: (resolve: (v: typeof selectData) => unknown, reject?: (e: unknown) => unknown) =>
+        Promise.resolve(selectData).then(resolve, reject),
+    }));
+  }
+
+  const selectFn = jest.fn((_cols: string) => ({ eq: makeEq() }));
 
   // update chain
-  const updateSelect = jest.fn().mockResolvedValue({ data: updateReturns, error: null });
-  const updateEqStat = jest.fn(() => ({ select: updateSelect }));
-  const updateIn     = jest.fn(() => ({ eq: updateEqStat }));
-  const updateFn     = jest.fn(() => ({ in: updateIn }));
+  const updateSelect  = jest.fn().mockResolvedValue({ data: updateReturns, error: null });
+  const updateEqStat  = jest.fn(() => ({ select: updateSelect }));
+  const updateIn      = jest.fn(() => ({ eq: updateEqStat }));
+  const updateFn      = jest.fn(() => ({ in: updateIn }));
 
   const from = jest.fn(() => ({ select: selectFn, update: updateFn }));
-  void eqBuilder;
 
   return {
     client: { from },
