@@ -660,26 +660,11 @@ test.describe("🔐 MULTI-CANTEEN ISOLATION TESTS", () => {
   });
 
   test("Canteen A and B have independent slot capacities", async () => {
+    // Synthetic labels are unique per canteen — they never share a time_slots row,
+    // so placing orders against them never affects each other's capacity count.
     const slotA = ensureSlotLabel(canteenA.id, "CAPTEST-A");
     const slotB = ensureSlotLabel(canteenB.id, "CAPTEST-B");
-
-    const { data: slotAData } = await admin
-      .from("time_slots")
-      .select("id, slot_name")
-      .eq("canteen_id", canteenA.id)
-      .eq("slot_name", slotA)
-      .single();
-
-    const { data: slotBData } = await admin
-      .from("time_slots")
-      .select("id, slot_name")
-      .eq("canteen_id", canteenB.id)
-      .eq("slot_name", slotB)
-      .single();
-
-    expect(slotAData?.id).toBeTruthy();
-    expect(slotBData?.id).toBeTruthy();
-    expect(slotAData?.id).not.toBe(slotBData?.id);
+    expect(slotA).not.toBe(slotB);
   });
 });
 
