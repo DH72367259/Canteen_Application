@@ -13,16 +13,14 @@ jobs:
     timeout-minutes: 60
 
     env:
-      APP_URL:      ${{ secrets.APP_URL }}
-      APP_BASE_URL: ${{ secrets.APP_URL }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SVC: ${{ secrets.SUPABASE_SVC }}
-      WHITELIST_CANTEEN_ADMIN_EMAIL:    ${{ secrets.WHITELIST_CANTEEN_ADMIN_EMAIL }}
-      WHITELIST_CANTEEN_ADMIN_PASSWORD: ${{ secrets.WHITELIST_CANTEEN_ADMIN_PASSWORD }}
-      WHITELIST_SUPER_ADMIN_EMAIL:      ${{ secrets.WHITELIST_SUPER_ADMIN_EMAIL }}
-      WHITELIST_SUPER_ADMIN_PASSWORD:   ${{ secrets.WHITELIST_SUPER_ADMIN_PASSWORD }}
-      WHITELIST_WORKER_EMAIL:           ${{ secrets.WHITELIST_WORKER_EMAIL }}
-      WHITELIST_WORKER_PASSWORD:        ${{ secrets.WHITELIST_WORKER_PASSWORD }}
+      # Names must match exactly what _helpers.ts reads from process.env
+      NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # helpers.ts: APP_URL = process.env.APP_BASE_URL
+      # Add secret "APP_URL" in GitHub → Settings → Secrets → Actions
+      # Value: your Railway deployment URL, e.g. https://canteen-app.up.railway.app
+      APP_BASE_URL:                  ${{ secrets.APP_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,21 +33,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers + OS deps
         run: npx playwright install chromium --with-deps
 
-      - name: Init E2E DB state
+      - name: Write .env.local for cleanup scripts
+        run: |
+          printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n'      "$NEXT_PUBLIC_SUPABASE_URL"      >> .env.local
+          printf 'NEXT_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env.local
+          printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n'     "$SUPABASE_SERVICE_ROLE_KEY"     >> .env.local
+          printf 'APP_BASE_URL=%s\n'                  "$APP_BASE_URL"                  >> .env.local
+
+      - name: Reset E2E database
         run: node scripts/cleanup-db-deep.mjs
         continue-on-error: true
 
       - name: Run E2E tests
         run: npx playwright test
-        env:
-          CI: true
 
       - name: Clean up E2E data
         if: always()
-        run: node scripts/cleanup-e2e.mjs
+        run: node scripts/cleanup-complete.mjs
         continue-on-error: true
 
       - name: Upload test results
