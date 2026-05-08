@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    name: E2E Browser Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      APP_URL:      ${{ secrets.APP_URL }}
+      APP_BASE_URL: ${{ secrets.APP_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SVC: ${{ secrets.SUPABASE_SVC }}
+      WHITELIST_CANTEEN_ADMIN_EMAIL:    ${{ secrets.WHITELIST_CANTEEN_ADMIN_EMAIL }}
+      WHITELIST_CANTEEN_ADMIN_PASSWORD: ${{ secrets.WHITELIST_CANTEEN_ADMIN_PASSWORD }}
+      WHITELIST_SUPER_ADMIN_EMAIL:      ${{ secrets.WHITELIST_SUPER_ADMIN_EMAIL }}
+      WHITELIST_SUPER_ADMIN_PASSWORD:   ${{ secrets.WHITELIST_SUPER_ADMIN_PASSWORD }}
+      WHITELIST_WORKER_EMAIL:           ${{ secrets.WHITELIST_WORKER_EMAIL }}
+      WHITELIST_WORKER_PASSWORD:        ${{ secrets.WHITELIST_WORKER_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Init E2E DB state
+        run: node scripts/cleanup-db-deep.mjs
+        continue-on-error: true
+
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Clean up E2E data
+        if: always()
+        run: node scripts/cleanup-e2e.mjs
+        continue-on-error: true
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
