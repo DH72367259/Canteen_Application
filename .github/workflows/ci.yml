@@ -76,6 +76,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # _helpers.ts reads APP_BASE_URL; playwright.config.ts reads APP_BASE_URL
+      APP_BASE_URL:                  ${{ secrets.APP_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -87,28 +89,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Resolve Railway deployment URL
-        # Queries the Railway GraphQL API with existing RAILWAY_* secrets to
-        # get the live deployment domain — no APP_URL secret needed.
-        run: |
-          DOMAIN=$(curl -sf -X POST https://backboard.railway.app/graphql/v2 \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"query { service(id: \\\"${{ secrets.RAILWAY_SERVICE_ID }}\\\") { domains { serviceDomains { domain } } } }\"}" \
-            | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-domains = d.get('data',{}).get('service',{}).get('domains',{}).get('serviceDomains',[])
-if domains: print(domains[0]['domain'])
-" 2>/dev/null || echo "")
-          if [ -n "$DOMAIN" ]; then
-            echo "APP_BASE_URL=https://$DOMAIN" >> "$GITHUB_ENV"
-            echo "  Resolved: https://$DOMAIN"
-          else
-            echo "  Warning: could not resolve Railway domain; tests will target localhost"
-            echo "APP_BASE_URL=http://localhost:3000" >> "$GITHUB_ENV"
-          fi
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
