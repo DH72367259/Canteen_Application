@@ -67,6 +67,13 @@ function createMock(
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("autoAcceptPlacedOrders", () => {
+  // Pin clock to 2026-01-15 06:30 UTC = 12:00 noon IST so slotLabelOffset
+  // never wraps past midnight and the IST hour comparisons are deterministic.
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-01-15T06:30:00.000Z"));
+  });
+  afterAll(() => { jest.useRealTimers(); });
   it("accepts orders whose slot start time has already passed in IST", async () => {
     const orders = [{ id: "o-1", slot_label: slotLabelOffset(-60_000), created_at: oldEnough() }];
     const mock   = createMock(orders, [{ id: "o-1" }]);

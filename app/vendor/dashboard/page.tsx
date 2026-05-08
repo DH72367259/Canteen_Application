@@ -61,11 +61,12 @@ function rackIndexFor(binLabel: string | null, binColor: string | null, maxBins:
   if (!m) return null;
   const localIdx = parseInt(m[1], 10);
   if (!Number.isFinite(localIdx) || localIdx < 1) return null;
-  const base = Math.floor(maxBins / 6);
-  const extra = maxBins % 6;
+  const capped = Math.min(maxBins, 72);
+  const base = Math.floor(capped / 6);
+  const extra = capped % 6;
   let offset = 0;
-  for (let i = 0; i < zoneIdx; i++) offset += base + (i < extra ? 1 : 0);
-  const zoneCount = base + (zoneIdx < extra ? 1 : 0);
+  for (let i = 0; i < zoneIdx; i++) offset += Math.min(base + (i < extra ? 1 : 0), 12);
+  const zoneCount = Math.min(base + (zoneIdx < extra ? 1 : 0), 12);
   // Clamp into the configured zone size — guards against legacy data with
   // suffix > zone size (e.g. seeded extras from earlier provisioning runs).
   return offset + Math.min(localIdx, zoneCount);
@@ -2428,7 +2429,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
             <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Max bins per slot</span>
             <select value={maxBinsInput} onChange={e => setMaxBinsInput(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8, width: 140 }}>
               <option value="">Select bins...</option>
-              {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(n => (
+              {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 72].map(n => (
                 <option key={n} value={String(n)}>{n} bins</option>
               ))}
             </select>

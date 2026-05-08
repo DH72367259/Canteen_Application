@@ -28,37 +28,40 @@ export function binCode(zone: BinZone, n: number): string {
 }
 
 /**
- * Calculate how many color zones are needed for a given number of bins.
- * Each zone holds exactly 12 bins.
+ * Calculate how many bins each color zone gets for a given total.
+ * Always uses all 6 zones. Bins are distributed as evenly as possible;
+ * the first (total % 6) zones get one extra bin. Max per zone is 12.
+ *
  * Examples:
- *   total=12 → 1 zone (red only)
- *   total=24 → 2 zones (red, yellow)
- *   total=50 → 5 zones (red, yellow, green, blue, purple: 12+12+12+12+2)
- *   total=60 → 5 zones (red through purple, all 12 each)
+ *   total=72 → 6 zones, 12 each        (72 / 6 = 12, remainder 0)
+ *   total=60 → 6 zones, 10 each        (60 / 6 = 10, remainder 0)
+ *   total=50 → 6 zones, first 2 get 9, rest get 8  (50 / 6 = 8 r 2)
+ *   total=12 → 6 zones, first 0 get 3, rest... base=2, first 0 get 3
  */
-export function zonesNeeded(total: number): number {
-  return Math.ceil(total / BINS_PER_ZONE);
+export function binsPerZone(total: number): number[] {
+  const capped = Math.min(total, ALL_BIN_ZONES.length * BINS_PER_ZONE);
+  const base  = Math.floor(capped / ALL_BIN_ZONES.length);
+  const extra = capped % ALL_BIN_ZONES.length;
+  return ALL_BIN_ZONES.map((_, i) => base + (i < extra ? 1 : 0));
 }
 
 /**
- * Get active color zones for a given bin capacity.
- * Only returns the zones needed.
+ * All 6 zones are always active regardless of total.
  */
-export function getActiveZones(total: number): BinZone[] {
-  const count = zonesNeeded(total);
-  return ALL_BIN_ZONES.slice(0, count);
+export function getActiveZones(_total: number): BinZone[] {
+  return ALL_BIN_ZONES.slice();
 }
 
 /**
  * Idempotently provision physical bins for a canteen.
- * - Each color zone holds exactly 12 bins
- * - Only creates as many zones as needed for the capacity
+ * - Always uses all 6 color zones
+ * - Bins are distributed evenly across zones (max 12 per zone)
  * - Inserts only the bins that don't already exist (UNIQUE on canteen_id+bin_code)
  *
  * Examples:
- *   total=12:  1 zone  (red 1-12)
- *   total=24:  2 zones (red 1-12, yellow 1-12)
- *   total=50:  5 zones (red 1-12, yellow 1-12, green 1-12, blue 1-12, purple 1-2)
+ *   total=72: 6 zones × 12 each
+ *   total=60: 6 zones × 10 each
+ *   total=50: red 9, yellow 9, green 8, blue 8, purple 8, orange 8
  *
  * Returns the number of newly inserted bins.
  */
@@ -69,17 +72,11 @@ export async function ensureBinsForCanteen(
 ): Promise<number> {
   if (!canteenId || !Number.isFinite(total) || total <= 0) return 0;
 
-  const activeZones = getActiveZones(total);
+  const zoneSizes = binsPerZone(total);
   const targetCodes: { bin_code: string; color: BinZone; bin_number: number }[] = [];
 
-  // For each active zone, add bins 1-12 (or partial for last zone)
-  activeZones.forEach((zone, zoneIdx) => {
-    const isLastZone = zoneIdx === activeZones.length - 1;
-    const binsInThisZone = isLastZone
-      ? (total % BINS_PER_ZONE) || BINS_PER_ZONE  // Remainder or 12 if exact
-      : BINS_PER_ZONE;
-
-    for (let n = 1; n <= binsInThisZone; n++) {
+  ALL_BIN_ZONES.forEach((zone, zoneIdx) => {
+    for (let n = 1; n <= zoneSizes[zoneIdx]; n++) {
       targetCodes.push({ bin_code: binCode(zone, n), color: zone, bin_number: n });
     }
   });

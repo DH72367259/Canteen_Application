@@ -131,8 +131,8 @@ export async function PATCH(request: Request) {
   // Validate numeric fields
   if ("max_bins" in updates) {
     const v = Number(updates.max_bins);
-    if (!Number.isInteger(v) || v <= 0) {
-      return NextResponse.json({ error: "max_bins must be a positive integer." }, { status: 400 });
+    if (!Number.isInteger(v) || v <= 0 || v > 72) {
+      return NextResponse.json({ error: "max_bins must be a positive integer no greater than 72." }, { status: 400 });
     }
     updates.max_bins = v;
   }
