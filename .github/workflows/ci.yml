@@ -43,8 +43,7 @@ jobs:
     timeout-minutes: 15
 
     env:
-      # Unit tests mock Supabase, but modules reference these vars at import
-      # time — placeholder values prevent module-load errors.
+      # Unit tests mock Supabase; placeholder values prevent module-load errors.
       NEXT_PUBLIC_SUPABASE_URL:      https://placeholder.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
       SUPABASE_SERVICE_ROLE_KEY:     placeholder-service-role-key
@@ -76,8 +75,6 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      # _helpers.ts reads APP_BASE_URL; playwright.config.ts reads APP_BASE_URL
-      APP_BASE_URL:                  ${{ secrets.APP_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +86,17 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Resolve Railway deployment URL
+        # scripts/get-railway-url.mjs queries the Railway GraphQL API and prints
+        # the live domain — no static APP_URL secret ever needed.
+        env:
+          RAILWAY_TOKEN:      ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          APP_BASE_URL=$(node scripts/get-railway-url.mjs)
+          echo "APP_BASE_URL=$APP_BASE_URL" >> "$GITHUB_ENV"
+          echo "  Targeting: $APP_BASE_URL"
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
