@@ -4,14 +4,16 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { latestActiveOrder, readActiveOrders, writeActiveOrders } from "@/lib/activeOrdersClient";
 
-interface ActiveOrder {
+interface ApiOrder {
   id: string;
-  bin: string;
-  otp: string;
-  items: string;
-  slot: string;
+  rawStatus: string;
+  slotLabel?: string;
+  canteenName?: string;
+  total: number;
+  items: Array<{ name: string; quantity: number }>;
+  otp?: string;
+  binLabel?: string;
 }
 
 interface ApiCanteen {
@@ -52,7 +54,7 @@ export default function UserHomePage() {
   const { user, session, loading } = useAuth();
   const router = useRouter();
   const [activeNav, setActiveNav] = useState<"home" | "orders" | "profile">("home");
-  const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
+  const [activeOrders, setActiveOrders] = useState<ApiOrder[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
@@ -117,28 +119,6 @@ export default function UserHomePage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    // Read the active-order banner from localStorage. Run on every uid change
-    // and whenever the tab regains focus / the storage key changes (so a fresh
-    // order placed in /dashboard/cart is immediately visible when the user
-    // navigates back to /dashboard, even if Next router reuses the page from
-    // bfcache and the component itself doesn't re-mount).
-    const readActive = () => {
-      try {
-        // Cleanup + select latest active order for this user.
-        const all = readActiveOrders(user?.uid ?? null);
-        writeActiveOrders(all);
-        const latest = latestActiveOrder(user?.uid ?? null);
-        setActiveOrder((latest as typeof activeOrder) ?? null);
-      } catch { setActiveOrder(null); }
-    };
-    readActive();
-    const onStorage = (e: StorageEvent) => { if (e.key === "canteen_active_order" || e.key === null) readActive(); };
-    const onFocus = () => readActive();
-    const onPageShow = () => readActive();
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pageshow", onPageShow);
-
     const savedLoc = localStorage.getItem("canteen_student_location");
     const savedCoords = localStorage.getItem("canteen_student_coords");
     if (savedCoords) {
@@ -149,11 +129,6 @@ export default function UserHomePage() {
     } else {
       setShowLocationPicker(true);
     }
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pageshow", onPageShow);
-    };
   }, [user?.uid]);
 
   // Auto-focus search + reset GPS error state when picker opens
@@ -208,6 +183,28 @@ export default function UserHomePage() {
       setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch { /* ignore */ }
   };
+
+  // ── Active orders: fetch from API and poll every 15s ──────────────────────
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    const fetchOrders = async () => {
+      try {
+        const res = await fetch("/api/orders", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { orders?: ApiOrder[] };
+        const active = (data.orders ?? []).filter(
+          o => !["collected", "cancelled"].includes(o.rawStatus)
+        );
+        if (!cancelled) setActiveOrders(active);
+      } catch { /* ignore */ }
+    };
+    fetchOrders();
+    const iv = setInterval(fetchOrders, 15_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [session?.access_token]);
 
   // ── Fetch canteens whenever coords/college change ───────────────────────
   useEffect(() => {
@@ -593,29 +590,55 @@ export default function UserHomePage() {
         </div>
       )}
 
-      {/* ── Active order floating button ── */}
-      {activeOrder && (
-        <Link
-          href="/dashboard/order-status"
-          style={{
-            position: "fixed", bottom: 70, left: "50%", transform: "translateX(-50%)",
-            zIndex: 50, maxWidth: 360, width: "calc(100% - 2rem)",
-            background: "linear-gradient(135deg, #16a34a, #15803d)",
-            color: "#fff", borderRadius: 16, padding: "0.7rem 1rem",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            boxShadow: "0 4px 20px rgba(22,163,74,0.4)",
-            textDecoration: "none",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontSize: "1.2rem" }}>🍽️</span>
-            <div>
-              <div style={{ fontSize: "0.72rem", fontWeight: 600, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.03em" }}>Order in progress</div>
-              <div style={{ fontSize: "0.88rem", fontWeight: 800 }}>{activeOrder.slot} · {activeOrder.bin}</div>
-            </div>
+      {/* ── Active Orders — Swiggy-style tracking cards ── */}
+      {activeOrders.length > 0 && (
+        <div style={{ padding: "0.75rem 1rem 0" }}>
+          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>
+            🔄 Active Orders
           </div>
-          <span style={{ fontSize: "0.82rem", fontWeight: 700, opacity: 0.9 }}>Track →</span>
-        </Link>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+            {activeOrders.map(order => {
+              const cfg: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+                placed:              { label: "Order Placed",       color: "#b45309", bg: "#fef3c7", icon: "⏳" },
+                confirmed:           { label: "Confirmed",          color: "#1d4ed8", bg: "#dbeafe", icon: "✅" },
+                preparing:           { label: "Preparing",          color: "#c2410c", bg: "#ffedd5", icon: "👨‍🍳" },
+                ready_for_placement: { label: "Ready Soon",         color: "#c2410c", bg: "#ffedd5", icon: "📦" },
+                placed_in_bin:       { label: "In Your Bin!",       color: "#15803d", bg: "#dcfce7", icon: "🎉" },
+                ready_for_pickup:    { label: "Ready to Pick Up",   color: "#15803d", bg: "#dcfce7", icon: "🎉" },
+              };
+              const s = cfg[order.rawStatus] ?? { label: order.rawStatus, color: "#64748b", bg: "#f1f5f9", icon: "📦" };
+              const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");
+              const extra = order.items.length > 2 ? ` +${order.items.length - 2}` : "";
+              return (
+                <Link
+                  key={order.id}
+                  href={`/dashboard/order-status?id=${order.id}`}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1.5px solid var(--border)", borderRadius: 14, padding: "0.7rem 0.9rem", textDecoration: "none", color: "inherit", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", gap: "0.6rem" }}
+                >
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.25rem", flexShrink: 0 }}>
+                    {s.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.12rem", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "0.68rem", fontWeight: 700, color: s.color, background: s.bg, padding: "0.08rem 0.38rem", borderRadius: 999, whiteSpace: "nowrap" }}>{s.label}</span>
+                      {order.canteenName && <span style={{ fontSize: "0.65rem", color: "var(--ink-3)" }}>{order.canteenName}</span>}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {preview}{extra}
+                    </div>
+                    {order.slotLabel && (
+                      <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", marginTop: "0.08rem" }}>🕐 {order.slotLabel}</div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.15rem", flexShrink: 0 }}>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-2)" }}>₹{order.total}</span>
+                    <span style={{ fontSize: "0.7rem", color: "var(--orange)", fontWeight: 700 }}>Track →</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* ── Canteen list ── */}
