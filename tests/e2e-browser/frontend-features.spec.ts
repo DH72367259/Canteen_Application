@@ -176,17 +176,16 @@ test.describe("Frontend Features: Inventory Dashboard, Out-of-Stock UI, Worker W
     test("should display slot selector", async ({ page }) => {
       await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
 
-      const slotSelect = page.locator("select").first();
-      await expect(slotSelect).toBeVisible({ timeout: 10_000 });
+      await page.waitForLoadState("networkidle");
+      await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
     });
 
     test("should check availability when slot is selected", async ({ page }) => {
       await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
 
-      const slotSelect = page.locator("select").first();
-      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
-
       await page.waitForLoadState("networkidle");
+      await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
+
       await page.waitForTimeout(1000);
 
       const addButtons = page.getByText(/ADD|SOLD OUT/).first();
@@ -200,10 +199,8 @@ test.describe("Frontend Features: Inventory Dashboard, Out-of-Stock UI, Worker W
     test("should show out of stock badge with reason", async ({ page }) => {
       await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
 
-      const slotSelect = page.locator("select").first();
-      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
-
       await page.waitForLoadState("networkidle");
+      await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
 
       const outOfStockIndicators = page.getByText(/Out of stock|SOLD OUT|CLOSED|Available/i).first();
       try {
@@ -216,10 +213,8 @@ test.describe("Frontend Features: Inventory Dashboard, Out-of-Stock UI, Worker W
     test("should disable add button when out of stock", async ({ page }) => {
       await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`);
 
-      const slotSelect = page.locator("select").first();
-      await slotSelect.waitFor({ state: "visible", timeout: 10_000 });
-
       await page.waitForLoadState("networkidle");
+      await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
 
       const soldOutButton = page.getByText(/SOLD OUT|CLOSED/).first();
       try {

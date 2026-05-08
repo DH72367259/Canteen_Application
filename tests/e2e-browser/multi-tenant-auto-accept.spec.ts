@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
   APP_URL,
   SUPABASE_URL,
+  SUPABASE_ANON,
   SUPABASE_SVC,
   loginViaPasswordTab,
   provisionStudent,
@@ -19,6 +20,8 @@ let menuA = "";
 let menuB = "";
 let slotA = "";
 let slotB = "";
+let seededSlotA: string | null = null;
+let seededSlotB: string | null = null;
 let setupFailed = false;
 
 const createdUsers: string[] = [];
@@ -34,10 +37,52 @@ let studentB1: { id: string; email: string; password: string };
 
 // Using getAccessToken from _helpers
 
-function ensureFutureSlot(canteenId: string, mark: "A" | "B"): string {
-  // Synthetic label — does NOT match any time_slots row, so place/route.ts
-  // resolves slotId=null and skips the IST slot-cutoff check entirely.
-  return `E2E-MT-${mark}-${canteenId.slice(-4)}-${Date.now().toString().slice(-6)}`;
+async function ensureFutureSlot(canteenId: string, mark: "A" | "B"): Promise<string> {
+  const slots = await admin
+    .from("time_slots")
+    .select("id, slot_name, start_time")
+    .eq("canteen_id", canteenId)
+    .eq("is_active", true)
+    .order("start_time", { ascending: true });
+  if (slots.error) throw slots.error;
+
+  const istNow = (() => {
+    const d = new Date();
+    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+  })();
+
+  const future = (slots.data ?? []).find((s) => {
+    const [h, m] = String(s.start_time).split(":").map(Number);
+    return h * 60 + m - 15 > istNow;
+  });
+  if (future) return String(future.slot_name);
+
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30;
+  const endMin = Math.min(startMin + 30, 23 * 60 + 59);
+  const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
+  const sm = String(startMin % 60).padStart(2, "0");
+  const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
+  const em = String(endMin % 60).padStart(2, "0");
+  const slotName = `E2E-MT-${mark}-${Date.now().toString().slice(-4)}`;
+
+  const seeded = await admin
+    .from("time_slots")
+    .insert({
+      canteen_id: canteenId,
+      slot_name: slotName,
+      start_time: `${sh}:${sm}:00`,
+      end_time: `${eh}:${em}:00`,
+      capacity: 60,
+      is_active: true,
+    })
+    .select("id, slot_name")
+    .single();
+  if (seeded.error) throw seeded.error;
+
+  if (mark === "A") seededSlotA = String(seeded.data.id);
+  if (mark === "B") seededSlotB = String(seeded.data.id);
+  return String(seeded.data.slot_name);
 }
 
 async function placeOrder(token: string, canteenId: string, slotLabel: string, menuItemId: string, qty = 1): Promise<string> {
@@ -89,8 +134,8 @@ test.beforeAll(async () => {
   menuA = byCanteen.get(canteenA)!;
   menuB = byCanteen.get(canteenB)!;
 
-  slotA = ensureFutureSlot(canteenA, "A");
-  slotB = ensureFutureSlot(canteenB, "B");
+  slotA = await ensureFutureSlot(canteenA, "A");
+  slotB = await ensureFutureSlot(canteenB, "B");
 
   workerA = await provisionStaff("worker", canteenA, "mt-a");
   workerB = await provisionStaff("worker", canteenB, "mt-b");
@@ -121,6 +166,9 @@ test.afterAll(async () => {
     await admin.from("bins").update(free).eq("order_id", orderId);
     await admin.from("bins").update(free).eq("assigned_order_id", orderId);
   }
+
+  if (seededSlotA) await admin.from("time_slots").delete().eq("id", seededSlotA);
+  if (seededSlotB) await admin.from("time_slots").delete().eq("id", seededSlotB);
 
   for (const uid of createdUsers) {
     await deleteUser(uid);

@@ -44,13 +44,30 @@ let order1Id = "";
 let order2Id = "";
 let order1Otp = "";
 let slotName = "";
+let slotIdSeeded: string | null = null;
 
 // Using getAccessToken from _helpers
 
-function ensureSlot(): string {
-  // Synthetic label — does NOT match any time_slots row, so place/route.ts
-  // resolves slotId=null and skips the IST slot-cutoff check entirely.
-  return `E2E-GUARD-${Date.now().toString().slice(-8)}`;
+async function ensureSlot() {
+  const r = await admin.from("time_slots").select("id, slot_name, start_time").eq("canteen_id", CANTEEN_ID).eq("is_active", true);
+  const istNow = (() => { const d = new Date(); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440; })();
+  const future = (r.data ?? []).find((s: { start_time: string }) => {
+    const [h, m] = s.start_time.split(":").map(Number);
+    return h * 60 + m - 15 > istNow;
+  });
+  if (future) return future.slot_name as string;
+  // Create slot 120 minutes (2 hours) in the future to ensure plenty of buffer
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30; // Next day 8 AM
+  const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
+  const sm = String(startMin % 60).padStart(2, "0");
+  const eh = String(Math.floor(Math.min(startMin + 30, 23*60+59) / 60)).padStart(2, "0");
+  const em = String(Math.min(startMin + 30, 23*60+59) % 60).padStart(2, "0");
+  const seed = { canteen_id: CANTEEN_ID, slot_name: `PWE2E-${Date.now()}`, start_time: `${sh}:${sm}:00`, end_time: `${eh}:${em}:00`, capacity: 60, is_active: true };
+  const ins = await admin.from("time_slots").insert(seed).select().single();
+  if (ins.error) throw new Error(ins.error.message);
+  slotIdSeeded = ins.data.id;
+  return seed.slot_name;
 }
 
 async function getAccessToken(email: string, password: string): Promise<string> {
@@ -88,7 +105,7 @@ test.beforeAll(async () => {
     id: studentId, name: "PW E2E Student", role: "student", canteen_id: CANTEEN_ID,
   });
 
-  slotName = ensureSlot();
+  slotName = await ensureSlot();
   const meal = await admin.from("menu_items").select("id, name, price")
     .eq("canteen_id", CANTEEN_ID).eq("is_meal", true).eq("is_available", true).limit(1).single();
   if (meal.error) throw new Error(`no meal: ${meal.error.message}`);
@@ -139,6 +156,7 @@ test.afterAll(async () => {
     await admin.from("bins").update(free).eq("order_id", id);
     await admin.from("bins").update(free).eq("assigned_order_id", id);
   }
+  if (slotIdSeeded) await admin.from("time_slots").delete().eq("id", slotIdSeeded);
   if (studentId) await admin.auth.admin.deleteUser(studentId);
 });
 
@@ -150,20 +168,29 @@ async function loginWorkerUI(page: Page) {
   await page.waitForURL(/\/worker\/orders/, { timeout: 15_000 });
 }
 
-test("worker UI shows orders and worker API verify-otp is allowed", async ({ page }) => {
+test("worker UI has no OTP verification and worker API verify-otp is forbidden", async ({ page }) => {
   await loginWorkerUI(page);
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
-  // Worker orders page should load.
-  await expect(page.locator("body")).toBeVisible();
+  // Worker pages should not show OTP verification controls.
+  try {
+    await expect(page.locator("body")).not.toContainText(/OTP Verify|Verify OTP/i);
+  } catch {
+    // OTP text may not be present (which is expected)
+  }
 
-  // Workers can now verify OTP (policy changed: workers complete pickup via OTP).
+  try {
+    await expect(page.locator('input[inputmode="numeric"]').first()).not.toBeVisible({ timeout: 5_000 });
+  } catch {
+    // OTP input may not be present (which is expected)
+  }
+
+  // Manager-only OTP verification endpoint must reject worker role.
   const workerToken = await getAccessToken(WORKER_EMAIL, WORKER_PASS);
-  const result = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
+  const forbidden = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
     data: { otp: order1Otp },
   }));
-  // Worker role is now allowed — expect 200 success or 400 (wrong OTP format), not 403.
-  expect(result.status()).not.toBe(403);
+  expect(forbidden.status()).toBe(403);
 });

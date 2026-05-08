@@ -3,7 +3,6 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
   APP_URL,
   SUPABASE_URL,
-  SUPABASE_ANON,
   SUPABASE_SVC,
   WHITELIST,
   apiFetch,
@@ -19,53 +18,11 @@ let studentEmail = "";
 const studentPassword = "Student@12345";
 let order1Id = "";
 let order2Id = "";
-let seededSlotId: string | null = null;
 
-// Using getAccessToken from _helpers
-
-async function ensureSlotLabel() {
-  const slots = await admin
-    .from("time_slots")
-    .select("id, slot_name, start_time")
-    .eq("canteen_id", CANTEEN_ID)
-    .eq("is_active", true)
-    .order("start_time", { ascending: true });
-  if (slots.error) throw slots.error;
-
-  const istNow = (() => {
-    const d = new Date();
-    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
-  })();
-
-  const future = (slots.data ?? []).find((s) => {
-    const [h, m] = String(s.start_time).split(":").map(Number);
-    return h * 60 + m - 15 > istNow;
-  });
-  if (future) return String(future.slot_name);
-
-  let startMin = istNow + 120;
-  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30;
-  const endMin = Math.min(startMin + 30, 23 * 60 + 59);
-  const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
-  const sm = String(startMin % 60).padStart(2, "0");
-  const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
-  const em = String(endMin % 60).padStart(2, "0");
-  const slotName = `E2E-MULTI-${Date.now().toString().slice(-4)}`;
-  const seed = await admin
-    .from("time_slots")
-    .insert({
-      canteen_id: CANTEEN_ID,
-      slot_name: slotName,
-      start_time: `${sh}:${sm}:00`,
-      end_time: `${eh}:${em}:00`,
-      capacity: 60,
-      is_active: true,
-    })
-    .select("id, slot_name")
-    .single();
-  if (seed.error) throw seed.error;
-  seededSlotId = String(seed.data.id);
-  return String(seed.data.slot_name);
+// Synthetic label — does NOT match any time_slots row, so place/route.ts
+// resolves slotId=null and skips the IST slot-cutoff check entirely.
+function ensureSlotLabel(): string {
+  return `E2E-MOV-${Date.now().toString().slice(-8)}`;
 }
 
 test.beforeAll(async () => {
@@ -97,7 +54,7 @@ test.beforeAll(async () => {
     .single();
   if (meal.error) throw meal.error;
 
-  const slotLabel = await ensureSlotLabel();
+  const slotLabel = ensureSlotLabel();
   const studentToken = await getAccessToken(studentEmail, studentPassword);
 
   for (let i = 0; i < 2; i++) {
@@ -130,7 +87,6 @@ test.afterAll(async () => {
     await admin.from("bins").update(free).eq("order_id", id);
     await admin.from("bins").update(free).eq("assigned_order_id", id);
   }
-  if (seededSlotId) await admin.from("time_slots").delete().eq("id", seededSlotId);
   if (studentId) await admin.auth.admin.deleteUser(studentId).catch(() => {});
 });
 

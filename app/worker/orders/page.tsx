@@ -110,7 +110,7 @@ function aggregateBySlot(orders: WorkerOrder[]): SlotAggregate[] {
             binColor: a.binColor,
             items: a.items.map((it) => ({ name: it.name, quantity: it.quantity })),
           }))
-        : [{ binLabel: order.bin_label ?? "Unassigned", binColor: order.bin_color ?? "orange", items: order.items }];
+        : [{ binLabel: order.bin_label ?? "⏳ Pending", binColor: order.bin_color ?? "orange", items: order.items }];
 
     for (const a of assignments) {
       found.binPlans.push({
@@ -294,7 +294,7 @@ export default function WorkerOrdersPage() {
               const assignments =
                 order.bin_assignments && order.bin_assignments.length > 0
                   ? order.bin_assignments
-                  : [{ binIndex: 1, binLabel: order.bin_label ?? "Unassigned", binColor: order.bin_color ?? "orange", items: order.items }];
+                  : [{ binIndex: 1, binLabel: order.bin_label ?? "⏳ Pending", binColor: order.bin_color ?? "orange", items: order.items }];
 
               return (
                 <div key={order.id} style={{ background: "#fff", borderRadius: 16, boxShadow: "0 3px 10px rgba(0,0,0,0.09)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
@@ -435,11 +435,21 @@ export default function WorkerOrdersPage() {
         )}
       </div>
 
-      {/* Bottom nav */}
-      <div className="bottom-nav">
-        <button className={`nav-item ${tab === "orders" ? "active" : ""}`} onClick={() => setTab("orders")}>📦<span>Orders</span></button>
-        <button className={`nav-item ${tab === "prep" ? "active" : ""}`} onClick={() => setTab("prep")}>📊<span>Prep Plan</span></button>
-        <button className="nav-item" onClick={() => router.push("/worker/bins")}>🧺<span>Bins</span></button>
+      {/* Bottom nav — inline styles so desktop media-query doesn't hide it */}
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)" }}>
+        {([
+          { key: "orders", label: "Orders",   icon: "📦" },
+          { key: "prep",   label: "Prep Plan", icon: "📊" },
+        ] as { key: "orders"|"prep"; label: string; icon: string }[]).map(({ key, label, icon }) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 600, color: tab === key ? "var(--orange,#f97316)" : "var(--ink-3,#64748b)" }}>
+            <span style={{ fontSize: "1.35rem" }}>{icon}</span>{label}
+          </button>
+        ))}
+        <button onClick={() => router.push("/worker/bins")}
+          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 600, color: "var(--ink-3,#64748b)" }}>
+          <span style={{ fontSize: "1.35rem" }}>🧺</span>Bins
+        </button>
       </div>
 
       {/* OTP Verification Modal */}

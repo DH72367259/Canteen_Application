@@ -19,12 +19,57 @@ let orderA = "";
 let orderB = "";
 let canteenA = "";
 let canteenB = "";
+let seededSlotA: string | null = null;
+let seededSlotB: string | null = null;
+
 // Using getAccessToken from _helpers
 
-function ensureSlotLabel(canteenId: string): string {
-  // Synthetic label — does NOT match any time_slots row, so place/route.ts
-  // resolves slotId=null and skips the IST slot-cutoff check entirely.
-  return `E2E-MULTI-CANT-${canteenId.slice(-4)}-${Date.now().toString().slice(-8)}`;
+async function ensureSlotLabel(canteenId: string): Promise<string> {
+  const slots = await admin
+    .from("time_slots")
+    .select("id, slot_name, start_time")
+    .eq("canteen_id", canteenId)
+    .eq("is_active", true)
+    .order("start_time", { ascending: true });
+  if (slots.error) throw slots.error;
+
+  const istNow = (() => {
+    const d = new Date();
+    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+  })();
+
+  const future = (slots.data ?? []).find((s) => {
+    const [h, m] = String(s.start_time).split(":").map(Number);
+    return h * 60 + m - 15 > istNow;
+  });
+  if (future) return String(future.slot_name);
+
+  let startMin = istNow + 120;
+  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30;
+  const endMin = Math.min(startMin + 30, 23 * 60 + 59);
+  const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
+  const sm = String(startMin % 60).padStart(2, "0");
+  const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
+  const em = String(endMin % 60).padStart(2, "0");
+  const slotName = `E2E-MULTI-CANT-${Date.now().toString().slice(-4)}`;
+
+  const seed = await admin
+    .from("time_slots")
+    .insert({
+      canteen_id: canteenId,
+      slot_name: slotName,
+      start_time: `${sh}:${sm}:00`,
+      end_time: `${eh}:${em}:00`,
+      capacity: 60,
+      is_active: true,
+    })
+    .select("id, slot_name")
+    .single();
+  if (seed.error) throw seed.error;
+
+  if (canteenId === canteenA) seededSlotA = String(seed.data.id);
+  if (canteenId === canteenB) seededSlotB = String(seed.data.id);
+  return String(seed.data.slot_name);
 }
 
 async function placeOneOrder(studentToken: string, canteenId: string): Promise<string> {
@@ -37,7 +82,7 @@ async function placeOneOrder(studentToken: string, canteenId: string): Promise<s
     .single();
   if (meal.error) throw meal.error;
 
-  const slotLabel = ensureSlotLabel(canteenId);
+  const slotLabel = await ensureSlotLabel(canteenId);
 
   const placed = await apiFetch(`${APP_URL}/api/orders/place`, {
     method: "POST",
@@ -104,6 +149,8 @@ test.afterAll(async () => {
     await admin.from("bins").update(free).eq("order_id", id);
     await admin.from("bins").update(free).eq("assigned_order_id", id);
   }
+  if (seededSlotA) await admin.from("time_slots").delete().eq("id", seededSlotA);
+  if (seededSlotB) await admin.from("time_slots").delete().eq("id", seededSlotB);
   if (studentId) await admin.auth.admin.deleteUser(studentId).catch(() => {});
 });
 

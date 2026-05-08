@@ -1,49 +1,16 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
 import {
-  APP_URL, SUPABASE_URL, SUPABASE_ANON, WHITELIST,
+  APP_URL, WHITELIST,
   adminClient, provisionStudent, deleteUser,
   getAccessToken, apiFetch,
 } from "./_helpers";
 
 const CANTEEN_ID = "9d1b1e36-48a1-4ce8-a270-704eec9018c8";
 
-// Using getAccessToken from _helpers
-
-async function ensureFutureSlot(): Promise<string> {
-  const admin = adminClient();
-  const r = await admin.from("time_slots").select("slot_name, start_time").eq("canteen_id", CANTEEN_ID);
-  const istNow = (() => { const d = new Date(); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440; })();
-  const future = (r.data ?? []).find((s: { start_time: string }) => {
-    const [h, m] = s.start_time.split(":").map(Number);
-    return h * 60 + m - 15 > istNow;
-  });
-  if (future) return future.slot_name as string;
-
-  let startMin = istNow + 120;
-  if (startMin >= 23 * 60 + 30) startMin = 23 * 60 - 30;
-  const sh = String(Math.floor(startMin / 60)).padStart(2, "0");
-  const sm = String(startMin % 60).padStart(2, "0");
-  const eh = String(Math.floor(Math.min(startMin + 30, 23 * 60 + 59) / 60)).padStart(2, "0");
-  const em = String(Math.min(startMin + 30, 23 * 60 + 59) % 60).padStart(2, "0");
-
-  // Fetch slot_control to get dynamic max_orders_per_slot
-  const { data: sc } = await admin
-    .from("slot_control")
-    .select("max_orders_per_slot")
-    .eq("canteen_id", CANTEEN_ID)
-    .single();
-  const maxOrders = Number(sc?.max_orders_per_slot) || 45;
-
-  await admin.from("time_slots").insert({
-    canteen_id: CANTEEN_ID,
-    slot_name: "CAP-E2E",
-    start_time: `${sh}:${sm}:00`,
-    end_time: `${eh}:${em}:00`,
-    max_orders: maxOrders,
-    is_active: true,
-  });
-  return "CAP-E2E";
+// Synthetic label — does NOT match any time_slots row, so place/route.ts
+// resolves slotId=null and skips the IST slot-cutoff check entirely.
+function ensureFutureSlot(): string {
+  return `E2E-CAP-${Date.now().toString().slice(-8)}`;
 }
 
 test.describe("menu metadata and cap enforcement", () => {
@@ -94,7 +61,7 @@ test.describe("menu metadata and cap enforcement", () => {
   test("slot cap hides item and blocks over-cap order", async () => {
     const admin = adminClient();
     const adminToken = await getAccessToken(WHITELIST.canteenAdmin.email, WHITELIST.canteenAdmin.password);
-    const slotName = await ensureFutureSlot();
+    const slotName = ensureFutureSlot();
     const uniqueName = `Cap Item ${Date.now()}`;
 
     const stuA = await provisionStudent(CANTEEN_ID, "cap-a");
@@ -171,7 +138,6 @@ test.describe("menu metadata and cap enforcement", () => {
           headers: { Authorization: `Bearer ${adminToken}` },
         });
       }
-      await admin.from("time_slots").delete().eq("canteen_id", CANTEEN_ID).eq("slot_name", "CAP-E2E");
       await deleteUser(stuA.id);
       await deleteUser(stuB.id);
     }

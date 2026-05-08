@@ -105,10 +105,17 @@ export default function WorkerOtpVerifyPage() {
         </div>
       </div>
 
-      <div className="bottom-nav">
-        <button className="nav-item" onClick={() => router.push("/worker/orders")}>📦<span>Orders</span></button>
-        <button className="nav-item" onClick={() => router.push("/worker/bins")}>🧺<span>Bins</span></button>
-        <button className="nav-item active">🔐<span>OTP Verify</span></button>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)" }}>
+        {([
+          { label: "Orders",     icon: "📦", href: "/worker/orders",     active: false },
+          { label: "Bins",       icon: "🧺", href: "/worker/bins",       active: false },
+          { label: "OTP Verify", icon: "🔐", href: "/worker/otp-verify", active: true  },
+        ] as { label: string; icon: string; href: string; active: boolean }[]).map(({ label, icon, href, active }) => (
+          <button key={label} onClick={() => router.push(href)}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 600, color: active ? "var(--orange,#f97316)" : "var(--ink-3,#64748b)" }}>
+            <span style={{ fontSize: "1.35rem" }}>{icon}</span>{label}
+          </button>
+        ))}
       </div>
     </div>
   );

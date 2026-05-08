@@ -178,5 +178,67 @@ export async function assignDeferredBins(
     assigned++;
   }
 
+  // Backfill: orders that already have a bin_id (set by old instant-assign logic)
+  // but were never written to order_bins. Create one-bin rows for them so the
+  // worker app can display items instead of showing "Bin Unassigned".
+  const { data: needsBackfill } = await supabase
+    .from("orders")
+    .select("id, bin_id, bin_label, bin_color, slot_label")
+    .eq("canteen_id", canteenId)
+    .not("bin_id", "is", null)
+    .in("status", ["confirmed", "preparing", "ready_for_placement", "placed_in_bin"]);
+
+  if (needsBackfill?.length) {
+    for (const ord of needsBackfill) {
+      const { count } = await supabase
+        .from("order_bins")
+        .select("id", { count: "exact", head: true })
+        .eq("order_id", ord.id);
+      if ((count ?? 0) > 0) continue;
+
+      type OIRow2 = { menu_item_id: string; quantity: number; menu_items: { name: string; is_meal: boolean | null } | null };
+      const { data: oiRows2 } = await supabase
+        .from("order_items")
+        .select("menu_item_id, quantity, menu_items(name, is_meal)")
+        .eq("order_id", ord.id);
+
+      const cartLines2: CartLine[] = ((oiRows2 ?? []) as unknown as OIRow2[]).map((oi) => ({
+        itemId:   String(oi.menu_item_id),
+        name:     String(oi.menu_items?.name ?? oi.menu_item_id),
+        quantity: Number(oi.quantity ?? 1),
+        isMeal:   Boolean(oi.menu_items?.is_meal),
+      }));
+      const plan2 = assignBins(cartLines2);
+
+      const { data: physBins } = await supabase
+        .from("bins")
+        .select("id, bin_code, color")
+        .eq("canteen_id", canteenId)
+        .eq("is_occupied", true)
+        .or(`order_id.eq.${ord.id},assigned_order_id.eq.${ord.id}`);
+
+      const physArr = physBins ?? [];
+      const rows2 = plan2.bins.map((slot, idx) => {
+        const phys = physArr[idx];
+        const items = [
+          ...(slot?.meals  ?? []).map((m) => ({ name: m.name, quantity: m.quantity, isMeal: true  })),
+          ...(slot?.snacks ?? []).map((s) => ({ name: s.name, quantity: s.quantity, isMeal: false })),
+        ];
+        return {
+          order_id:  ord.id,
+          bin_id:    phys?.id ?? ord.bin_id,
+          bin_index: idx + 1,
+          bin_code:  phys?.bin_code ?? String(ord.bin_label ?? ""),
+          bin_color: phys?.color ?? String(ord.bin_color ?? "blue"),
+          items,
+        };
+      });
+
+      if (rows2.length > 0) {
+        await supabase.from("order_bins").upsert(rows2, { onConflict: "order_id,bin_index" });
+      }
+    }
+  }
+
   return { assigned };
 }
