@@ -16,7 +16,8 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
   const rawStatusMap: Record<string, "received" | "preparing" | "ready" | "completed" | "cancelled"> = {
     placed: "received", confirmed: "preparing", preparing: "preparing",
     ready_for_placement: "ready", placed_in_bin: "ready",
-    ready_for_pickup: "ready", collected: "completed", cancelled: "cancelled",
+    ready_for_pickup: "ready", late_pickup: "ready",
+    collected: "completed", cancelled: "cancelled",
     grace_bin: "ready",
   };
   const rawSt = String(row.status ?? "placed");

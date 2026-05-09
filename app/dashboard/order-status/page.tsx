@@ -36,6 +36,7 @@ const STATUS_ORDER = [
   "ready_for_placement",
   "placed_in_bin",
   "ready_for_pickup",
+  "late_pickup",
   "collected",
 ] as const;
 
@@ -43,7 +44,7 @@ const STEP_DEFS = [
   { label: "Order Placed",       icon: "✅", statuses: ["placed"] as string[] },
   { label: "Confirmed by Canteen", icon: "👨‍🍳", statuses: ["confirmed"] as string[] },
   { label: "Being Prepared",     icon: "🍳", statuses: ["preparing", "ready_for_placement"] as string[] },
-  { label: "Placed in Your Bin", icon: "📦", statuses: ["placed_in_bin", "ready_for_pickup"] as string[] },
+  { label: "Placed in Your Bin", icon: "📦", statuses: ["placed_in_bin", "ready_for_pickup", "late_pickup"] as string[] },
   { label: "Collected",          icon: "🎉", statuses: ["collected"] as string[] },
 ];
 
@@ -135,7 +136,8 @@ function OrderStatusContent() {
   }
 
   const rank = statusRank(currentStatus);
-  const showOtp   = ["placed_in_bin", "ready_for_pickup"].includes(currentStatus);
+  const isLatePickup = currentStatus === "late_pickup";
+  const showOtp   = ["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(currentStatus);
   const showBin   = rank >= statusRank("placed_in_bin");
   const isCollected = currentStatus === "collected";
 
@@ -214,11 +216,26 @@ function OrderStatusContent() {
           </div>
         </div>
 
+        {/* ── Late pickup banner ── */}
+        {isLatePickup && (
+          <div style={{ background: "#fffbeb", border: "1.5px solid #f59e0b", borderRadius: 14, padding: "0.85rem 1rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
+            <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400e" }}>Your slot ended — but your food is still here!</div>
+              <div style={{ fontSize: "0.78rem", color: "#78350f", marginTop: "0.3rem", lineHeight: 1.5 }}>
+                The canteen has moved your food to a separate area. Show the OTP below to the canteen staff to collect your order anytime today.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── OTP section — only when bin is assigned and ready ── */}
         {showOtp && order.otp && (
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "2px solid var(--orange)" }}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
-              <div style={{ fontWeight: 900, fontSize: "1.1rem", color: "#15803d" }}>🎉 Your order is ready!</div>
+              <div style={{ fontWeight: 900, fontSize: "1.1rem", color: "#15803d" }}>
+                {isLatePickup ? "🍱 Food is waiting for you!" : "🎉 Your order is ready!"}
+              </div>
               <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.2rem" }}>Show this OTP to the canteen staff</div>
             </div>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginBottom: "0.75rem" }}>

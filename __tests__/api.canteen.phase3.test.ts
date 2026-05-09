@@ -98,27 +98,37 @@ describe("PATCH /api/canteen/slot-control", () => {
     mockGetRequestContext.mockResolvedValue(ADMIN);
     scQB.single.mockResolvedValueOnce({
       data: {
-        canteen_id: "c-1", max_bins: 100, slot_duration_mins: 15,
+        canteen_id: "c-1", max_bins: 72, slot_duration_mins: 15,
         morning_start: "07:00:00", morning_end: "11:00:00",
         afternoon_start: "11:30:00", afternoon_end: "17:00:00",
         evening_start: "18:00:00", evening_end: "21:30:00",
         grace_period_mins: 10, extra_bin_fee_paise: 200,
         meals_per_bin: 2, snacks_per_bin: 5,
-        max_orders_per_slot: 75, batched_prepared_cap: 52, made_to_order_cap: 23,
+        max_orders_per_slot: 72, batched_prepared_cap: 43, made_to_order_cap: 29,
       },
       error: null,
     });
     const res = await scPATCH(new Request("http://l/api/canteen/slot-control", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_bins: 100 }),
+      body: JSON.stringify({ max_bins: 72 }),
     }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.capacity.maxOrdersPerSlot).toBe(100); // 100% of 100
+    expect(json.capacity.maxOrdersPerSlot).toBe(72); // 100% of 72 (new max)
     expect(scQB.upsert).toHaveBeenCalled();
     const updateArg = (scQB.upsert as jest.Mock).mock.calls[0][0];
-    expect(updateArg.max_bins).toBe(100);
+    expect(updateArg.max_bins).toBe(72);
+  });
+
+  it("rejects max_bins above the 72-bin cap", async () => {
+    mockGetRequestContext.mockResolvedValue(ADMIN);
+    const res = await scPATCH(new Request("http://l/api/canteen/slot-control", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_bins: 100 }),
+    }));
+    expect(res.status).toBe(400);
   });
 
   it("rejects invalid slot_duration_mins", async () => {
