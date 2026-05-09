@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { assignDeferredBins } from "@/lib/deferredBinAssign";
-import { releaseExpiredSlotBins } from "@/lib/slotExpiry";
+import { releaseExpiredSlotBins, autoCloseEodLateOrders } from "@/lib/slotExpiry";
 
 export const dynamic = "force-dynamic";
 
@@ -196,6 +196,7 @@ export async function GET(request: Request) {
   // Release bins whose slot end time has passed → late_pickup transition.
   // Runs before bin assignment so freed bins are immediately available.
   await releaseExpiredSlotBins(supabase, canteenId).catch(() => {});
+  await autoCloseEodLateOrders(supabase, canteenId).catch(() => {});
 
   // Assign physical bins to orders whose slot start time has arrived.
   // Runs on every poll so vendors see bin numbers appear automatically.

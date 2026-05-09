@@ -128,3 +128,41 @@ export async function releaseExpiredSlotBins(
 
   return { released: toRelease.length };
 }
+
+/**
+ * End-of-day auto-close: any `late_pickup` order whose `updated_at` is before
+ * midnight IST today (i.e. from a previous day) is marked `collected`.
+ *
+ * All stored details (bin_label, bin_color, items, OTP) are untouched, so the
+ * order displays exactly like a normal collected order in every dashboard.
+ */
+export async function autoCloseEodLateOrders(
+  supabase: SupabaseClient,
+  canteenId: string,
+): Promise<{ closed: number }> {
+  // Compute midnight IST (start of today in IST, as UTC ISO string).
+  const now = new Date();
+  const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
+  const ist = new Date(istMs);
+  const midnightIST = new Date(
+    Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 0, 0, 0) -
+    5.5 * 60 * 60 * 1000,
+  );
+
+  const { data: expired } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("canteen_id", canteenId)
+    .eq("status", "late_pickup")
+    .lt("updated_at", midnightIST.toISOString());
+
+  if (!expired?.length) return { closed: 0 };
+
+  await supabase
+    .from("orders")
+    .update({ status: "collected", updated_at: new Date().toISOString() })
+    .in("id", expired.map((o: { id: string }) => o.id))
+    .eq("status", "late_pickup");
+
+  return { closed: expired.length };
+}
