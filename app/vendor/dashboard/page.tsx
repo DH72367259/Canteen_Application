@@ -7,6 +7,14 @@ import type { CanteenOrder } from "@/types/canteen";
 import type { Session } from "@supabase/supabase-js";
 import CancelOrderModal from "@/components/CancelOrderModal";
 
+/** Fire this from any sub-component that receives a 401 response.
+ *  VendorDashboard listens for it and shows the session-expired overlay. */
+function notifySessionExpired() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("canteen:session-expired"));
+  }
+}
+
 type BinStatus = "placed" | "preparing" | "completed" | "delayed" | "empty";
 
 interface Bin {
@@ -75,6 +83,12 @@ function rackIndexFor(binLabel: string | null, binColor: string | null, maxBins:
 export default function VendorDashboard() {
   const router = useRouter();
   const { user, logout, session, loading } = useAuth();
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    const handler = () => setSessionExpired(true);
+    window.addEventListener("canteen:session-expired", handler);
+    return () => window.removeEventListener("canteen:session-expired", handler);
+  }, []);
   const [activeNav, setActiveNav] = useState("live");
   // Live Orders status filter — PDF page 14 vocabulary: Reserved / Occupied / Late Pickup
   const [statusFilter, setStatusFilter] = useState<"all" | "reserved" | "occupied" | "late">("all");
@@ -244,6 +258,7 @@ export default function VendorDashboard() {
       const res = await fetch("/api/orders", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 401) { notifySessionExpired(); return; }
       if (!res.ok) return;
       const { orders } = await res.json();
       const allOrders = orders as CanteenOrder[];
@@ -463,6 +478,26 @@ export default function VendorDashboard() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([slot, slotBins]) => ({ slot, bins: slotBins }));
   const stats = { total: bins.filter(b => b.status !== "empty").length, preparing: bins.filter(b => b.status === "preparing").length, completed: bins.filter(b => b.status === "completed").length, delayed: bins.filter(b => b.status === "delayed").length };
+
+  if (sessionExpired) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb" }}>
+        <div style={{ background: "#fff", border: "1.5px solid #fecaca", borderRadius: 16, padding: "40px 48px", textAlign: "center", maxWidth: 400 }}>
+          <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>⏱️</div>
+          <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "#1f2937", marginBottom: 8 }}>Session Expired</h2>
+          <p style={{ fontSize: "0.9rem", color: "#6b7280", marginBottom: 24, lineHeight: 1.6 }}>
+            Your login session has expired. Please sign in again to continue.
+          </p>
+          <button
+            onClick={async () => { await logout(); router.push("/login?role=vendor"); }}
+            style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 10, padding: "12px 32px", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}
+          >
+            Sign In Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="web-shell">
@@ -1226,6 +1261,7 @@ function VendorSlotsView({ session, onNavigate }: { session: Session | null; onN
     setLoading(true); setError(null);
     try {
       const res = await fetch("/api/canteen/slot-control", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      if (res.status === 401) { notifySessionExpired(); return; }
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Failed to load slots");
       setData(j);
@@ -1493,6 +1529,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
+        if (res.status === 401) { notifySessionExpired(); return; }
         const j = await res.json().catch(() => ({}));
         setError(j.error || `Failed to load bins (${res.status})`);
         return;
@@ -2224,6 +2261,7 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
       const res = await fetch(`/api/canteen/earnings?period_start=${periodStart}&period_end=${periodEnd}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
+      if (res.status === 401) { notifySessionExpired(); return; }
       const d = await res.json();
       if (!res.ok) { setErr(d.error ?? "Failed to load"); return; }
       setData(d);
@@ -2396,6 +2434,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
     setLoading(true); setError(null);
     try {
       const res = await fetch("/api/canteen/slot-control", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      if (res.status === 401) { notifySessionExpired(); return; }
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Failed");
       setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
@@ -2560,6 +2599,7 @@ function VendorPrepSummaryView({ session }: { session: { access_token: string } 
     setLoading(true); setError(null);
     try {
       const res = await fetch("/api/canteen/prep-summary", { headers: { Authorization: `Bearer ${session.access_token}` } });
+      if (res.status === 401) { notifySessionExpired(); return; }
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Failed");
       setData(j);
