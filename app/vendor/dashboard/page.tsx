@@ -85,6 +85,7 @@ export default function VendorDashboard() {
     return () => clearInterval(id);
   }, []);
   const [bins, setBins] = useState<Bin[]>([]);
+  const [lateOrders, setLateOrders] = useState<CanteenOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   // Total bin slots configured for this canteen (Slot Control → Max Bins).
   // Drives the "show every bin on Live Orders" grid (client request 2026-04-30
@@ -245,8 +246,12 @@ export default function VendorDashboard() {
       });
       if (!res.ok) return;
       const { orders } = await res.json();
-      const active = (orders as CanteenOrder[]).filter(
-        (o) => !["collected", "completed", "cancelled"].includes(o.rawStatus ?? o.status)
+      const allOrders = orders as CanteenOrder[];
+      // Separate late pickup orders — they have no active bin; show in their own section
+      const lateActive = allOrders.filter(o => (o.rawStatus ?? o.status) === "late_pickup");
+      setLateOrders(lateActive);
+      const active = allOrders.filter(
+        (o) => !["collected", "completed", "cancelled", "late_pickup"].includes(o.rawStatus ?? o.status)
       );
       // Fan out multi-bin orders into one rack tile per allocated bin so the
       // rack visually shows EVERY reserved bin (not just the first). Without
@@ -737,6 +742,44 @@ export default function VendorDashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Late Pickup — orders whose slot ended; bin recycled but OTP still needed */}
+            {lateOrders.length > 0 && (
+              <div style={{ padding: "0 0 1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.75rem", borderBottom: "2px solid #fca5a5", paddingBottom: "0.4rem" }}>
+                  <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#b91c1c" }}>🕐 Late Pickup</span>
+                  <span style={{ background: "#fee2e2", borderRadius: 20, padding: "0.15rem 0.55rem", fontSize: "0.75rem", fontWeight: 600, color: "#b91c1c" }}>
+                    {lateOrders.length} order{lateOrders.length !== 1 ? "s" : ""}
+                  </span>
+                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 400 }}>Slot ended — bin freed — awaiting student OTP</span>
+                </div>
+                <div className="bin-grid">
+                  {lateOrders.map(o => {
+                    const zoneColor = o.binColor === "red" ? "#dc2626" : o.binColor === "yellow" ? "#eab308" : o.binColor === "green" ? "#16a34a" : o.binColor === "blue" ? "#2563eb" : o.binColor === "purple" ? "#9333ea" : "#ea580c";
+                    return (
+                      <div key={o.id} className="bin-card" style={{ borderLeft: `4px solid ${zoneColor}`, border: "1.5px solid #fecaca", background: "#fff5f5" }}>
+                        <span className="bin-status-badge" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fecaca" }}>Late Pickup</span>
+                        <div className="bin-number">
+                          <span style={{ color: zoneColor, fontWeight: 800 }}>{o.binLabel ?? "—"}</span>
+                          <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: 400, marginLeft: "0.3rem" }}>(was in bin)</span>
+                        </div>
+                        <div className="bin-order-id">{o.id.slice(-8).toUpperCase()}</div>
+                        <div className="bin-customer">{o.customerName}</div>
+                        <div className="bin-slot" style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                          {o.items.map(i => `${i.name} ×${i.quantity}`).join(" · ")}
+                        </div>
+                        {o.slotLabel && (
+                          <div style={{ fontSize: "0.7rem", color: "#b91c1c", fontWeight: 600, marginTop: "0.2rem" }}>Slot: {o.slotLabel}</div>
+                        )}
+                        <div style={{ marginTop: "0.35rem", fontSize: "0.7rem", color: "#64748b", fontStyle: "italic" }}>
+                          Student must present OTP to collect · food moved to separate bin
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </>
