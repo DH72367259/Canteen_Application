@@ -166,10 +166,11 @@ export async function POST(request: Request) {
     }
   }
 
-  // 3. Count orders already placed for this slot today
-  // Prod schema drift: orders has `slot_label` (or legacy `pickup_slot`),
-  // not `slot`. Try the modern column first then fall back gracefully so
-  // older deployments and dev DBs both work.
+  const mealsPerBin = Number(sc.meals_per_bin) || 1;
+  const snacksPerBin = Number(sc.snacks_per_bin) || 3;
+
+  // 3. Find orders already placed for this slot today (bin-aware capacity check)
+  // Prod schema drift: orders has `slot_label` (or legacy `pickup_slot`).
   const utcNow = new Date();
   const todayIST = new Date(utcNow.getTime() + 330 * 60000).toISOString().slice(0, 10);
   const slotCols = ["slot_label", "pickup_slot", "slot"] as const;
@@ -185,7 +186,6 @@ export async function POST(request: Request) {
       .not("status", "in", '("cancelled","refunded")');
     if (!error) { existingOrders = (data ?? []) as Array<{ id: string }>; lastErr = null; break; }
     lastErr = error.message;
-    // Only retry when the failure looks like a missing column.
     if (!/column .* does not exist|undefined column/i.test(error.message)) break;
   }
   if (existingOrders === null) {
@@ -193,7 +193,75 @@ export async function POST(request: Request) {
   }
 
   const slotOrdersUsed = existingOrders.length;
-  const slotFull = slotOrdersUsed >= capacity.maxOrdersPerSlot;
+
+  // Count actual bins consumed by existing orders using the same packing logic.
+  // Each order may occupy multiple bins depending on meals+snacks, so counting
+  // orders would under-report usage (e.g. 1 order with 10 items = 2 bins).
+  let existingBinsUsed = 0;
+  if (existingOrders.length > 0) {
+    const existingOrderIds = existingOrders.map((o) => o.id);
+
+    // Fetch items, tolerating absence of cancelled_quantity
+    type ItemRow = { order_id: string; menu_item_id: string; quantity: number; cancelled_quantity?: number | null };
+    let existingItemRows: ItemRow[] = [];
+    for (const cols of [
+      "order_id, menu_item_id, quantity, cancelled_quantity",
+      "order_id, menu_item_id, quantity",
+    ]) {
+      const { data: rows, error: rowErr } = await supabase
+        .from("order_items")
+        .select(cols)
+        .in("order_id", existingOrderIds);
+      if (!rowErr) { existingItemRows = (rows ?? []) as unknown as ItemRow[]; break; }
+      if (!/column .* does not exist/i.test(rowErr.message)) break;
+    }
+
+    if (existingItemRows.length > 0) {
+      // Get is_meal for the referenced menu items
+      const existingMenuIds = [...new Set(existingItemRows.map((r) => r.menu_item_id))];
+      const { data: mealRows } = await supabase
+        .from("menu_items")
+        .select("id, is_meal")
+        .in("id", existingMenuIds);
+      const isMealMap = new Map<string, boolean>(
+        ((mealRows ?? []) as Array<{ id: string; is_meal: boolean | null }>)
+          .map((m) => [String(m.id), !!m.is_meal])
+      );
+
+      // Group by order, compute bin plan per order, sum bin counts
+      const linesPerOrder = new Map<string, CartLine[]>();
+      for (const row of existingItemRows) {
+        const net = Math.max(0, Number(row.quantity ?? 0) - Number(row.cancelled_quantity ?? 0));
+        if (net <= 0) continue;
+        const oid = String(row.order_id);
+        if (!linesPerOrder.has(oid)) linesPerOrder.set(oid, []);
+        linesPerOrder.get(oid)!.push({
+          itemId: String(row.menu_item_id),
+          name: "",
+          quantity: net,
+          isMeal: isMealMap.get(String(row.menu_item_id)) ?? false,
+        });
+      }
+      for (const lines of linesPerOrder.values()) {
+        existingBinsUsed += assignBins(lines, mealsPerBin, snacksPerBin, 0).bins.length;
+      }
+    } else {
+      // Fallback: treat each order as 1 bin (better than 0)
+      existingBinsUsed = existingOrders.length;
+    }
+  }
+
+  // 4. Compute bin plan for the new cart
+  const binPlan = assignBins(
+    cartLines,
+    mealsPerBin,
+    snacksPerBin,
+    Number(sc.extra_bin_fee_paise) || 200
+  );
+
+  const binsNeeded = binPlan.bins.length;
+  const totalBinsAfterOrder = existingBinsUsed + binsNeeded;
+  const slotFull = totalBinsAfterOrder > capacity.maxBins;
 
   // Check made-to-order vs batched-prepared split
   let slotFullByType = false;
@@ -216,24 +284,17 @@ export async function POST(request: Request) {
     }
   }
 
-  // 4. Compute bin plan with this canteen's per-bin settings
-  const binPlan = assignBins(
-    cartLines,
-    Number(sc.meals_per_bin) || 2,
-    Number(sc.snacks_per_bin) || 5,
-    Number(sc.extra_bin_fee_paise) || 200
-  );
-
   return Response.json({
     slot_available: !slotFull && !slotFullByType,
     slot_full: slotFull || slotFullByType,
+    slot_bins_used: existingBinsUsed,
     slot_orders_used: slotOrdersUsed,
     availability_message: availabilityMessage,
     slot_capacity: capacity,
     bin_plan: binPlan,
     requires_extra_bin: binPlan.bins.length > 1,
     extra_fee_paise: binPlan.extraFeePaise,
-    meals_per_bin: Number(sc.meals_per_bin) || 2,
-    snacks_per_bin: Number(sc.snacks_per_bin) || 5,
+    meals_per_bin: mealsPerBin,
+    snacks_per_bin: snacksPerBin,
   });
 }

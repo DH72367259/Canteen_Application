@@ -18,8 +18,9 @@ interface SlotOption { id: string; label: string; available: boolean; is_full: b
 interface CartCheck {
   slot_available: boolean;
   slot_full: boolean;
+  slot_bins_used: number;
   slot_orders_used: number;
-  slot_capacity: { maxOrdersPerSlot: number };
+  slot_capacity: { maxOrdersPerSlot: number; maxBins: number };
   bin_plan: { bins: { binIndex: number }[] };
   requires_extra_bin: boolean;
   extra_fee_paise: number;
@@ -171,8 +172,8 @@ function CartContent() {
             const data = await res.json();
             capacityMap[slotOption.id] = {
               available: !data.slot_full,
-              ordersUsed: data.slot_orders_used || 0,
-              maxCapacity: data.slot_capacity?.maxOrdersPerSlot || 0,
+              ordersUsed: data.slot_bins_used ?? data.slot_orders_used ?? 0,
+              maxCapacity: data.slot_capacity?.maxBins || data.slot_capacity?.maxOrdersPerSlot || 0,
             };
           }
         }
@@ -601,7 +602,7 @@ function CartContent() {
           <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #dc2626", background: "#fef2f2" }}>
             <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: "0.25rem" }}>⚠️ Slot just filled up</div>
             <div style={{ fontSize: "0.82rem", color: "#7f1d1d" }}>
-              {cartCheck.slot_orders_used}/{cartCheck.slot_capacity.maxOrdersPerSlot} orders booked. Please pick a different slot to continue.
+              {cartCheck.slot_bins_used ?? cartCheck.slot_orders_used}/{cartCheck.slot_capacity.maxBins ?? cartCheck.slot_capacity.maxOrdersPerSlot} bins used. Please pick a different slot to continue.
             </div>
           </div>
         )}
