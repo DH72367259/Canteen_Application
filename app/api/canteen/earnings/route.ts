@@ -167,7 +167,8 @@ export async function GET(request: Request) {
     const userSubscriptions = subscriptionsByUser.get((o as { user_id?: string | null }).user_id ?? "") ?? [];
     const convenienceAndOther = subscriptionFromThisPayment || hasActiveProAt(userSubscriptions, o.created_at) ? 0 : 4;
     const totalDeductedFromOrder = rawFee + gstOnFee;
-    const net = r2(Math.max(0, gross - totalDeductedFromOrder));
+    const totalDeductedFromCanteen = totalDeductedFromOrder + extraBin + convenienceAndOther;
+    const net = r2(Math.max(0, gross - totalDeductedFromCanteen));
     return {
       order_id:     o.id,
       order_ref:    o.id.substring(0, 8).toUpperCase(),
@@ -180,8 +181,8 @@ export async function GET(request: Request) {
       gst_on_fee:   r2(gstOnFee),
       extra_bin_charge: r2(extraBin),
       convenience_and_other_charge: r2(convenienceAndOther),
-      total_platform_charge: r2(totalDeductedFromOrder),
-      total_admin_earnings: r2(totalDeductedFromOrder + extraBin + convenienceAndOther),
+      total_platform_charge: r2(totalDeductedFromCanteen),
+      total_admin_earnings: r2(totalDeductedFromCanteen),
       net_earnings: r2(net),
       is_completed: o.status === "collected",
     };

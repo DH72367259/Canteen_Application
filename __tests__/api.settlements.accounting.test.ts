@@ -155,10 +155,12 @@ describe("settlement accounting regressions", () => {
     expect(json.summary_stats.total_convenience_and_other_charges).toBe(4);
     expect(json.summary_stats.total_pro_revenue).toBe(69);
     expect(json.summary_stats.total_admin_earnings).toBe(79.67);
-    expect(json.summary_stats.total_net_payable).toBe(193.33);
+    // o-1: 100 - (2+0.36+2+4)=8.36 = 91.64
+    // o-2: 98  - (1.96+0.35+0+0)=2.31 = 95.69  (Pro subscriber; no extraBin/convenience)
+    expect(json.summary_stats.total_net_payable).toBe(187.33);
 
     expect(json.canteens[0].gross_amount).toBe(198);
-    expect(json.canteens[0].net_payable).toBe(193.33);
+    expect(json.canteens[0].net_payable).toBe(187.33);
     expect(json.canteens[0].convenience_charge_amount).toBe(4);
     expect(json.canteens[0].extra_bin_charge_amount).toBe(2);
   });
@@ -179,15 +181,24 @@ describe("settlement accounting regressions", () => {
   it("weekly report preserves historical charge snapshots instead of current platform settings", async () => {
     mockGetRequestContext.mockResolvedValue({ uid: "sa-1", role: "super_admin" });
 
-    // Test that historical snapshot is used, not current platform charges
-    // Current charges: 0%, but payment snapshot is 5%
+    // Test that historical snapshot is used, not current platform charges.
+    // Current charges: 0%, but payment snapshot is 5% — net must use 5%.
     const snapshotChargePct = 5;
     const snapshotGstPct = 18;
     const orderGross = 100;
     const expectedPlatformFee = Math.round((orderGross * snapshotChargePct / 100) * 100) / 100;
     const expectedGstFee = Math.round((expectedPlatformFee * snapshotGstPct / 100) * 100) / 100;
     const expectedTotalPlatformEarnings = Math.round((expectedPlatformFee + expectedGstFee) * 100) / 100;
-    const expectedNetPayable = Math.round((orderGross - expectedPlatformFee - expectedGstFee) * 100) / 100;
+    // u-1 has no Pro subscription → convenience = 4; extraBin = 0
+    const expectedConvenience = 4;
+    const expectedNetPayable = Math.round((orderGross - expectedPlatformFee - expectedGstFee - expectedConvenience) * 100) / 100;
+
+    // Use a date within the current ISO week so the order falls inside the report window.
+    const today = new Date();
+    const day = today.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day; // offset to Monday
+    const monday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + diff));
+    const thisWeekDate = monday.toISOString().slice(0, 10) + "T10:00:00Z";
 
     ordersQB = makeQB({
       data: [
@@ -198,7 +209,7 @@ describe("settlement accounting regressions", () => {
           payment_id: "pay_old_1",
           total_amount: orderGross,
           status: "collected",
-          created_at: "2026-05-04T10:00:00Z",
+          created_at: thisWeekDate,
           extra_bin_fee_paise: 0,
         },
       ],
@@ -223,6 +234,7 @@ describe("settlement accounting regressions", () => {
     expect(json.totals.platform_fee).toBe(expectedPlatformFee);
     expect(json.totals.gst_on_fee).toBe(expectedGstFee);
     expect(json.totals.total_platform_earnings).toBe(expectedTotalPlatformEarnings);
+    // Net = gross - platformFee - gst - extraBin(0) - convenience(4)
     expect(json.totals.net_payable).toBe(expectedNetPayable);
   });
 
@@ -275,8 +287,9 @@ describe("settlement accounting regressions", () => {
     expect(json.summary.total_gst).toBe(0.36);
     expect(json.summary.total_extra_bin_charges).toBe(2);
     expect(json.summary.total_convenience_and_other_charges).toBe(4);
-    expect(json.summary.net_earnings).toBe(97.64);
+    // gross=100, platformFee=2, gst=0.36, extraBin=2, convenience=4 → net = 91.64
+    expect(json.summary.net_earnings).toBe(91.64);
     expect(json.orders[0].gross_amount).toBe(100);
-    expect(json.orders[0].net_earnings).toBe(97.64);
+    expect(json.orders[0].net_earnings).toBe(91.64);
   });
 });

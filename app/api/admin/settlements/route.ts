@@ -155,7 +155,7 @@ export async function GET(request: Request) {
       const convenience = subscriptionFromThisPayment || hasActiveProAt(userSubscriptions, o.created_at) ? 0 : 4;
       const platformOrderTotal = platformFee + gst;
       const totalAdmin = platformOrderTotal + extraBin + convenience;
-      const netToCanteen = r2(Math.max(0, gross - platformOrderTotal));
+      const netToCanteen = r2(Math.max(0, gross - totalAdmin));
       return {
         gross,
         platformFee,
