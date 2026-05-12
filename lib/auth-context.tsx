@@ -598,14 +598,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function sendEmailOtp(email: string) {
     if (!isSupabaseConfigured()) return  // demo mode — pretend OTP sent
+
+    // Prefer Resend delivery (custom HTML template, rate-limited, high volume).
+    // Falls through to Supabase built-in only if the API route signals
+    // that Resend is not configured (RESEND_API_KEY missing).
+    try {
+      const res = await withTimeout(
+        fetch('/api/auth/otp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        }),
+        15000,
+        'OTP send timed out — please try again.'
+      )
+      if (res.status === 429) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error ?? 'Too many OTP requests. Please wait and try again.')
+      }
+      if (res.ok) return  // Resend succeeded
+      // 5xx or RESEND_API_KEY not set — fall through to Supabase
+    } catch (e) {
+      // Network failure or 429 — rethrow 429, fall through on others
+      if (e instanceof Error && e.message.includes('Too many')) throw e
+    }
+
+    // Fallback: Supabase built-in OTP (uses SES when custom SMTP is configured)
     const { error } = await withTimeout(
       supabase.auth.signInWithOtp({
         email,
-        options: {
-          // No redirect — user enters the 6-digit OTP only.
-          // This avoids magic-link expiry issues on different devices.
-          shouldCreateUser: true,
-        },
+        options: { shouldCreateUser: true },
       })
     )
     if (error) throw error
