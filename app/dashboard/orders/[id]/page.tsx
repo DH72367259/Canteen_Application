@@ -92,7 +92,7 @@ export default function OrderTrackingPage() {
       <div className="app-topbar">
         <button onClick={() => router.back()} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", padding: "0.25rem" }}>←</button>
         <span style={{ fontWeight: 700, fontSize: "1rem" }}>Track Order</span>
-        <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>#{order.id.slice(-6).toUpperCase()}</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>#{order.id.slice(-8).toUpperCase()}</span>
       </div>
 
       <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "5rem" }}>

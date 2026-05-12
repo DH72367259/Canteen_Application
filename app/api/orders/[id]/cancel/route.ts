@@ -260,7 +260,7 @@ export async function POST(
   // ─── Notify the canteen + admin ───────────────────────────────────────
   await supabase.from("notifications").insert({
     title: "Order cancelled",
-    body:  `Order ${orderId.slice(0, 8).toUpperCase()} cancelled by ${role}. Reason: ${reasonRaw}`,
+    body:  `Order ${orderId.slice(-8).toUpperCase()} cancelled by ${role}. Reason: ${reasonRaw}`,
     type:  "order",
     recipient_type: "canteen",
     recipient_id:   order.canteen_id,

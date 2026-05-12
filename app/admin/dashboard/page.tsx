@@ -2997,7 +2997,7 @@ function OrdersSection({ session, isSuperAdmin }: { session: { access_token?: st
                 const canCancel = !TERMINAL.has(s);
                 return (
                   <tr key={o.id}>
-                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(0, 8)}</code></td>
+                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(-8)}</code></td>
                     <td>{o.canteenName ?? "—"}</td>
                     <td>{o.customerName ?? "—"}</td>
                     <td>₹{(o.total ?? 0).toFixed(2)}</td>
@@ -3043,7 +3043,7 @@ function OrdersSection({ session, isSuperAdmin }: { session: { access_token?: st
       {cancelTarget && session?.access_token && (
         <CancelOrderModal
           orderId={cancelTarget.id}
-          orderRef={cancelTarget.id.slice(0, 8)}
+          orderRef={cancelTarget.id.slice(-8)}
           amount={cancelTarget.total ?? 0}
           authToken={session.access_token}
           onClose={() => setCancelTarget(null)}
@@ -3142,7 +3142,7 @@ function RefundsSection({ session, isSuperAdmin }: { session: { access_token?: s
                 const canRetry = isSuperAdmin && !["processed", "not_required"].includes(refundStatus);
                 return (
                   <tr key={o.id}>
-                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(0, 8)}</code></td>
+                    <td><code style={{ fontSize: "0.75rem" }}>{o.id.slice(-8)}</code></td>
                     <td>{o.canteenName ?? "—"}</td>
                     <td>{o.customerName ?? "—"}</td>
                     <td>₹{(o.total ?? 0).toFixed(2)}</td>

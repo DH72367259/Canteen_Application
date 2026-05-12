@@ -49,7 +49,7 @@ export async function POST(
       return NextResponse.json({ error: "Order reference is required for worker handover." }, { status: 400 });
     }
     const normalizedOrder = String(activeOrderId).toUpperCase();
-    const suffix = normalizedOrder.slice(-6);
+    const suffix = normalizedOrder.slice(-8);
     if (providedRef !== suffix && providedRef !== normalizedOrder) {
       return NextResponse.json({ error: "Order reference does not match this bin." }, { status: 400 });
     }

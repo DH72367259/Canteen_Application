@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       return {
         ...b,
         active_order_id: activeOrderId || null,
-        active_order_ref: activeOrderId ? activeOrderId.slice(-6).toUpperCase() : null,
+        active_order_ref: activeOrderId ? activeOrderId.slice(-8).toUpperCase() : null,
         customer_name: customer,
       };
     });

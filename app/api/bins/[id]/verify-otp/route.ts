@@ -40,9 +40,9 @@ export async function POST(
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, otp, status, user_id, canteen_id")
+    .select("id, otp, status, user_id, canteen_id, slot_id, slot_label")
     .eq("id", bin.order_id)
-    .single<{ id: string; otp: string | null; status: string; user_id: string | null; canteen_id: string | null }>();
+    .single<{ id: string; otp: string | null; status: string; user_id: string | null; canteen_id: string | null; slot_id: string | null; slot_label: string | null }>();
 
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   if (order.otp !== otp) return NextResponse.json({ error: "Invalid OTP." }, { status: 400 });

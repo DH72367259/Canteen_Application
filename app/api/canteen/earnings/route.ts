@@ -171,7 +171,7 @@ export async function GET(request: Request) {
     const net = r2(Math.max(0, gross - totalDeductedFromCanteen));
     return {
       order_id:     o.id,
-      order_ref:    o.id.substring(0, 8).toUpperCase(),
+      order_ref:    o.id.slice(-8).toUpperCase(),
       status:       o.status,
       created_at:   o.created_at,
       gross_amount: r2(gross),

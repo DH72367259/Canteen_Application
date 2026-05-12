@@ -89,6 +89,56 @@ export default function VendorDashboard() {
     window.addEventListener("canteen:session-expired", handler);
     return () => window.removeEventListener("canteen:session-expired", handler);
   }, []);
+
+  // Poll inventory status every 30s and surface low-stock / exhausted alerts
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch("/api/canteen/inventory-status", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.status === 401) { notifySessionExpired(); return; }
+        if (!res.ok) return;
+        const { items } = await res.json() as {
+          items: Array<{
+            id: string; name: string;
+            day_remaining: number | null; day_consumed: number; total_per_day: number | null;
+            slot_remaining: number | null; slot_consumed: number; quantity_per_slot: number | null;
+            is_exhausted: boolean; is_sold_out: boolean;
+          }>;
+        };
+        if (cancelled) return;
+        const newLow: typeof lowStockAlerts = [];
+        const newExhausted: typeof exhaustedAlerts = [];
+        for (const item of items) {
+          if (item.is_sold_out) continue;
+          if (item.is_exhausted) {
+            newExhausted.push({ id: item.id, name: item.name });
+          } else {
+            if (item.day_remaining !== null && item.day_remaining <= 2 && (item.total_per_day ?? 0) > 0) {
+              newLow.push({ id: item.id, name: item.name, remaining: item.day_remaining, cap: item.total_per_day!, kind: "day" });
+            } else if (item.slot_remaining !== null && item.slot_remaining <= 2 && (item.quantity_per_slot ?? 0) > 0) {
+              newLow.push({ id: item.id, name: item.name, remaining: item.slot_remaining, cap: item.quantity_per_slot!, kind: "slot" });
+            }
+          }
+        }
+        setLowStockAlerts(newLow);
+        setExhaustedAlerts(newExhausted);
+        // Clear dismissed IDs for items no longer in alerts, so they re-alert if they dip low again later
+        const newLowIds = new Set(newLow.map(a => a.id));
+        const newExhaustedIds = new Set(newExhausted.map(a => a.id));
+        setLowStockDismissed(prev => new Set([...prev].filter(id => newLowIds.has(id))));
+        setExhaustedDismissed(prev => new Set([...prev].filter(id => newExhaustedIds.has(id))));
+      } catch { /* network errors silently ignored */ }
+    };
+    void check();
+    const iv = setInterval(check, 30000);
+    return () => { cancelled = true; clearInterval(iv); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   const [activeNav, setActiveNav] = useState("live");
   // Live Orders status filter — PDF page 14 vocabulary: Reserved / Occupied / Late Pickup
   const [statusFilter, setStatusFilter] = useState<"all" | "reserved" | "occupied" | "late">("all");
@@ -129,6 +179,13 @@ export default function VendorDashboard() {
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Low-stock alert state: items with ≤2 remaining portions
+  type LowStockAlert = { id: string; name: string; remaining: number; cap: number; kind: "day" | "slot" };
+  const [lowStockAlerts, setLowStockAlerts] = useState<LowStockAlert[]>([]);
+  const [exhaustedAlerts, setExhaustedAlerts] = useState<{ id: string; name: string }[]>([]);
+  const [lowStockDismissed, setLowStockDismissed] = useState<Set<string>>(new Set());
+  const [exhaustedDismissed, setExhaustedDismissed] = useState<Set<string>>(new Set());
 
   // Redirect if not vendor/canteen_admin
   // The double-check against a stored Supabase session prevents the
@@ -305,7 +362,7 @@ export default function VendorDashboard() {
           // bin colour.
           number: rackIndexFor(s.binLabel, s.binColor, maxBins) ?? (idx + 1 + sliceIdx),
           status: status(o.rawStatus),
-          orderId: o.id.substring(0, 8).toUpperCase(),
+          orderId: o.id.slice(-8).toUpperCase(),
           customerName: o.customerName || "Customer",
           slot: o.slotLabel ?? o.slotName ?? null,
           items: s.items,
@@ -501,6 +558,86 @@ export default function VendorDashboard() {
 
   return (
     <div className="web-shell">
+      {/* Low-stock global popup — visible on ANY tab */}
+      {lowStockAlerts.filter(a => !lowStockDismissed.has(a.id)).length > 0 && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "32px 36px", maxWidth: 440, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", border: "2px solid #fed7aa" }}>
+            <div style={{ fontSize: "2rem", marginBottom: 8 }}>⚠️</div>
+            <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem", fontWeight: 800, color: "#9a3412" }}>Running Low on Stock</h2>
+            <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: "0 0 16px", lineHeight: 1.6 }}>
+              The following items have <strong>2 or fewer portions remaining</strong>:
+            </p>
+            <ul style={{ margin: "0 0 20px", padding: "0 0 0 1.2rem", fontSize: "0.88rem", color: "#374151" }}>
+              {lowStockAlerts.filter(a => !lowStockDismissed.has(a.id)).map(a => (
+                <li key={a.id} style={{ marginBottom: 4 }}>
+                  <strong>{a.name}</strong> — {a.remaining} remaining ({a.kind === "day" ? "today" : "this slot"})
+                </li>
+              ))}
+            </ul>
+            <p style={{ fontSize: "0.8rem", color: "#6b7280", margin: "0 0 20px" }}>
+              Close orders for these items or increase the total quantity in Menu &amp; Items.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => {
+                  setActiveNav("menu");
+                  setLowStockDismissed(prev => new Set([...prev, ...lowStockAlerts.map(a => a.id)]));
+                }}
+                style={{ flex: 1, background: "#f97316", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+              >
+                Go to Menu &amp; Items
+              </button>
+              <button
+                onClick={() => setLowStockDismissed(prev => new Set([...prev, ...lowStockAlerts.map(a => a.id)]))}
+                style={{ flex: 1, background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 10, padding: "11px 0", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exhausted items popup — item reached max quantity */}
+      {exhaustedAlerts.filter(a => !exhaustedDismissed.has(a.id)).length > 0 && lowStockAlerts.filter(a => !lowStockDismissed.has(a.id)).length === 0 && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "32px 36px", maxWidth: 440, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", border: "2px solid #fca5a5" }}>
+            <div style={{ fontSize: "2rem", marginBottom: 8 }}>⛔</div>
+            <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem", fontWeight: 800, color: "#991b1b" }}>Maximum Quantity Reached</h2>
+            <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: "0 0 16px", lineHeight: 1.6 }}>
+              The following items have reached their maximum quantity limit and are no longer accepting orders from students:
+            </p>
+            <ul style={{ margin: "0 0 20px", padding: "0 0 0 1.2rem", fontSize: "0.88rem", color: "#374151" }}>
+              {exhaustedAlerts.filter(a => !exhaustedDismissed.has(a.id)).map(a => (
+                <li key={a.id} style={{ marginBottom: 4 }}>
+                  <strong>{a.name}</strong>
+                </li>
+              ))}
+            </ul>
+            <p style={{ fontSize: "0.8rem", color: "#6b7280", margin: "0 0 20px" }}>
+              Please close the order for these items or add more quantity if available.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => {
+                  setActiveNav("menu");
+                  setExhaustedDismissed(prev => new Set([...prev, ...exhaustedAlerts.map(a => a.id)]));
+                }}
+                style={{ flex: 1, background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+              >
+                OK – Go to Menu &amp; Items
+              </button>
+              <button
+                onClick={() => setExhaustedDismissed(prev => new Set([...prev, ...exhaustedAlerts.map(a => a.id)]))}
+                style={{ flex: 1, background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 10, padding: "11px 0", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
@@ -905,7 +1042,7 @@ export default function VendorDashboard() {
       {cancelTarget && session?.access_token && (
         <CancelOrderModal
           orderId={cancelTarget.id}
-          orderRef={cancelTarget.id.slice(0, 8).toUpperCase()}
+          orderRef={cancelTarget.id.slice(-8).toUpperCase()}
           amount={cancelTarget.amount}
           authToken={session.access_token}
           onClose={() => setCancelTarget(null)}
@@ -1717,7 +1854,7 @@ function VendorBinsView({ session, canteenId }: { session: Session | null; cante
               <div><strong>Zone:</strong> {selected.bin.color ?? "—"}</div>
               {selected.order ? (
                 <>
-                  <div><strong>Order:</strong> {selected.order.id.substring(0, 8).toUpperCase()}</div>
+                  <div><strong>Order:</strong> {selected.order.id.slice(-8).toUpperCase()}</div>
                   <div><strong>Customer:</strong> {selected.order.profiles?.name ?? "—"}</div>
                   <div><strong>Slot:</strong> {selected.order.pickup_slot ?? "—"}</div>
                   <div><strong>Stage:</strong> {selected.order.status}</div>
@@ -2706,15 +2843,49 @@ interface MenuItem {
   is_available: boolean;
 }
 
-interface InventoryItem extends MenuItem {
-  slotUsed: number;
-  dayUsed: number;
-  slotRemaining: number;
-  dayRemaining: number;
+interface InventoryStatusItem {
+  id: string;
+  name: string;
+  availability_type: string;
+  total_per_day: number | null;
+  quantity_per_slot: number | null;
+  day_consumed: number;
+  day_remaining: number | null;
+  slot_consumed: number;
+  slot_remaining: number | null;
+  is_sold_out: boolean;
+  is_available: boolean;
+  is_exhausted: boolean;
+}
+
+function CapacityBar({ consumed, cap, label }: { consumed: number; cap: number; label: string }) {
+  const pct = cap > 0 ? Math.min(100, Math.round((consumed / cap) * 100)) : 0;
+  const remaining = Math.max(0, cap - consumed);
+  const isLow = remaining <= 2 && cap > 0;
+  const isExhausted = consumed >= cap && cap > 0;
+  const barColor = isExhausted ? "#dc2626" : isLow ? "#f97316" : "#22c55e";
+  return (
+    <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--bg)", borderRadius: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+        <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: isExhausted ? "#dc2626" : isLow ? "#ea580c" : "#166534" }}>
+          {isExhausted ? "FULL" : `${remaining} left`}
+        </span>
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: "#e5e7eb", overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: barColor, borderRadius: 4, transition: "width 0.3s" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.3rem", fontSize: "0.7rem", color: "#6b7280" }}>
+        <span>{consumed} consumed</span>
+        <span>{cap} total</span>
+      </div>
+    </div>
+  );
 }
 
 function VendorInventoryView({ session }: { session: { access_token: string } | null }) {
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [items, setItems] = useState<InventoryStatusItem[]>([]);
+  const [menuPrices, setMenuPrices] = useState<Map<string, { price: number; is_meal: boolean }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -2724,20 +2895,24 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/canteen/menu", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!res.ok) throw new Error("Failed to load menu");
-      const { items: menuItems } = await res.json();
-      setItems(
-        (menuItems as MenuItem[]).map((m) => ({
-          ...m,
-          slotUsed: 0,
-          dayUsed: 0,
-          slotRemaining: m.quantity_per_slot ?? 0,
-          dayRemaining: m.total_per_day ?? 0,
-        }))
-      );
+      const [statusRes, menuRes] = await Promise.all([
+        fetch("/api/canteen/inventory-status", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }),
+        fetch("/api/canteen/menu", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }),
+      ]);
+      if (statusRes.status === 401 || menuRes.status === 401) { notifySessionExpired(); return; }
+      if (!statusRes.ok) throw new Error("Failed to load inventory status");
+      const { items: statusItems } = await statusRes.json() as { items: InventoryStatusItem[] };
+      setItems(statusItems);
+      if (menuRes.ok) {
+        const { items: menuItems } = await menuRes.json() as { items: MenuItem[] };
+        const priceMap = new Map<string, { price: number; is_meal: boolean }>();
+        for (const m of menuItems) priceMap.set(m.id, { price: m.price, is_meal: m.is_meal });
+        setMenuPrices(priceMap);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error loading inventory");
     } finally {
@@ -2747,7 +2922,7 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
 
   useEffect(() => {
     void load();
-    const iv = setInterval(load, 60000);
+    const iv = setInterval(load, 30000);
     return () => clearInterval(iv);
   }, [load]);
 
@@ -2763,6 +2938,7 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
         },
         body: JSON.stringify({ is_sold_out: !currentState }),
       });
+      if (res.status === 401) { notifySessionExpired(); return; }
       if (!res.ok) throw new Error("Failed to update item");
       setItems((prev) =>
         prev.map((it) =>
@@ -2775,6 +2951,13 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
       setToggling(null);
     }
   };
+
+  const lowStockItems = items.filter(it => {
+    const dayLow = it.day_remaining !== null && it.day_remaining <= 2 && !it.is_exhausted;
+    const slotLow = it.slot_remaining !== null && it.slot_remaining <= 2 && !it.is_exhausted;
+    return dayLow || slotLow;
+  });
+  const exhaustedItems = items.filter(it => it.is_exhausted && !it.is_sold_out);
 
   if (loading)
     return (
@@ -2800,75 +2983,117 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
         <div style={{ color: "#dc2626", marginBottom: "1rem" }}>{error}</div>
       )}
 
+      {exhaustedItems.length > 0 && (
+        <div style={{ marginBottom: "1rem", padding: "0.85rem 1rem", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10 }}>
+          <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: "0.3rem", fontSize: "0.9rem" }}>
+            ⛔ Capacity Reached
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "#b91c1c" }}>
+            {exhaustedItems.map(it => it.name).join(", ")} — orders are no longer accepted. Mark as Sold Out or add quantity in Menu &amp; Items.
+          </div>
+        </div>
+      )}
+
+      {lowStockItems.length > 0 && (
+        <div style={{ marginBottom: "1rem", padding: "0.85rem 1rem", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10 }}>
+          <div style={{ fontWeight: 700, color: "#9a3412", marginBottom: "0.3rem", fontSize: "0.9rem" }}>
+            ⚠️ Running Low
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "#c2410c" }}>
+            {lowStockItems.map(it => {
+              const rem = it.day_remaining ?? it.slot_remaining ?? 0;
+              return `${it.name} (${rem} left)`;
+            }).join(" · ")}
+          </div>
+        </div>
+      )}
+
       {items.length === 0 ? (
         <p style={{ color: "#94a3b8" }}>No menu items found.</p>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: "1rem" }}>
-          {items.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                padding: "1rem",
-                background: item.is_sold_out ? "#fef2f2" : "#fff",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "1rem" }}>{item.name}</h3>
-                  <div style={{ fontSize: "0.8rem", color: "#94a3b8", marginTop: "0.25rem" }}>
-                    ₹{item.price} · {item.availability_type === "batched_prepared" ? "Batched" : "Made-to-Order"}
-                    {item.is_meal && <span style={{ marginLeft: "0.5rem", background: "#fef3c7", color: "#92400e", padding: "0.1rem 0.4rem", borderRadius: 4, fontSize: "0.7rem" }}>MEAL</span>}
+          {items.map((item) => {
+            const meta = menuPrices.get(item.id);
+            const isLowDay = item.day_remaining !== null && item.day_remaining <= 2;
+            const isLowSlot = item.slot_remaining !== null && item.slot_remaining <= 2;
+            const isLow = isLowDay || isLowSlot;
+            const borderColor = item.is_exhausted ? "#fca5a5" : isLow ? "#fed7aa" : "var(--border)";
+            const cardBg = item.is_sold_out || item.is_exhausted ? "#fef2f2" : isLow ? "#fffbeb" : "#fff";
+            return (
+              <div
+                key={item.id}
+                style={{
+                  border: `1px solid ${borderColor}`,
+                  borderRadius: 10,
+                  padding: "1rem",
+                  background: cardBg,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <h3 style={{ margin: 0, fontSize: "1rem" }}>{item.name}</h3>
+                      {item.is_exhausted && <span style={{ fontSize: "0.65rem", background: "#fee2e2", color: "#991b1b", padding: "0.1rem 0.4rem", borderRadius: 4, fontWeight: 700 }}>FULL</span>}
+                      {!item.is_exhausted && isLow && <span style={{ fontSize: "0.65rem", background: "#ffedd5", color: "#c2410c", padding: "0.1rem 0.4rem", borderRadius: 4, fontWeight: 700 }}>LOW</span>}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "#94a3b8", marginTop: "0.25rem" }}>
+                      {meta && <>₹{meta.price} · </>}
+                      {item.availability_type === "batched_prepared" ? "Batched" : "Made-to-Order"}
+                      {meta?.is_meal && <span style={{ marginLeft: "0.5rem", background: "#fef3c7", color: "#92400e", padding: "0.1rem 0.4rem", borderRadius: 4, fontSize: "0.7rem" }}>MEAL</span>}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => toggleSoldOut(item.id, item.is_sold_out)}
+                    disabled={toggling === item.id}
+                    style={{
+                      padding: "0.4rem 0.8rem",
+                      borderRadius: 6,
+                      border: "1px solid " + (item.is_sold_out ? "#991b1b" : "#16a34a"),
+                      background: item.is_sold_out ? "#fee2e2" : "#dcfce7",
+                      color: item.is_sold_out ? "#991b1b" : "#166534",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      cursor: toggling === item.id ? "wait" : "pointer",
+                    }}
+                  >
+                    {item.is_sold_out ? "🛑 Out" : "✓ In Stock"}
+                  </button>
                 </div>
-                <button
-                  onClick={() => toggleSoldOut(item.id, item.is_sold_out)}
-                  disabled={toggling === item.id}
-                  style={{
-                    padding: "0.4rem 0.8rem",
-                    borderRadius: 6,
-                    border: "1px solid " + (item.is_sold_out ? "#991b1b" : "#16a34a"),
-                    background: item.is_sold_out ? "#fee2e2" : "#dcfce7",
-                    color: item.is_sold_out ? "#991b1b" : "#166534",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    cursor: toggling === item.id ? "wait" : "pointer",
-                  }}
-                >
-                  {item.is_sold_out ? "🛑 Out" : "✓ In Stock"}
-                </button>
+
+                {item.quantity_per_slot ? (
+                  <CapacityBar
+                    consumed={item.slot_consumed}
+                    cap={item.quantity_per_slot}
+                    label="Current Slot"
+                  />
+                ) : null}
+
+                {item.total_per_day ? (
+                  <CapacityBar
+                    consumed={item.day_consumed}
+                    cap={item.total_per_day}
+                    label="Today's Total"
+                  />
+                ) : null}
+
+                {!item.quantity_per_slot && !item.total_per_day && (
+                  <div style={{ marginTop: "0.5rem", fontSize: "0.78rem", color: "#94a3b8" }}>
+                    No capacity limits set
+                  </div>
+                )}
+
+                {item.is_available ? (
+                  <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#ecfdf5", borderRadius: 6, fontSize: "0.8rem", color: "#166534", fontWeight: 600 }}>
+                    ✓ Available for ordering
+                  </div>
+                ) : (
+                  <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#fee2e2", borderRadius: 6, fontSize: "0.8rem", color: "#991b1b", fontWeight: 600 }}>
+                    ✕ Not available
+                  </div>
+                )}
               </div>
-
-              {item.quantity_per_slot ? (
-                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--bg)", borderRadius: 6 }}>
-                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.35rem" }}>Slot Capacity</div>
-                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                    Limit: <strong>{item.quantity_per_slot}</strong> per slot
-                  </div>
-                </div>
-              ) : null}
-
-              {item.total_per_day ? (
-                <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "var(--bg)", borderRadius: 6 }}>
-                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.35rem" }}>Daily Capacity</div>
-                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                    Limit: <strong>{item.total_per_day}</strong> per day
-                  </div>
-                </div>
-              ) : null}
-
-              {item.is_available ? (
-                <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#ecfdf5", borderRadius: 6, fontSize: "0.8rem", color: "#166534", fontWeight: 600 }}>
-                  ✓ Available for ordering
-                </div>
-              ) : (
-                <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#fee2e2", borderRadius: 6, fontSize: "0.8rem", color: "#991b1b", fontWeight: 600 }}>
-                  ✕ Not available
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -79,7 +79,7 @@ export async function GET(request: Request) {
   const logs: LogRow[] = [];
 
   for (const o of orders) {
-    const ref = String(o.id).slice(0, 8).toUpperCase();
+    const ref = String(o.id).slice(-8).toUpperCase();
     const amt = `\u20b9${Number(o.total_amount || 0).toFixed(0)}`;
     logs.push({
       id: `order-${o.id}-placed`,

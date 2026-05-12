@@ -35,11 +35,11 @@ export async function POST(request: NextRequest) {
   // Find the order by OTP in this canteen, not yet collected/cancelled
   const { data: order } = await supabase
     .from("orders")
-    .select("id, otp, status, canteen_id, bin_id, user_id")
+    .select("id, otp, status, canteen_id, bin_id, user_id, slot_id, slot_label")
     .eq("canteen_id", canteenId)
     .eq("otp", otp)
     .not("status", "in", `(collected,cancelled)`)
-    .single<{ id: string; otp: string | null; status: string; canteen_id: string; bin_id: string | null; user_id: string | null }>();
+    .single<{ id: string; otp: string | null; status: string; canteen_id: string; bin_id: string | null; user_id: string | null; slot_id: string | null; slot_label: string | null }>();
 
   if (!order) {
     return NextResponse.json(

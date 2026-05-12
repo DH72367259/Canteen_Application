@@ -162,7 +162,7 @@ function OrderStatusContent() {
       <div style={{ position: "sticky", top: 0, zIndex: 40, background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.75rem 1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <Link href="/dashboard" style={{ color: "var(--ink-3)", textDecoration: "none", fontSize: "1.1rem", lineHeight: 1 }}>←</Link>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", fontWeight: 500 }}>Order #{order.id.slice(-6).toUpperCase()}</div>
+          <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", fontWeight: 500 }}>Order #{order.id.slice(-8).toUpperCase()}</div>
           <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>{order.canteenName ?? "Tracking your order"}</div>
         </div>
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", animation: "pulse 1.5s infinite" }} />

@@ -35,9 +35,9 @@ export async function POST(
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, otp, status, canteen_id, bin_id, user_id")
+    .select("id, otp, status, canteen_id, bin_id, user_id, slot_id, slot_label")
     .eq("id", orderId)
-    .single<{ id: string; otp: string | null; status: string; canteen_id: string | null; bin_id: string | null; user_id: string | null }>();
+    .single<{ id: string; otp: string | null; status: string; canteen_id: string | null; bin_id: string | null; user_id: string | null; slot_id: string | null; slot_label: string | null }>();
 
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   if (auth.canteenId && order.canteen_id && auth.canteenId !== order.canteen_id) {

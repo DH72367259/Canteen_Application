@@ -301,7 +301,7 @@ export default function WorkerOrdersPage() {
                   <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
                     <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>Student: {order.customer_name || "Unknown"}</div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
-                      Order #{order.id.slice(-6).toUpperCase()} · Slot {order.pickup_slot ?? "—"}
+                      Order #{order.id.slice(-8).toUpperCase()} · Slot {order.pickup_slot ?? "—"}
                     </div>
                   </div>
 
@@ -312,7 +312,7 @@ export default function WorkerOrdersPage() {
                         <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
                           <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.6rem" }}>
                             <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
-                            <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-6).toUpperCase()}</span>
+                            <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-8).toUpperCase()}</span>
                           </div>
                           <div style={{ padding: "0.55rem 0.7rem" }}>
                             {a.items.map((it, idx) => (
@@ -414,7 +414,7 @@ export default function WorkerOrdersPage() {
                         <div key={`${bp.orderId}-${bp.binLabel}-${idx}`} style={{ border: `1.5px solid ${c}`, borderRadius: 12, marginBottom: "0.55rem", overflow: "hidden" }}>
                           <div style={{ background: tint(c, "20"), padding: "0.45rem 0.65rem", display: "flex", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
                             <strong style={{ color: c }}>Bin {bp.binLabel}</strong>
-                            <span style={{ color: "#334155" }}>Order #{bp.orderId.slice(-6).toUpperCase()} · {bp.studentName}</span>
+                            <span style={{ color: "#334155" }}>Order #{bp.orderId.slice(-8).toUpperCase()} · {bp.studentName}</span>
                           </div>
                           <div style={{ padding: "0.5rem 0.65rem" }}>
                             {bp.items.map((it, i) => (
@@ -463,7 +463,7 @@ export default function WorkerOrdersPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink-3)", marginBottom: "0.5rem", textTransform: "uppercase" }}>
-              Order ID: {otpModal.slice(0, 8).toUpperCase()}
+              Order ID: {otpModal.slice(-8).toUpperCase()}
             </div>
             <h3 style={{ margin: "0.5rem 0 1rem", fontSize: "1.1rem", fontWeight: 800 }}>Enter OTP</h3>
             <input

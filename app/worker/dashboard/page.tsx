@@ -278,7 +278,7 @@ function WorkerOrderCard({
       {/* Header: order ID + bin badge */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.55rem 0.75rem", borderBottom: "1px solid #f1f5f9" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontSize: "0.72rem", fontWeight: 800, fontFamily: "monospace", color: "#64748b" }}>#{order.id.slice(-6).toUpperCase()}</span>
+          <span style={{ fontSize: "0.72rem", fontWeight: 800, fontFamily: "monospace", color: "#64748b" }}>#{order.id.slice(-8).toUpperCase()}</span>
           {(order.binCount ?? 1) > 1 && (
             <span style={{ fontSize: "0.68rem", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 6, padding: "0.1rem 0.3rem", fontWeight: 700 }}>📦 {order.binCount} bins</span>
           )}
@@ -368,7 +368,7 @@ function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; sessio
     <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: binBg }}>
         <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.05rem" }}>{binCode}{binCount > 1 ? ` +${binCount - 1}` : ""}</span>
-        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.72rem", flex: 1 }}>#{order.id.slice(-6).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}</span>
+        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.72rem", flex: 1 }}>#{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}</span>
         <span style={{ color: "#fff", fontSize: "0.7rem", background: "rgba(0,0,0,0.18)", padding: "0.15rem 0.45rem", borderRadius: 999, fontWeight: 700 }}>In bin</span>
       </div>
       <div style={{ padding: "0.6rem 0.75rem 0.75rem" }}>
@@ -449,7 +449,7 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
       <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.55rem 0.75rem", background: "#fef2f2" }}>
         <div style={{ background: binBg, color: "#fff", borderRadius: 8, padding: "0.15rem 0.55rem", fontSize: "0.78rem", fontWeight: 800 }}>{binCode}</div>
         <span style={{ fontSize: "0.72rem", color: "#b91c1c", fontWeight: 600, flex: 1 }}>
-          #{order.id.slice(-6).toUpperCase()} · was in this bin · {order.pickupSlot ?? order.pickup_slot ?? "—"}
+          #{order.id.slice(-8).toUpperCase()} · was in this bin · {order.pickupSlot ?? order.pickup_slot ?? "—"}
         </span>
         <span style={{ fontSize: "0.68rem", background: "#fee2e2", color: "#991b1b", borderRadius: 999, padding: "0.1rem 0.45rem", fontWeight: 700 }}>Late</span>
       </div>
