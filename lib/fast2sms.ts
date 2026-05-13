@@ -1,7 +1,6 @@
 /**
  * Fast2SMS OTP client for India (~₹0.15/OTP, SMS-only, no DLT needed).
  * API docs: https://docs.fast2sms.com
- * Route: OTP — sends a 4-6 digit OTP via SMS template
  */
 
 export async function sendSmsOtp(
@@ -17,16 +16,20 @@ export async function sendSmsOtp(
 
   try {
     const res = await fetch(
-      `https://www.fast2sms.com/dev/bulkV2?authorization=${apiKey}&route=otp&variables_values=${code}&flash=0&numbers=${digits}`,
+      `https://www.fast2sms.com/dev/bulkV2?route=otp&variables_values=${code}&flash=0&numbers=${digits}`,
       {
         method: "GET",
-        headers: { "cache-control": "no-cache" },
+        headers: {
+          authorization: apiKey,
+          "cache-control": "no-cache",
+        },
       }
     );
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.return === false) {
-      return data.message?.[0] ?? `Fast2SMS error ${res.status}`;
+      const msg = Array.isArray(data.message) ? data.message[0] : (data.message ?? `Fast2SMS error ${res.status}`);
+      return msg;
     }
     return null; // null = success
   } catch (e) {
