@@ -5,6 +5,7 @@ import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { UpdateBanner, ForceUpdateGate } from "@/components/UpdateGate";
 import { CapacitorBoot } from "@/components/CapacitorBoot";
 import { DisableDevTools } from "@/components/DisableDevTools";
+import { NativeStudentGuard } from "@/components/NativeStudentGuard";
 
 export const metadata: Metadata = {
   title: "Canteen-Application",
@@ -59,10 +60,12 @@ export default function RootLayout({
         <ServiceWorkerRegistrar />
         <CapacitorBoot />
         <AuthProvider>
-          <ForceUpdateGate>
-            <UpdateBanner />
-            {children}
-          </ForceUpdateGate>
+          <NativeStudentGuard>
+            <ForceUpdateGate>
+              <UpdateBanner />
+              {children}
+            </ForceUpdateGate>
+          </NativeStudentGuard>
         </AuthProvider>
       </body>
     </html>

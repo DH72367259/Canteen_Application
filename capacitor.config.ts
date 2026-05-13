@@ -1,28 +1,25 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 /**
- * NoQx mobile shell — wraps the live Railway web app inside iOS + Android.
+ * NoQx Student — native iOS + Android shell for students only.
  *
- * Strategy: serverUrl points at the production web deployment so the same
- * Next.js codebase serves both web and native (no static export, all server
- * routes including Razorpay endpoints work). Native shell adds:
- *   - Push notifications (FCM / APNs)
- *   - Status bar styling
- *   - Network reachability
- *   - Encrypted Preferences (Keychain on iOS, EncryptedSharedPreferences on Android)
+ * Strategy: serverUrl points at the live Railway deployment so the same
+ * Next.js codebase serves both web and native. The NativeStudentGuard
+ * component in the app signs out any non-student role that opens this app
+ * and shows a "Student app only" screen.
  *
- * To switch apps to a development build pointing at localhost, override
- * CAPACITOR_SERVER_URL before running `npx cap sync`.
+ * To test against a local dev server:
+ *   CAPACITOR_SERVER_URL=http://192.168.x.x:3000 npx cap sync
  */
 const SERVER_URL = process.env.CAPACITOR_SERVER_URL ?? 'https://noqx.up.railway.app';
 
 const config: CapacitorConfig = {
-  appId: 'com.noqx.app',
-  appName: 'NoQx',
+  appId: 'com.noqx.student',
+  appName: 'NoQx Student',
   webDir: 'public',                          // not used at runtime (serverUrl wins) but required by CLI
   server: {
     url: SERVER_URL,
-    cleartext: false,                        // production = HTTPS only
+    cleartext: false,
     androidScheme: 'https',
     iosScheme: 'https',
     allowNavigation: [
@@ -37,12 +34,14 @@ const config: CapacitorConfig = {
     contentInset: 'always',
     limitsNavigationsToAppBoundDomains: false,
     backgroundColor: '#ffffff',
+    preferredContentMode: 'mobile',
   },
   android: {
     backgroundColor: '#ffffff',
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,
+    minWebViewVersion: 80,
   },
   plugins: {
     PushNotifications: {
@@ -51,6 +50,12 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',
+    },
+    SplashScreen: {
+      launchShowDuration: 2000,
+      backgroundColor: '#ff6b35',
+      androidSplashResourceName: 'splash',
+      showSpinner: false,
     },
   },
 };
