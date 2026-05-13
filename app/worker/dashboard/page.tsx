@@ -36,6 +36,41 @@ interface BinDetail {
 interface PrepItem { name: string; quantity: number }
 interface PrepSlot { slot: string; items: PrepItem[] }
 
+// Parse "1:00 PM - 1:15 PM" → minutes from midnight for the start time
+function parseSlotStartMins(label: string): number | null {
+  const m = label.match(/^(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return null;
+  let h = parseInt(m[1]); const min = parseInt(m[2]);
+  const pm = m[3].toUpperCase() === "PM";
+  if (pm && h !== 12) h += 12;
+  if (!pm && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Auto-pick which slot to show in prep summary:
+// Priority 1 — next slot starting within 15 min (prep ahead)
+// Priority 2 — current active slot (started within last 45 min)
+// Fallback    — first slot
+function pickAutoSlot(slots: PrepSlot[]): string | null {
+  if (!slots.length) return null;
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+
+  const withDiff = slots.map(s => ({ slot: s.slot, diff: (parseSlotStartMins(s.slot) ?? null) }))
+    .filter((x): x is { slot: string; diff: number } => x.diff !== null)
+    .map(x => ({ ...x, diff: x.diff - nowMins }));
+
+  // Next slot starting within 15 min
+  const upcoming = withDiff.filter(x => x.diff > 0 && x.diff <= 15).sort((a, b) => a.diff - b.diff);
+  if (upcoming.length) return upcoming[0].slot;
+
+  // Current active slot (started within last 45 min)
+  const active = withDiff.filter(x => x.diff <= 0 && x.diff >= -45).sort((a, b) => b.diff - a.diff);
+  if (active.length) return active[0].slot;
+
+  return slots[0].slot;
+}
+
 const BIN_COLORS: Record<string, string> = {
   red: "#ef4444", blue: "#3b82f6", green: "#22c55e",
   yellow: "#eab308", purple: "#a855f7", orange: "#f97316",
@@ -597,43 +632,73 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
     try {
       const res = await fetch("/api/canteen/prep-summary", { headers: { Authorization: `Bearer ${session.access_token}` } });
       const data = await res.json();
-      // data.slots = [{ slot, batched: [], made_to_order: [] }, ...]
       const result: PrepSlot[] = (data.slots ?? []).map((s: any) => {
         const combined = [...(s.batched ?? []), ...(s.made_to_order ?? [])];
-        return {
-          slot: s.slot,
-          items: combined.sort((a: any, b: any) => b.quantity - a.quantity),
-        };
+        return { slot: s.slot, items: combined.sort((a: any, b: any) => b.quantity - a.quantity) };
       });
       setSlots(result);
-      if (!activeSlot && result.length) setActive(result[0].slot);
+      // Always auto-select the right slot based on current time
+      const auto = pickAutoSlot(result);
+      if (auto) setActive(auto);
     } catch { /* ignore */ }
     finally { setFetching(false); }
-  }, [session, activeSlot]);
+  }, [session]);
 
-  useEffect(() => { fetchPrep(); const iv = setInterval(fetchPrep, 5000); return () => clearInterval(iv); }, [fetchPrep]);
+  // Refresh data every 30s
+  useEffect(() => { fetchPrep(); const iv = setInterval(fetchPrep, 30_000); return () => clearInterval(iv); }, [fetchPrep]);
+
+  // Re-evaluate which slot to show every minute (auto-switches at 15-min mark without data refresh)
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setSlots(prev => {
+        const auto = pickAutoSlot(prev);
+        if (auto) setActive(auto);
+        return prev;
+      });
+    }, 60_000);
+    return () => clearInterval(tick);
+  }, []);
 
   if (fetching) return <LoadingState label="Loading prep summary…" />;
+
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const isNextSlot = (slot: string) => {
+    const diff = (parseSlotStartMins(slot) ?? nowMins) - nowMins;
+    return diff > 0 && diff <= 15;
+  };
+
   const current = slots.find(s => s.slot === activeSlot);
 
   return (
     <div style={{ padding: "1rem" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <h2 style={{ fontSize: "1rem", fontWeight: 800, margin: 0 }}>Prep Summary</h2>
-        <button onClick={fetchPrep} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "0.35rem 0.7rem", cursor: "pointer", fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>↻ Refresh</button>
+        <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>Auto-updates every 30s</span>
       </div>
+
+      {/* Next-slot alert banner */}
+      {activeSlot && isNextSlot(activeSlot) && (
+        <div style={{ background: "#fff7ed", border: "1.5px solid #f97316", borderRadius: 10, padding: "0.5rem 0.75rem", marginBottom: "0.75rem", fontSize: "0.8rem", color: "#c2410c", fontWeight: 600 }}>
+          ⏰ Start preparing — <strong>{activeSlot}</strong> slot begins in {Math.round(((parseSlotStartMins(activeSlot) ?? nowMins) - nowMins))} min
+        </div>
+      )}
+
       {slots.length > 0 && (
         <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", marginBottom: "1rem", paddingBottom: "0.25rem" }}>
           {slots.map(s => (
-            <button key={s.slot} onClick={() => setActive(s.slot)} style={{ flexShrink: 0, padding: "0.4rem 0.85rem", borderRadius: 20, border: "none", background: activeSlot === s.slot ? "#f97316" : "#e2e8f0", color: activeSlot === s.slot ? "#fff" : "#64748b", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer" }}>{s.slot}</button>
+            <button key={s.slot} onClick={() => setActive(s.slot)} style={{ flexShrink: 0, padding: "0.4rem 0.85rem", borderRadius: 20, border: "none", background: activeSlot === s.slot ? "#f97316" : "#e2e8f0", color: activeSlot === s.slot ? "#fff" : "#64748b", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer" }}>
+              {isNextSlot(s.slot) ? "🔜 " : ""}{s.slot}
+            </button>
           ))}
         </div>
       )}
+
       {current ? (
         <div style={{ background: "#fff", borderRadius: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", overflow: "hidden" }}>
           <div style={{ background: "#f97316", padding: "0.75rem 1rem" }}>
             <div style={{ color: "#fff", fontWeight: 700, fontSize: "0.9rem" }}>Slot: {current.slot}</div>
-            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.75rem" }}>Total: {current.items.reduce((s, i) => s + i.quantity, 0)} items</div>
+            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.75rem" }}>Total: {current.items.reduce((s, i) => s + i.quantity, 0)} items to prepare</div>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ background: "#f8fafc" }}>
