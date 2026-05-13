@@ -34,9 +34,9 @@ interface BinDetail {
   order_count: number;
 }
 interface PrepItem { name: string; quantity: number }
-interface PrepSlot { slot: string; items: PrepItem[] }
+interface PrepSlot { slot: string; startTime?: string | null; items: PrepItem[] }
 
-// Parse "1:00 PM - 1:15 PM" → minutes from midnight for the start time
+// Parse "1:00 PM - 1:15 PM" → minutes from midnight for the start time (label fallback)
 function parseSlotStartMins(label: string): number | null {
   const m = label.match(/^(\d+):(\d+)\s*(AM|PM)/i);
   if (!m) return null;
@@ -45,6 +45,18 @@ function parseSlotStartMins(label: string): number | null {
   if (pm && h !== 12) h += 12;
   if (!pm && h === 12) h = 0;
   return h * 60 + min;
+}
+
+// Returns start minutes for a slot: prefers DB start_time ("HH:MM:SS"), falls back to label parse
+function slotStartMins(s: PrepSlot): number | null {
+  if (s.startTime) {
+    const parts = s.startTime.split(":");
+    if (parts.length >= 2) {
+      const h = parseInt(parts[0]); const m = parseInt(parts[1]);
+      if (!isNaN(h) && !isNaN(m)) return h * 60 + m;
+    }
+  }
+  return parseSlotStartMins(s.slot);
 }
 
 // Auto-pick which slot to show in prep summary:
@@ -56,7 +68,7 @@ function pickAutoSlot(slots: PrepSlot[]): string | null {
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
 
-  const withDiff = slots.map(s => ({ slot: s.slot, diff: (parseSlotStartMins(s.slot) ?? null) }))
+  const withDiff = slots.map(s => ({ slot: s.slot, diff: slotStartMins(s) }))
     .filter((x): x is { slot: string; diff: number } => x.diff !== null)
     .map(x => ({ ...x, diff: x.diff - nowMins }));
 
@@ -634,7 +646,7 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
       const data = await res.json();
       const result: PrepSlot[] = (data.slots ?? []).map((s: any) => {
         const combined = [...(s.batched ?? []), ...(s.made_to_order ?? [])];
-        return { slot: s.slot, items: combined.sort((a: any, b: any) => b.quantity - a.quantity) };
+        return { slot: s.slot, startTime: s.start_time ?? null, items: combined.sort((a: any, b: any) => b.quantity - a.quantity) };
       });
       setSlots(result);
       // Always auto-select the right slot based on current time
@@ -663,8 +675,10 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
 
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
-  const isNextSlot = (slot: string) => {
-    const diff = (parseSlotStartMins(slot) ?? nowMins) - nowMins;
+  const isNextSlot = (s: PrepSlot): boolean => {
+    const start = slotStartMins(s);
+    if (start === null) return false;
+    const diff = start - nowMins;
     return diff > 0 && diff <= 15;
   };
 
@@ -678,9 +692,9 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
       </div>
 
       {/* Next-slot alert banner */}
-      {activeSlot && isNextSlot(activeSlot) && (
+      {current && isNextSlot(current) && (
         <div style={{ background: "#fff7ed", border: "1.5px solid #f97316", borderRadius: 10, padding: "0.5rem 0.75rem", marginBottom: "0.75rem", fontSize: "0.8rem", color: "#c2410c", fontWeight: 600 }}>
-          ⏰ Start preparing — <strong>{activeSlot}</strong> slot begins in {Math.round(((parseSlotStartMins(activeSlot) ?? nowMins) - nowMins))} min
+          ⏰ Start preparing — <strong>{current.slot}</strong> slot begins in {Math.round(((slotStartMins(current) ?? nowMins) - nowMins))} min
         </div>
       )}
 
@@ -688,7 +702,7 @@ function PrepTab({ session }: { session: { access_token: string } | null }) {
         <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", marginBottom: "1rem", paddingBottom: "0.25rem" }}>
           {slots.map(s => (
             <button key={s.slot} onClick={() => setActive(s.slot)} style={{ flexShrink: 0, padding: "0.4rem 0.85rem", borderRadius: 20, border: "none", background: activeSlot === s.slot ? "#f97316" : "#e2e8f0", color: activeSlot === s.slot ? "#fff" : "#64748b", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer" }}>
-              {isNextSlot(s.slot) ? "🔜 " : ""}{s.slot}
+              {isNextSlot(s) ? "🔜 " : ""}{s.slot}
             </button>
           ))}
         </div>

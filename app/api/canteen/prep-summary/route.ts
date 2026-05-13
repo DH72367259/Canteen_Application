@@ -85,11 +85,11 @@ export async function GET(request: Request) {
   }
 
   // Aggregate per slot, split by availability_type
-  const slotMap: Record<string, { batched: Map<string, PrepRow>; madeToOrder: Map<string, PrepRow> }> = {};
+  const slotMap: Record<string, { batched: Map<string, PrepRow>; madeToOrder: Map<string, PrepRow>; startTime: string | null }> = {};
 
   for (const o of (orders ?? []) as unknown as OrderRow[]) {
     const slot = o.time_slots?.slot_name ?? o.slot_label ?? o.pickup_slot ?? "Unknown";
-    if (!slotMap[slot]) slotMap[slot] = { batched: new Map(), madeToOrder: new Map() };
+    if (!slotMap[slot]) slotMap[slot] = { batched: new Map(), madeToOrder: new Map(), startTime: o.time_slots?.start_time ?? null };
     for (const li of o.order_items ?? []) {
       const m = li.menu_items;
       if (!m) continue;
@@ -118,6 +118,7 @@ export async function GET(request: Request) {
 
   const result = Object.entries(slotMap).map(([slot, buckets]) => ({
     slot,
+    start_time:    buckets.startTime,
     batched:       Array.from(buckets.batched.values()).sort((a, b) => b.quantity - a.quantity),
     made_to_order: Array.from(buckets.madeToOrder.values()).sort((a, b) => b.quantity - a.quantity),
   }));
