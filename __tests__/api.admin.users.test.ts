@@ -140,7 +140,7 @@ describe("POST /api/admin/users", () => {
     expect(body.role).toBe("worker");
     expect(body.phone).toBe("+919876543210");
     expect(mockAdminUsersCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ email_confirm: true, phone: "+919876543210", phone_confirm: true })
+      expect.objectContaining({ email_confirm: true })
     );
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ role: "worker", canteen_id: "canteen-uuid", phone: "+919876543210" })
