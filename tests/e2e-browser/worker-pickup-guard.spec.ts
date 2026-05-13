@@ -185,12 +185,14 @@ test("worker UI has no OTP verification and worker API verify-otp is forbidden",
     // OTP input may not be present (which is expected)
   }
 
-  // Workers can now call verify-otp to complete pickup (returns 200 or 400 if already collected).
+  // Workers can now call verify-otp to complete pickup.
+  // 200 = success, 400 = already collected/invalid OTP, 409 = pickup guard blocked
+  // (student has another sibling order still being prepared in same slot).
   const workerToken = await getAccessToken(WORKER_EMAIL, WORKER_PASS);
   const verifyRes = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
     data: { otp: order1Otp },
   }));
-  expect([200, 400]).toContain(verifyRes.status());
+  expect([200, 400, 409]).toContain(verifyRes.status());
 });

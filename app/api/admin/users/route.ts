@@ -109,6 +109,11 @@ export async function POST(request: Request) {
 
   if (profileError) {
     await supabase.auth.admin.deleteUser(userId);
+    // PostgreSQL unique_violation code 23505 means phone/email already taken.
+    const isUniqueViolation = (profileError as { code?: string }).code === "23505";
+    if (isUniqueViolation) {
+      return NextResponse.json({ error: "A user with this phone number already exists." }, { status: 409 });
+    }
     return NextResponse.json({ error: "Failed to create user profile." }, { status: 500 });
   }
 

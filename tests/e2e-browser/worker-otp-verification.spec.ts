@@ -72,11 +72,13 @@ test.describe("Worker OTP Verification Flow", () => {
   });
 
   test("worker can verify OTP inline on orders page", async ({ page }) => {
-    // Worker navigates to orders page
-    await page.goto(`${APP_URL}/worker/orders`, { waitUntil: "domcontentloaded" });
+    // Navigate directly to login page first, then orders after auth
+    await page.goto(`${APP_URL}/worker/login`, { waitUntil: "domcontentloaded" });
 
-    // Login as worker
-    await page.fill('input[type="text"]', workerEmail);
+    // Worker login — the form uses email + password inputs
+    const emailInput = page.locator('input[type="email"], input[type="text"]').first();
+    await emailInput.waitFor({ state: "visible", timeout: 10_000 });
+    await emailInput.fill(workerEmail);
     await page.fill('input[type="password"]', workerPassword);
     await page.getByRole("button", { name: /sign in|login/i }).first().click();
     await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });

@@ -7,14 +7,9 @@ on:
         description: "Branch to run CI on"
         required: false
         default: "main"
-  schedule:
-    # 11:00 PM IST = 17:30 UTC daily
-    - cron: "30 17 * * *"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Resolve which branches to test.
-# schedule → dev + main + release/1.0 (matrix of 3)
-# manual   → whichever branch was selected (matrix of 1)
+# Resolve which branch to test (manual dispatch only).
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
   resolve-branches:
@@ -25,12 +20,8 @@ jobs:
     steps:
       - id: set
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo 'matrix={"branch":["dev","main","release/1.0"]}' >> "$GITHUB_OUTPUT"
-          else
-            BRANCH="${{ inputs.branch || github.ref_name }}"
-            echo "matrix={\"branch\":[\"$BRANCH\"]}" >> "$GITHUB_OUTPUT"
-          fi
+          BRANCH="${{ inputs.branch || github.ref_name }}"
+          echo "matrix={\"branch\":[\"$BRANCH\"]}" >> "$GITHUB_OUTPUT"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 1 — TypeScript type-check
@@ -167,11 +158,16 @@ jobs:
         run: node scripts/cleanup-complete.mjs
         continue-on-error: true
 
+      - name: Sanitise branch name for artifact
+        if: failure()
+        id: safe-branch
+        run: echo "name=$(echo '${{ matrix.branch }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.branch }}
+          name: playwright-report-${{ steps.safe-branch.outputs.name }}
           path: |
             test-results/
             playwright-report/
