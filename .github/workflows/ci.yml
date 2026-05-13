@@ -1,23 +1,53 @@
 name: CI
 
 on:
-  push:
-    branches: [main, "release/**"]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run CI on"
+        required: false
+        default: "main"
+  schedule:
+    # 11:00 PM IST = 17:30 UTC daily
+    - cron: "30 17 * * *"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 1 — TypeScript type-check (fast, no secrets needed)
+# Resolve which branches to test.
+# schedule → dev + main + release/1.0 (matrix of 3)
+# manual   → whichever branch was selected (matrix of 1)
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
+  resolve-branches:
+    name: Resolve target branches
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo 'matrix={"branch":["dev","main","release/1.0"]}' >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ inputs.branch || github.ref_name }}"
+            echo "matrix={\"branch\":[\"$BRANCH\"]}" >> "$GITHUB_OUTPUT"
+          fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 1 — TypeScript type-check
+# ─────────────────────────────────────────────────────────────────────────────
   type-check:
-    name: Type Check
+    name: Type Check (${{ matrix.branch }})
+    needs: resolve-branches
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-branches.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
 
       - uses: actions/setup-node@v4
         with:
@@ -28,7 +58,6 @@ jobs:
         run: npm ci
 
       - name: Generate next-env.d.ts
-        # next-env.d.ts is gitignored but tsc needs it to resolve Next.js types.
         run: |
           printf '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n' > next-env.d.ts
 
@@ -39,12 +68,15 @@ jobs:
 # Job 2 — Backend unit tests (Jest, all mocked — no live Supabase needed)
 # ─────────────────────────────────────────────────────────────────────────────
   backend:
-    name: Backend Unit Tests
+    name: Backend Unit Tests (${{ matrix.branch }})
+    needs: resolve-branches
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-branches.outputs.matrix) }}
 
     env:
-      # Unit tests mock Supabase; placeholder values prevent module-load errors.
       NEXT_PUBLIC_SUPABASE_URL:      https://placeholder.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
       SUPABASE_SERVICE_ROLE_KEY:     placeholder-service-role-key
@@ -52,6 +84,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
 
       - uses: actions/setup-node@v4
         with:
@@ -68,9 +102,13 @@ jobs:
 # Job 3 — E2E browser tests (Playwright against the deployed Railway app)
 # ─────────────────────────────────────────────────────────────────────────────
   e2e:
-    name: E2E Browser Tests
+    name: E2E Browser Tests (${{ matrix.branch }})
+    needs: resolve-branches
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-branches.outputs.matrix) }}
 
     env:
       NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -79,6 +117,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
 
       - uses: actions/setup-node@v4
         with:
@@ -89,8 +129,6 @@ jobs:
         run: npm ci
 
       - name: Resolve Railway deployment URL
-        # scripts/get-railway-url.mjs queries the Railway GraphQL API and prints
-        # the live domain — no static APP_URL secret ever needed.
         env:
           RAILWAY_TOKEN:          ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE_ID:     ${{ secrets.RAILWAY_SERVICE_ID }}
@@ -111,7 +149,6 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Write .env.local for cleanup scripts
-        # cleanup-db-deep.mjs and cleanup-complete.mjs read .env.local directly
         run: |
           printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n'      "$NEXT_PUBLIC_SUPABASE_URL"      >> .env.local
           printf 'NEXT_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env.local
@@ -134,7 +171,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.branch }}
           path: |
             test-results/
             playwright-report/
