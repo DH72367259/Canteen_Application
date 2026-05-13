@@ -4,6 +4,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { UpdateBanner, ForceUpdateGate } from "@/components/UpdateGate";
 import { CapacitorBoot } from "@/components/CapacitorBoot";
+import { DisableDevTools } from "@/components/DisableDevTools";
 
 export const metadata: Metadata = {
   title: "Canteen-Application",
@@ -54,6 +55,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://dpycfyeiyhzvwbythcrp.supabase.co" />
       </head>
       <body>
+        <DisableDevTools />
         <ServiceWorkerRegistrar />
         <CapacitorBoot />
         <AuthProvider>

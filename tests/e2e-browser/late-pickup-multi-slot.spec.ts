@@ -57,9 +57,9 @@ test.beforeEach(() => {
 test.afterAll(async () => {
   await deleteUser(studentId).catch(() => {});
   const admin = adminClient();
-  await admin.from("orders").delete().like("slot_label", "E2E-LP-%").catch(() => {});
-  await admin.from("orders").delete().like("slot_label", "E2E-MS-%").catch(() => {});
-  await admin.from("orders").delete().like("slot_label", "E2E-PS-%").catch(() => {});
+  await admin.from("orders").delete().like("slot_label", "E2E-LP-%").then(undefined, () => {});
+  await admin.from("orders").delete().like("slot_label", "E2E-MS-%").then(undefined, () => {});
+  await admin.from("orders").delete().like("slot_label", "E2E-PS-%").then(undefined, () => {});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -114,8 +114,8 @@ test.describe("A — Late Pickup", () => {
       expect(freedBin?.is_occupied).toBe(false);
       expect(freedBin?.order_id).toBeNull();
     } finally {
-      await admin.from("orders").delete().eq("id", orderId).catch(() => {});
-      await admin.from("bins").delete().eq("id", binId).catch(() => {});
+      await admin.from("orders").delete().eq("id", orderId).then(undefined, () => {});
+      await admin.from("bins").delete().eq("id", binId).then(undefined, () => {});
     }
   });
 
@@ -150,7 +150,7 @@ test.describe("A — Late Pickup", () => {
         expect(collected?.status).toBe("collected");
       }
     } finally {
-      await admin.from("orders").delete().eq("id", orderId).catch(() => {});
+      await admin.from("orders").delete().eq("id", orderId).then(undefined, () => {});
     }
   });
 
@@ -178,7 +178,7 @@ test.describe("A — Late Pickup", () => {
       expect(freedBin?.is_occupied).toBe(false);
       expect(freedBin?.status).toBe("empty");
     } finally {
-      await admin.from("bins").delete().eq("id", binId).catch(() => {});
+      await admin.from("bins").delete().eq("id", binId).then(undefined, () => {});
     }
   });
 
@@ -207,7 +207,7 @@ test.describe("A — Late Pickup", () => {
       const body = await res.json();
       expect(body.error).toMatch(/collected|already/i);
     } finally {
-      await admin.from("orders").delete().eq("id", orderId).catch(() => {});
+      await admin.from("orders").delete().eq("id", orderId).then(undefined, () => {});
     }
   });
 
@@ -235,7 +235,7 @@ test.describe("A — Late Pickup", () => {
       const body = await res.json();
       expect(body.error).toMatch(/invalid|otp/i);
     } finally {
-      await admin.from("orders").delete().eq("id", orderId).catch(() => {});
+      await admin.from("orders").delete().eq("id", orderId).then(undefined, () => {});
     }
   });
 
@@ -295,7 +295,7 @@ test.describe("B — Multi-Slot Pickup Guard", () => {
       expect(resA.status).not.toBe(409);
       expect([200, 400]).toContain(resA.status);
     } finally {
-      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).then(undefined, () => {});
     }
   });
 
@@ -330,7 +330,7 @@ test.describe("B — Multi-Slot Pickup Guard", () => {
       const body = await resA.json();
       expect(body.error).toMatch(/preparing|slot|sibling/i);
     } finally {
-      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).then(undefined, () => {});
     }
   });
 
@@ -363,7 +363,7 @@ test.describe("B — Multi-Slot Pickup Guard", () => {
       expect(resA.status).not.toBe(409);
       expect([200, 400]).toContain(resA.status);
     } finally {
-      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [orderA!.id, orderB!.id]).then(undefined, () => {});
     }
   });
 
@@ -395,7 +395,7 @@ test.describe("B — Multi-Slot Pickup Guard", () => {
       // Should NOT be 409 — no slot info means guard is skipped
       expect(res.status).not.toBe(409);
     } finally {
-      await admin.from("orders").delete().in("id", [order!.id, sibling!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [order!.id, sibling!.id]).then(undefined, () => {});
     }
   });
 
@@ -426,7 +426,7 @@ test.describe("B — Multi-Slot Pickup Guard", () => {
       // Cancelled sibling should NOT block — expect 200 or 400 (not 409)
       expect(res.status).not.toBe(409);
     } finally {
-      await admin.from("orders").delete().in("id", [order!.id, cancelled!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [order!.id, cancelled!.id]).then(undefined, () => {});
     }
   });
 });
@@ -469,7 +469,7 @@ test.describe("C — Prep Summary API", () => {
       // The E2E label slot should NOT appear (only collected/cancelled orders)
       expect(found).toBeUndefined();
     } finally {
-      await admin.from("orders").delete().in("id", [col!.id, can!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [col!.id, can!.id]).then(undefined, () => {});
     }
   });
 
@@ -495,7 +495,7 @@ test.describe("C — Prep Summary API", () => {
       const found = slots.find(s => s.slot === label);
       expect(found).toBeDefined();
     } finally {
-      await admin.from("orders").delete().in("id", [confirmed!.id, preparing!.id]).catch(() => {});
+      await admin.from("orders").delete().in("id", [confirmed!.id, preparing!.id]).then(undefined, () => {});
     }
   });
 

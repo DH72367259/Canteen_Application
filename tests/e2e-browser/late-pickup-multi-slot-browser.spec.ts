@@ -49,8 +49,8 @@ test.beforeEach(() => {
 test.afterAll(async () => {
   await deleteUser(studentId).catch(() => {});
   const admin = adminClient();
-  await admin.from("orders").delete().like("slot_label", "E2E-BR-%").catch(() => {});
-  await admin.from("bins").delete().like("bin_code", "BRT%").catch(() => {});
+  await admin.from("orders").delete().like("slot_label", "E2E-BR-%").then(undefined, () => {});
+  await admin.from("bins").delete().like("bin_code", "BRT%").then(undefined, () => {});
 });
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ async function seedPreparingOrder(slotLabel: string) {
 }
 
 async function deleteOrder(id: string) {
-  await adminClient().from("orders").delete().eq("id", id).catch(() => {});
+  await adminClient().from("orders").delete().eq("id", id).then(undefined, () => {});
 }
 
 // ─── 1. Login helper used across tests ────────────────────────────────────────
