@@ -16,13 +16,10 @@ export async function sendSmsOtp(
 
   try {
     const res = await fetch(
-      `https://www.fast2sms.com/dev/bulkV2?route=otp&variables_values=${code}&flash=0&numbers=${digits}`,
+      `https://www.fast2sms.com/dev/bulkV2?authorization=${encodeURIComponent(apiKey)}&route=otp&variables_values=${code}&flash=0&numbers=${digits}`,
       {
         method: "GET",
-        headers: {
-          authorization: apiKey,
-          "cache-control": "no-cache",
-        },
+        headers: { "cache-control": "no-cache" },
       }
     );
 
