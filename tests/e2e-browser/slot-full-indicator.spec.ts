@@ -13,12 +13,30 @@
 import { test, expect } from "@playwright/test";
 import { adminClient, APP_URL, provisionStudent } from "./_helpers";
 
+// Generate a slot label in the same format as the API: "7:00 AM - 7:15 AM"
+function pad2(n: number) { return n < 10 ? `0${n}` : `${n}`; }
+function toAmPm(hhmm: string): string {
+  const [hStr, mStr] = hhmm.slice(0, 5).split(":");
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${pad2(m)} ${period}`;
+}
+function firstSlotLabel(morningStart: string, durationMins: number): string {
+  const start = morningStart.slice(0, 5);
+  const [startH, startM] = start.split(":").map(Number);
+  const endTotalMins = startH * 60 + startM + durationMins;
+  const end = `${pad2(Math.floor(endTotalMins / 60))}:${pad2(endTotalMins % 60)}`;
+  return `${toAmPm(start)} - ${toAmPm(end)}`;
+}
+
 test.describe("Slot Full Indicator", () => {
   let canteenId: string;
   let studentId: string;
   let studentEmail: string;
   let studentPassword: string;
-  let slotId: string;
   let setupFailed = false;
 
   test.beforeEach(() => {
@@ -33,7 +51,7 @@ test.describe("Slot Full Indicator", () => {
       .from("canteens")
       .select("id, name")
       .limit(1)
-      .single();
+      .maybeSingle();
     canteenId = canteens?.id ?? "";
     if (!canteenId) { console.warn("⚠️ No canteen found — skipping slot-full-indicator tests"); setupFailed = true; return; }
 
@@ -42,15 +60,6 @@ test.describe("Slot Full Indicator", () => {
     studentId = studentCreate.id;
     studentEmail = studentCreate.email;
     studentPassword = studentCreate.password;
-
-    // Get a slot
-    const { data: slots } = await admin
-      .from("slot_control")
-      .select("id")
-      .eq("canteen_id", canteenId)
-      .limit(1)
-      .single();
-    slotId = slots?.id ?? "";
   });
 
   test("student menu displays available slots", async ({ page }) => {
@@ -85,27 +94,22 @@ test.describe("Slot Full Indicator", () => {
   }) => {
     const admin = adminClient();
 
-    // Fill a slot to capacity
-    const { data: slotData } = await admin
+    // Get slot config to derive max_bins and a valid slot label
+    const { data: slotConfig } = await admin
       .from("slot_control")
-      .select("max_bins")
+      .select("max_bins, morning_start, slot_duration_mins")
       .eq("canteen_id", canteenId)
-      .limit(1)
-      .single();
-    const maxBins = slotData?.max_bins ?? 10;
+      .maybeSingle();
 
-    // Get the first available slot
-    const { data: slots } = await admin
-      .from("slot_control")
-      .select("id, slot_label")
-      .eq("canteen_id", canteenId)
-      .limit(1);
-
-    if (!slots || slots.length === 0) {
+    if (!slotConfig) {
       test.skip();
     }
 
-    const targetSlot = slots![0];
+    const maxBins = slotConfig!.max_bins ?? 10;
+    const slotLabel = firstSlotLabel(
+      slotConfig!.morning_start ?? "07:00",
+      slotConfig!.slot_duration_mins ?? 15
+    );
 
     // Create orders to fill the slot
     for (let i = 0; i < maxBins; i++) {
@@ -120,7 +124,7 @@ test.describe("Slot Full Indicator", () => {
           canteen_id: canteenId,
           total_amount: 100,
           status: "placed_in_bin",
-          slot_label: targetSlot.slot_label,
+          slot_label: slotLabel,
           otp: String(Math.floor(1000 + Math.random() * 9000)),
         });
     }
@@ -134,7 +138,7 @@ test.describe("Slot Full Indicator", () => {
     await page.waitForTimeout(1500);
 
     // Full slot should show FULL badge
-    const fullBadge = page.getByText(targetSlot.slot_label).first();
+    const fullBadge = page.getByText(slotLabel).first();
     try {
       await expect(fullBadge).toBeVisible({ timeout: 5000 });
     } catch {

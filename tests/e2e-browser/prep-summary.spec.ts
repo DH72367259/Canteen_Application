@@ -56,14 +56,28 @@ test.describe("Prep Summary", () => {
       .limit(3);
 
     if (menu && menu.length > 0) {
-      const { data: slot } = await admin
+      const { data: slotCfg } = await admin
         .from("slot_control")
-        .select("slot_label")
+        .select("morning_start, slot_duration_mins")
         .eq("canteen_id", canteenId)
-        .limit(1)
-        .single();
+        .maybeSingle();
 
-      const slotLabel = slot?.slot_label ?? "Test Slot";
+      // Generate label in the same "7:00 AM - 7:15 AM" format as the API
+      function pad2(n: number) { return n < 10 ? `0${n}` : `${n}`; }
+      function toAmPm(hhmm: string): string {
+        const [hStr, mStr] = hhmm.slice(0, 5).split(":");
+        let h = parseInt(hStr, 10);
+        const m = parseInt(mStr, 10);
+        const period = h >= 12 ? "PM" : "AM";
+        h = h % 12; if (h === 0) h = 12;
+        return `${h}:${pad2(m)} ${period}`;
+      }
+      const start = (slotCfg?.morning_start ?? "07:00").slice(0, 5);
+      const dur = slotCfg?.slot_duration_mins ?? 15;
+      const [sH, sM] = start.split(":").map(Number);
+      const endMins = sH * 60 + sM + dur;
+      const end = `${pad2(Math.floor(endMins / 60))}:${pad2(endMins % 60)}`;
+      const slotLabel = `${toAmPm(start)} - ${toAmPm(end)}`;
 
       // Create order with items
       const { data: order } = await admin
