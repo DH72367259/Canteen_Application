@@ -91,8 +91,12 @@ function LoginContent() {
 
   // ── OTP method toggle for registration ────────────────────────────────────
   type OtpMethod = "email" | "sms";
-  const [otpMethod, setOtpMethod] = useState<OtpMethod>("email");
-  const [phone,     setPhone]     = useState(""); // SMS OTP register input
+  const [otpMethod,     setOtpMethod]     = useState<OtpMethod>("email");
+  const [phone,         setPhone]         = useState(""); // SMS OTP register input
+
+  // ── OTP method toggle for forgot-password ─────────────────────────────────
+  const [forgotMethod,  setForgotMethod]  = useState<OtpMethod>("email");
+  const [forgotPhone,   setForgotPhone]   = useState("");
 
   // ── Student tab mode: default = sign-in, toggle = register (email OTP) ────
   const [registerMode, setRegisterMode] = useState(false);
@@ -184,10 +188,11 @@ function LoginContent() {
     else                                               router.replace("/dashboard");
   }, [user, loading, router, params, showSetup, registerMode]);
 
-  function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); setPhone(""); }
+  function clearState() { setError(null); setInfo(null); setOtp(""); setOtpSentTo(null); setPhone(""); setForgotPhone(""); }
   function switchTab(t: Tab) {
     setEmail(""); setPassword(""); setIdentifier("");
     setOtp(""); setOtpSentTo(null); setPhone(""); setOtpMethod("email");
+    setForgotPhone(""); setForgotMethod("email");
     setError(null); setInfo(null);
     setRegisterMode(false); setShowSetup(false); setShowPwd(false);
     setShowPasswordReset(false); setNewPassword(""); setConfirmNewPassword(""); setShowNewPwd(false);
@@ -373,6 +378,52 @@ function LoginContent() {
     }
   }
 
+  // ── Forgot password — SMS OTP flow ───────────────────────────────────────
+  async function handleForgotSendSmsOtp() {
+    const digits = forgotPhone.replace(/\D/g, "");
+    if (digits.length !== 10) { setError("Enter a valid 10-digit Indian mobile number."); return; }
+    setBusy(true); setError(null); setInfo(null);
+    try {
+      const res = await fetch("/api/auth/sms-otp/send-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: `+91${digits}` }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to send OTP.");
+      setOtpSentTo(`+91${digits}`);
+      setInfo(`OTP sent to +91 ${digits.slice(0, 5)}XXXXX`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send SMS OTP.");
+    } finally { setBusy(false); }
+  }
+
+  async function handleForgotVerifySmsOtp() {
+    if (otp.length < 6) { setError("Enter the 6-digit code from your SMS."); return; }
+    if (!otpSentTo) return;
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch("/api/auth/sms-otp/verify-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: otpSentTo, code: otp }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Invalid OTP.");
+      // Establish a session for the existing user (without triggering a dashboard redirect)
+      const { error: verifyErr } = await getSupabaseClient().auth.verifyOtp({
+        email: d.email,
+        token: d.supabase_otp,
+        type: "email",
+      });
+      if (verifyErr) throw verifyErr;
+      // loginInitiatedRef stays false — the auth guard will NOT redirect to dashboard
+      setShowPasswordReset(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Verification failed. Try again.");
+    } finally { setBusy(false); }
+  }
+
   // ── Forgot password — email OTP flow (works for staff + students) ───────────────────
   async function handleForgotSendCode() {
     const emailTrimmed = email.trim();
@@ -478,9 +529,9 @@ function LoginContent() {
         {showSetup && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ textAlign: "center", padding: "0.25rem 0 0.5rem" }}>
-              <span style={{ fontSize: "2rem" }}>🎉</span>
+              <span style={{ fontSize: "2rem" }}>{otpMethod === "sms" ? "📱" : "🎉"}</span>
               <p style={{ fontWeight: 700, color: "var(--ink-1)", margin: "0.3rem 0 0.15rem", fontSize: "1.05rem" }}>
-                Email Verified!
+                {otpMethod === "sms" ? "Phone Verified!" : "Email Verified!"}
               </p>
               <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", margin: 0 }}>
                 Complete your profile — you&apos;ll use your username or phone number to log in from now on
@@ -784,20 +835,70 @@ function LoginContent() {
           </div>
         )}
 
-        {/* ── Forgot Password — Step 1: enter email ────────────────────── */}
+        {/* ── Forgot Password — Step 1: choose method + enter contact ──── */}
         {tab === "forgot" && !otpSentTo && !showPasswordReset && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", margin: 0, textAlign: "center" }}>
-              Enter your registered email — we&apos;ll send a verification code to confirm it&apos;s you.
+              Confirm your identity — we&apos;ll send a code to reset your password.
             </p>
-            <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" placeholder="you@example.com" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotSendCode()} autoComplete="email" />
+
+            {/* Method toggle */}
+            <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 10, overflow: "hidden", fontSize: "0.8rem" }}>
+              {(["email", "sms"] as OtpMethod[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => { setForgotMethod(m); setError(null); setInfo(null); }}
+                  style={{
+                    flex: 1, padding: "0.5rem 0.25rem", fontWeight: 600,
+                    border: "none", cursor: "pointer",
+                    background: forgotMethod === m ? "var(--orange)" : "transparent",
+                    color: forgotMethod === m ? "#fff" : "var(--ink-3)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {m === "email" ? "📧 Email OTP" : "📱 SMS OTP"}
+                </button>
+              ))}
             </div>
+
+            {forgotMethod === "email" ? (
+              <div className="form-group">
+                <label className="form-label">Registered Email Address</label>
+                <input className="form-input" type="email" placeholder="you@example.com" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotSendCode()} autoComplete="email" />
+              </div>
+            ) : (
+              <div className="form-group">
+                <label className="form-label">Registered Mobile Number</label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
+                  <input
+                    className="form-input"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit mobile number"
+                    value={forgotPhone}
+                    onChange={e => setForgotPhone(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={e => e.key === "Enter" && handleForgotSendSmsOtp()}
+                    autoComplete="tel-national"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+
             {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotSendCode} style={{ padding: "0.8rem" }}>
-              {busy ? "Sending code…" : "Send Verification Code →"}
-            </button>
+
+            {forgotMethod === "email" ? (
+              <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotSendCode} style={{ padding: "0.8rem" }}>
+                {busy ? "Sending code…" : "Send Verification Code →"}
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-full" disabled={busy || forgotPhone.replace(/\D/g, "").length !== 10} onClick={handleForgotSendSmsOtp} style={{ padding: "0.8rem" }}>
+                {busy ? "Sending OTP…" : "Send OTP →"}
+              </button>
+            )}
+
             <button className="btn btn-ghost btn-full" onClick={() => switchTab("student")} style={{ fontSize: "0.82rem" }}>
               ← Back to Sign In
             </button>
@@ -809,15 +910,22 @@ function LoginContent() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
             <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>
-              Enter the 6-digit code sent to <strong>{otpSentTo}</strong>
+              Enter the 6-digit code sent to{" "}
+              <strong>{forgotMethod === "sms" ? `+91 ${otpSentTo.replace(/^\+91/, "").replace(/(\d{5})(\d{5})/, "$1XXXXX")}` : otpSentTo}</strong>
+              {forgotMethod === "sms" && <span style={{ display: "block", fontSize: "0.75rem", marginTop: "0.2rem" }}>via SMS</span>}
             </p>
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
-            <button className="btn btn-primary btn-full" disabled={busy || otp.length < 6} onClick={handleForgotVerifyOtp} style={{ padding: "0.8rem" }}>
+            <button
+              className="btn btn-primary btn-full"
+              disabled={busy || otp.length < 6}
+              onClick={forgotMethod === "sms" ? handleForgotVerifySmsOtp : handleForgotVerifyOtp}
+              style={{ padding: "0.8rem" }}
+            >
               {busy ? "Verifying…" : "Verify Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
-              ← Change email
+              ← Change {forgotMethod === "sms" ? "phone number" : "email"}
             </button>
           </div>
         )}

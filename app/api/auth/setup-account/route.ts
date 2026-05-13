@@ -60,6 +60,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Username is already taken. Please choose a different one." }, { status: 409 });
   }
 
+  // Check phone uniqueness — prevent two accounts sharing the same number
+  const { data: existingPhone } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("phone", e164Phone)
+    .neq("id", ctx.uid)
+    .maybeSingle();
+  if (existingPhone) {
+    return Response.json(
+      { error: "This mobile number is already linked to another account. Please use a different number, or sign in with that number." },
+      { status: 409 }
+    );
+  }
+
   // Update Supabase auth user: set password, phone, and metadata
   const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.uid, {
     password,
