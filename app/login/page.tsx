@@ -686,7 +686,7 @@ function LoginContent() {
             </button>
             <Divider label="new to the app?" />
             <button className="btn btn-ghost btn-full" onClick={() => { clearState(); setRegisterMode(true); }} style={{ fontSize: "0.82rem" }}>
-              Register (Email or SMS OTP) →
+              Register (Email OTP) →
             </button>
           </div>
         )}
@@ -698,75 +698,26 @@ function LoginContent() {
               ✨ One-time setup — verify yourself, then choose a username &amp; password
             </div>
 
-            {/* Method toggle */}
-            <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 10, overflow: "hidden", fontSize: "0.8rem" }}>
-              {(["email", "sms"] as OtpMethod[]).map(m => (
-                <button
-                  key={m}
-                  onClick={() => { setOtpMethod(m); setError(null); setInfo(null); }}
-                  style={{
-                    flex: 1, padding: "0.5rem 0.25rem", fontWeight: 600,
-                    border: "none", cursor: "pointer",
-                    background: otpMethod === m ? "var(--orange)" : "transparent",
-                    color: otpMethod === m ? "#fff" : "var(--ink-3)",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {m === "email" ? "📧 Email OTP" : "📱 SMS OTP"}
-                </button>
-              ))}
-            </div>
-
             {/* Email input */}
-            {otpMethod === "email" && (
-              <div className="form-group">
-                <label className="form-label">Gmail or Email Address</label>
-                <input
-                  className="form-input"
-                  type="email"
-                  placeholder="you@gmail.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSendEmailOtp()}
-                  autoComplete="email"
-                  autoFocus
-                />
-              </div>
-            )}
-
-            {/* Phone input */}
-            {otpMethod === "sms" && (
-              <div className="form-group">
-                <label className="form-label">Indian Mobile Number</label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                  <input
-                    className="form-input"
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={10}
-                    placeholder="10-digit mobile number"
-                    value={phone}
-                    onChange={e => setPhone(e.target.value.replace(/\D/g, ""))}
-                    onKeyDown={e => e.key === "Enter" && handleSendSmsOtp()}
-                    autoComplete="tel-national"
-                    autoFocus
-                  />
-                </div>
-              </div>
-            )}
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input
+                className="form-input"
+                type="email"
+                placeholder="you@gmail.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSendEmailOtp()}
+                autoComplete="email"
+                autoFocus
+              />
+            </div>
 
             {error && <p className="error-msg">{error}</p>}
 
-            {otpMethod === "email" ? (
-              <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleSendEmailOtp} style={{ padding: "0.8rem" }}>
-                {busy ? "Sending code…" : "Send Verification Code →"}
-              </button>
-            ) : (
-              <button className="btn btn-primary btn-full" disabled={busy || phone.replace(/\D/g, "").length !== 10} onClick={handleSendSmsOtp} style={{ padding: "0.8rem" }}>
-                {busy ? "Sending OTP…" : "Send OTP →"}
-              </button>
-            )}
+            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleSendEmailOtp} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending code…" : "Send Verification Code →"}
+            </button>
 
             <button className="btn btn-ghost btn-full" onClick={() => { setRegisterMode(false); clearState(); }} style={{ fontSize: "0.82rem" }}>
               ← Already have an account? Sign In
