@@ -37,7 +37,7 @@ test.describe("Worker OTP Verification Flow", () => {
       .from("canteens")
       .select("id")
       .limit(1)
-      .single();
+      .maybeSingle();
     canteenId = canteens?.id ?? "";
     if (!canteenId) { console.warn("⚠️ No canteen found — skipping worker-otp tests"); setupFailed = true; return; }
 
@@ -141,14 +141,13 @@ test.describe("Worker OTP Verification Flow", () => {
       .single();
     const backupOrderId = order?.id ?? "";
 
-    // Navigate to backup OTP page
-    await page.goto(`${APP_URL}/worker/otp-verify`, { waitUntil: "domcontentloaded" });
-
-    // Login
+    // Login first then navigate to backup OTP page
+    await page.goto(`${APP_URL}/worker/login`, { waitUntil: "domcontentloaded" });
     await page.fill('input[type="text"]', workerEmail);
     await page.fill('input[type="password"]', workerPassword);
     await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/worker\/otp-verify/, { timeout: 10_000 });
+    await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+    await page.goto(`${APP_URL}/worker/otp-verify`, { waitUntil: "domcontentloaded" });
 
     // Enter OTP
     const otpInput = page.locator('input[inputMode="numeric"]').first();
@@ -185,14 +184,13 @@ test.describe("Worker OTP Verification Flow", () => {
       .select()
       .single();
 
-    // Navigate to backup OTP page
-    await page.goto(`${APP_URL}/worker/otp-verify`, { waitUntil: "domcontentloaded" });
-
-    // Login
+    // Login first then navigate to backup OTP page
+    await page.goto(`${APP_URL}/worker/login`, { waitUntil: "domcontentloaded" });
     await page.fill('input[type="text"]', workerEmail);
     await page.fill('input[type="password"]', workerPassword);
     await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/worker\/otp-verify/, { timeout: 10_000 });
+    await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
+    await page.goto(`${APP_URL}/worker/otp-verify`, { waitUntil: "domcontentloaded" });
 
     // Enter WRONG OTP
     const otpInput = page.locator('input[inputMode="numeric"]').first();

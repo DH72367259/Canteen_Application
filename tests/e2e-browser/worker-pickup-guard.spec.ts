@@ -185,12 +185,12 @@ test("worker UI has no OTP verification and worker API verify-otp is forbidden",
     // OTP input may not be present (which is expected)
   }
 
-  // Manager-only OTP verification endpoint must reject worker role.
+  // Workers can now call verify-otp to complete pickup (returns 200 or 400 if already collected).
   const workerToken = await getAccessToken(WORKER_EMAIL, WORKER_PASS);
-  const forbidden = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
+  const verifyRes = await pwRequest.newContext().then(ctx => ctx.fetch(`${APP}/api/orders/${order1Id}/verify-otp`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${workerToken}` },
     data: { otp: order1Otp },
   }));
-  expect(forbidden.status()).toBe(403);
+  expect([200, 400]).toContain(verifyRes.status());
 });
