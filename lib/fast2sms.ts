@@ -15,7 +15,8 @@ export async function sendSmsOtp(
   if (digits.length !== 10) return "Invalid Indian phone number (must be 10 digits)";
 
   try {
-    const url = `https://2factor.in/API/V1/${apiKey}/SMS/${digits}/${code}/OTP1`;
+    // AUTOGEN uses 2Factor.in's default SMS template — avoids voice-configured OTP1 templates.
+    const url = `https://2factor.in/API/V1/${apiKey}/SMS/${digits}/${code}/AUTOGEN`;
     const res = await fetch(url, { method: "GET" });
 
     const data = await res.json().catch(() => ({}));
