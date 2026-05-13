@@ -133,10 +133,18 @@ export default function CanteenMenuPage() {
   const mealFilteredItems = currentMeal
     ? visibleItems.filter(i => {
         const m = categoryToMealPeriod(i.category);
-        return m === null || m === currentMeal;
+        // Snacks are always visible regardless of the current meal window —
+        // students can add snacks to any order at any time of day.
+        return m === null || m === "snacks" || m === currentMeal;
       })
     : visibleItems;
-  const hiddenByMeal = currentMeal ? visibleItems.length - mealFilteredItems.length : 0;
+  // Don't count snack items as "hidden" — they are always shown.
+  const hiddenByMeal = currentMeal
+    ? visibleItems.filter(i => {
+        const m = categoryToMealPeriod(i.category);
+        return m !== null && m !== "snacks" && m !== currentMeal;
+      }).length
+    : 0;
 
   const [cart, setCart] = useState<CartItem[]>([]);
 
@@ -219,7 +227,7 @@ export default function CanteenMenuPage() {
         {currentMeal && (
           <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.55rem 0.85rem", fontSize: "0.78rem", color: "#9a3412", display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <span style={{ fontSize: "1rem" }}>⏰</span>
-            <span>Showing <strong>{mealLabel(currentMeal, mealWindows[currentMeal])}</strong> menu only{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
+            <span>Showing <strong>{mealLabel(currentMeal, mealWindows[currentMeal])}</strong> menu + snacks{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
           </div>
         )}
         {menuLoading && (
