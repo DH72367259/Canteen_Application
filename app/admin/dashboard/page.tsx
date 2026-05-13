@@ -23,11 +23,24 @@ const ADMIN_NAV = [
   { id: "account",   icon: "🔑", label: "My Account" },
 ];
 
+// Helper: show/hide a section without unmounting it (preserves fetched data).
+function tab(active: boolean) {
+  return { style: { display: active ? "block" : "none" } as React.CSSProperties };
+}
+
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const { user, session, loading, logout } = useAuth();
   const [section, setSection] = useState<AdminSection>("overview");
+  // Track which sections have been visited so we mount them lazily (on first visit)
+  // then keep them alive to avoid re-fetching data on tab switches.
+  const [visited, setVisited] = useState<Set<AdminSection>>(new Set(["overview"]));
   const isSuperAdmin = user?.role === "super_admin";
+
+  const goSection = (s: AdminSection) => {
+    setSection(s);
+    setVisited(prev => { const next = new Set(prev); next.add(s); return next; });
+  };
 
   useEffect(() => {
     if (loading) return; // wait for Supabase auth to settle
@@ -59,7 +72,7 @@ export default function SuperAdminDashboard() {
         </div>
         <nav className="sidebar-nav">
           {ADMIN_NAV.map(item => (
-            <button key={item.id} className={`sidebar-link ${section === item.id ? "active" : ""}`} onClick={() => setSection(item.id as AdminSection)}>
+            <button key={item.id} className={`sidebar-link ${section === item.id ? "active" : ""}`} onClick={() => goSection(item.id as AdminSection)}>
               <span className="icon">{item.icon}</span>{item.label}
             </button>
           ))}
@@ -72,19 +85,47 @@ export default function SuperAdminDashboard() {
       </aside>
 
       <main className="main-with-sidebar">
-        {section === "overview"  && <OverviewSection />}
-        {section === "canteens"  && <CanteensSection />}
-        {section === "managers"  && <ManagersSection isSuperAdmin={isSuperAdmin} session={session} />}
-        {section === "workers"   && <WorkersSection isSuperAdmin={isSuperAdmin} session={session} />}
-        {section === "users"     && <UsersSection isSuperAdmin={isSuperAdmin} session={session} />}
-        {section === "analytics" && <AnalyticsSection />}
-        {section === "payments"  && <PaymentsSection />}
-        {section === "cities"    && <CitiesSection />}
-        {section === "orders"    && <OrdersSection session={session} isSuperAdmin={isSuperAdmin} />}
-        {section === "refunds"   && <RefundsSection session={session} isSuperAdmin={isSuperAdmin} />}
-        {section === "support"       && <SupportSection />}
-        {section === "notifications" && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
-        {section === "account"       && <AccountSection />}
+        {/* Sections are mounted lazily on first visit and kept alive thereafter.
+            display:none hides inactive ones without unmounting — data stays cached. */}
+        <div {...tab(section === "overview")}>
+          {visited.has("overview") && <OverviewSection />}
+        </div>
+        <div {...tab(section === "canteens")}>
+          {visited.has("canteens") && <CanteensSection />}
+        </div>
+        <div {...tab(section === "managers")}>
+          {visited.has("managers") && <ManagersSection isSuperAdmin={isSuperAdmin} session={session} />}
+        </div>
+        <div {...tab(section === "workers")}>
+          {visited.has("workers") && <WorkersSection isSuperAdmin={isSuperAdmin} session={session} />}
+        </div>
+        <div {...tab(section === "users")}>
+          {visited.has("users") && <UsersSection isSuperAdmin={isSuperAdmin} session={session} />}
+        </div>
+        <div {...tab(section === "analytics")}>
+          {visited.has("analytics") && <AnalyticsSection />}
+        </div>
+        <div {...tab(section === "payments")}>
+          {visited.has("payments") && <PaymentsSection />}
+        </div>
+        <div {...tab(section === "cities")}>
+          {visited.has("cities") && <CitiesSection />}
+        </div>
+        <div {...tab(section === "orders")}>
+          {visited.has("orders") && <OrdersSection session={session} isSuperAdmin={isSuperAdmin} />}
+        </div>
+        <div {...tab(section === "refunds")}>
+          {visited.has("refunds") && <RefundsSection session={session} isSuperAdmin={isSuperAdmin} />}
+        </div>
+        <div {...tab(section === "support")}>
+          {visited.has("support") && <SupportSection />}
+        </div>
+        <div {...tab(section === "notifications")}>
+          {visited.has("notifications") && <NotificationsSection session={session} isSuperAdmin={isSuperAdmin} />}
+        </div>
+        <div {...tab(section === "account")}>
+          {visited.has("account") && <AccountSection />}
+        </div>
       </main>
     </div>
   );
@@ -98,9 +139,9 @@ type AdminStats = {
   recent: { id: string; time: string; event: string; canteen: string; detail: string }[];
 };
 
-// 3-second polling against /api/admin/stats keeps the Dashboard + Analytics
-// numbers "lively updating" per spec. Single hook — share between sections.
-function useAdminStats(pollMs = 3000): AdminStats | null {
+// Polls /api/admin/stats to keep Dashboard + Analytics numbers fresh.
+// 30-second interval keeps data current without hammering Supabase auth.
+function useAdminStats(pollMs = 30_000): AdminStats | null {
   const { session } = useAuth();
   const [stats, setStats] = useState<AdminStats | null>(null);
   useEffect(() => {
@@ -123,7 +164,7 @@ function useAdminStats(pollMs = 3000): AdminStats | null {
 }
 
 function OverviewSection() {
-  const stats = useAdminStats(3000);
+  const stats = useAdminStats(30_000);
   const fmtRel = (iso: string) => {
     const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
     if (diffSec < 60)    return `${diffSec}s ago`;
@@ -1678,7 +1719,7 @@ function relativeTime(iso: string) {
 
 
 function AnalyticsSection() {
-  const stats = useAdminStats(3000);
+  const stats = useAdminStats(30_000);
   const revenueData = (stats?.monthly ?? []).map(m => ({ month: m.month, value: m.revenue }));
   const ordersData  = (stats?.monthly ?? []).map(m => ({ month: m.month, value: m.orders  }));
   const canteenShare: { name: string; pct: number; color: string }[] = [];

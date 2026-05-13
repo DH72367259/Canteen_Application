@@ -8,6 +8,24 @@ export interface RequestContext {
   email?: string
 }
 
+// ── Server-side auth cache ─────────────────────────────────────────────────
+// Caches the result of supabase.auth.getUser(token) + profile lookup so
+// repeated calls from the same browser session (stats polling, tab switches)
+// don't hammer Supabase's remote auth API.  TTL is 4 minutes — well within
+// the 1-hour Supabase JWT expiry.  Cache is keyed by the raw token so
+// a new token (after refresh) always does a fresh verification.
+interface CachedCtx { ctx: RequestContext; expiresAt: number }
+const CTX_CACHE = new Map<string, CachedCtx>()
+const CTX_TTL_MS = 4 * 60 * 1000
+
+// Prune stale entries once per minute (prevents unbounded growth).
+if (typeof global !== 'undefined' && !(global as Record<string, unknown>)['__authCachePruner']) {
+  (global as Record<string, unknown>)['__authCachePruner'] = setInterval(() => {
+    const now = Date.now()
+    for (const [k, v] of CTX_CACHE) if (v.expiresAt < now) CTX_CACHE.delete(k)
+  }, 60_000)
+}
+
 /** Decode JWT payload without verification to extract the `sub` claim.
  *  Used only to speculatively start a parallel DB query — the token is still
  *  verified by `supabase.auth.getUser()` before the context is trusted. */
@@ -25,6 +43,11 @@ export async function getRequestContext(
   if (!authHeader?.startsWith('Bearer ')) return null
 
   const token = authHeader.slice(7)
+
+  // Fast path: return cached context if it hasn't expired yet.
+  const hit = CTX_CACHE.get(token)
+  if (hit && hit.expiresAt > Date.now()) return hit.ctx
+
   const supabase = createAdminClient()
 
   // Speculatively decode the userId from the JWT so we can fire both calls in parallel.
@@ -79,10 +102,17 @@ export async function getRequestContext(
     }
   }
 
-  return {
-    uid:       user.id,
-    role,
-    canteenId,
-    email:     user.email,
-  }
+  const ctx: RequestContext = { uid: user.id, role, canteenId, email: user.email }
+
+  // Cache for subsequent calls within the same session.
+  CTX_CACHE.set(token, { ctx, expiresAt: Date.now() + CTX_TTL_MS })
+
+  return ctx
+}
+
+/** Invalidate the cache entry for a token.
+ *  Call after any mutation that changes the user's role or canteen assignment
+ *  so the next request re-reads the profile from the DB. */
+export function invalidateAuthCache(token: string): void {
+  CTX_CACHE.delete(token)
 }
