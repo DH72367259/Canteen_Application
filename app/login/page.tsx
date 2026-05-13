@@ -529,9 +529,9 @@ function LoginContent() {
         {showSetup && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ textAlign: "center", padding: "0.25rem 0 0.5rem" }}>
-              <span style={{ fontSize: "2rem" }}>{otpMethod === "sms" ? "📱" : "🎉"}</span>
+              <span style={{ fontSize: "2rem" }}>🎉</span>
               <p style={{ fontWeight: 700, color: "var(--ink-1)", margin: "0.3rem 0 0.15rem", fontSize: "1.05rem" }}>
-                {otpMethod === "sms" ? "Phone Verified!" : "Email Verified!"}
+                Email Verified!
               </p>
               <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", margin: 0 }}>
                 Complete your profile — you&apos;ll use your username or phone number to log in from now on
@@ -735,21 +735,20 @@ function LoginContent() {
             )}
             <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>
               Enter the 6-digit code sent to{" "}
-              <strong>{otpMethod === "sms" ? `+91 ${otpSentTo.replace(/^\+91/, "").replace(/(\d{5})(\d{5})/, "$1XXXXX")}` : otpSentTo}</strong>
-              {otpMethod === "sms" && <span style={{ display: "block", fontSize: "0.75rem", marginTop: "0.2rem" }}>via SMS</span>}
+              <strong>{otpSentTo}</strong>
             </p>
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
             <button
               className="btn btn-primary btn-full"
               disabled={busy || otp.length < 6}
-              onClick={otpMethod === "sms" ? handleVerifySmsOtp : handleVerifyEmailOtp}
+              onClick={handleVerifyEmailOtp}
               style={{ padding: "0.8rem" }}
             >
               {busy ? "Verifying…" : "Verify Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
-              ← Change {otpMethod === "sms" ? "phone number" : "email"}
+              ← Change email
             </button>
           </div>
         )}
