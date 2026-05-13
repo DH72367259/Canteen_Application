@@ -315,8 +315,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const meta = session.user.user_metadata ?? {}
           const hasPassword = meta.has_password === true
           const pwChangedAt: string | undefined = meta.password_changed_at
-          // 30-day password expiry — checked from JWT metadata (zero extra DB calls)
-          if (hasPassword && pwChangedAt &&
+          const metaRole: string | undefined = meta.role
+          const isStaff = metaRole && metaRole !== 'user'
+          // 30-day password expiry — students only; staff passwords never expire
+          if (!isStaff && hasPassword && pwChangedAt &&
             Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
             await supabase.auth.signOut()
             setUser(null)
@@ -444,8 +446,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
         const pwChangedAt: string | undefined = meta.password_changed_at
-        // 30-day password expiry — hard sign out
-        if (hasPassword && pwChangedAt &&
+        const metaRole: string | undefined = meta.role
+        const isStaff = metaRole && metaRole !== 'user'
+        // 30-day password expiry — students only; staff passwords never expire
+        if (!isStaff && hasPassword && pwChangedAt &&
           Date.now() - new Date(pwChangedAt).getTime() > 30 * 24 * 60 * 60 * 1000) {
           await supabase.auth.signOut()
           setUser(null)
