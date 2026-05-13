@@ -203,7 +203,7 @@ describe("POST /api/bins/[id]/mark-picked", () => {
     const req = new Request("http://localhost/api/bins/bin-123/mark-picked", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer token" },
-      body: JSON.stringify({ orderRef: "ER-456" }),
+      body: JSON.stringify({ orderRef: "RDER-456" }),
     });
     const res = await markPicked(req, ctx);
     expect(res.status).toBe(200);
