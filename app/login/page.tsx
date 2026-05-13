@@ -818,11 +818,8 @@ function LoginContent() {
             <button className="btn btn-primary btn-full" disabled={busy} onClick={handlePasswordLogin} style={{ padding: "0.8rem" }}>
               {busy ? "Signing in…" : "Sign In →"}
             </button>
-            <button className="btn btn-ghost btn-full" onClick={() => switchTab("forgot")} style={{ fontSize: "0.82rem" }}>
-              Forgot Password?
-            </button>
             <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
-              🔐 First-time login? Use the password your super admin shared. You can change it any time via Forgot Password.
+              🔐 First-time login? Use the password your super admin shared. Contact your admin to reset it if needed.
             </p>
             <div style={{ textAlign: "center", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid var(--line-2)" }}>
               <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>
