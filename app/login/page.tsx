@@ -790,62 +790,16 @@ function LoginContent() {
               Confirm your identity — we&apos;ll send a code to reset your password.
             </p>
 
-            {/* Method toggle */}
-            <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 10, overflow: "hidden", fontSize: "0.8rem" }}>
-              {(["email", "sms"] as OtpMethod[]).map(m => (
-                <button
-                  key={m}
-                  onClick={() => { setForgotMethod(m); setError(null); setInfo(null); }}
-                  style={{
-                    flex: 1, padding: "0.5rem 0.25rem", fontWeight: 600,
-                    border: "none", cursor: "pointer",
-                    background: forgotMethod === m ? "var(--orange)" : "transparent",
-                    color: forgotMethod === m ? "#fff" : "var(--ink-3)",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {m === "email" ? "📧 Email OTP" : "📱 SMS OTP"}
-                </button>
-              ))}
+            <div className="form-group">
+              <label className="form-label">Registered Email Address</label>
+              <input className="form-input" type="email" placeholder="you@example.com" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotSendCode()} autoComplete="email" />
             </div>
-
-            {forgotMethod === "email" ? (
-              <div className="form-group">
-                <label className="form-label">Registered Email Address</label>
-                <input className="form-input" type="email" placeholder="you@example.com" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgotSendCode()} autoComplete="email" />
-              </div>
-            ) : (
-              <div className="form-group">
-                <label className="form-label">Registered Mobile Number</label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <span className="form-input" style={{ width: 56, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", color: "var(--ink-3)", fontSize: "0.88rem", fontWeight: 600 }}>+91</span>
-                  <input
-                    className="form-input"
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={10}
-                    placeholder="10-digit mobile number"
-                    value={forgotPhone}
-                    onChange={e => setForgotPhone(e.target.value.replace(/\D/g, ""))}
-                    onKeyDown={e => e.key === "Enter" && handleForgotSendSmsOtp()}
-                    autoComplete="tel-national"
-                    autoFocus
-                  />
-                </div>
-              </div>
-            )}
 
             {error && <p className="error-msg">{error}</p>}
 
-            {forgotMethod === "email" ? (
-              <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotSendCode} style={{ padding: "0.8rem" }}>
-                {busy ? "Sending code…" : "Send Verification Code →"}
-              </button>
-            ) : (
-              <button className="btn btn-primary btn-full" disabled={busy || forgotPhone.replace(/\D/g, "").length !== 10} onClick={handleForgotSendSmsOtp} style={{ padding: "0.8rem" }}>
-                {busy ? "Sending OTP…" : "Send OTP →"}
-              </button>
-            )}
+            <button className="btn btn-primary btn-full" disabled={busy || !email} onClick={handleForgotSendCode} style={{ padding: "0.8rem" }}>
+              {busy ? "Sending code…" : "Send Verification Code →"}
+            </button>
 
             <button className="btn btn-ghost btn-full" onClick={() => switchTab("student")} style={{ fontSize: "0.82rem" }}>
               ← Back to Sign In
@@ -859,21 +813,20 @@ function LoginContent() {
             {info && <p style={{ fontSize: "0.82rem", color: "var(--green)", textAlign: "center", background: "var(--green-light)", borderRadius: 10, padding: "0.5rem 0.75rem" }}>{info}</p>}
             <p style={{ fontSize: "0.82rem", color: "var(--ink-3)", textAlign: "center", margin: 0 }}>
               Enter the 6-digit code sent to{" "}
-              <strong>{forgotMethod === "sms" ? `+91 ${otpSentTo.replace(/^\+91/, "").replace(/(\d{5})(\d{5})/, "$1XXXXX")}` : otpSentTo}</strong>
-              {forgotMethod === "sms" && <span style={{ display: "block", fontSize: "0.75rem", marginTop: "0.2rem" }}>via SMS</span>}
+              <strong>{otpSentTo}</strong>
             </p>
             <OtpInput value={otp} onChange={setOtp} length={6} />
             {error && <p className="error-msg">{error}</p>}
             <button
               className="btn btn-primary btn-full"
               disabled={busy || otp.length < 6}
-              onClick={forgotMethod === "sms" ? handleForgotVerifySmsOtp : handleForgotVerifyOtp}
+              onClick={handleForgotVerifyOtp}
               style={{ padding: "0.8rem" }}
             >
               {busy ? "Verifying…" : "Verify Code →"}
             </button>
             <button className="btn btn-ghost btn-full" onClick={() => { setOtpSentTo(null); setOtp(""); setError(null); setInfo(null); }} style={{ fontSize: "0.82rem" }}>
-              ← Change {forgotMethod === "sms" ? "phone number" : "email"}
+              ← Change email
             </button>
           </div>
         )}
