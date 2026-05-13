@@ -16,7 +16,7 @@ export async function sendSmsOtp(
 
   try {
     const res = await fetch(
-      `https://www.fast2sms.com/dev/bulkV2?authorization=${encodeURIComponent(apiKey)}&route=otp&variables_values=${code}&flash=0&numbers=${digits}`,
+      `https://www.fast2sms.com/dev/bulkV2?authorization=${encodeURIComponent(apiKey)}&route=q&message=Your+NoQX+order+OTP+is+${code}.+Do+not+share+this+with+anyone.&numbers=${digits}&flash=0`,
       {
         method: "GET",
         headers: { "cache-control": "no-cache" },
