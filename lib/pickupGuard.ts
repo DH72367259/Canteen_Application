@@ -48,9 +48,10 @@ export async function findUnfulfilledSiblings(
     query = query.eq("slot_id", order.slot_id);
   } else if (order.slot_label) {
     query = query.eq("slot_label", order.slot_label);
+  } else {
+    // No slot info — skip guard entirely so we never block across different slots.
+    return null;
   }
-  // If neither slot field is present we fall back to canteen-wide check
-  // (preserves previous behaviour for orders created before slot fields existed).
 
   const { data: siblings } = await query;
 
