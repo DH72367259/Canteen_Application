@@ -94,13 +94,13 @@ export default function SuperAdminDashboard() {
           {visited.has("canteens") && <CanteensSection />}
         </div>
         <div {...tab(section === "managers")}>
-          {visited.has("managers") && <ManagersSection isSuperAdmin={isSuperAdmin} session={session} />}
+          {visited.has("managers") && <ManagersSection isSuperAdmin={isSuperAdmin} />}
         </div>
         <div {...tab(section === "workers")}>
-          {visited.has("workers") && <WorkersSection isSuperAdmin={isSuperAdmin} session={session} />}
+          {visited.has("workers") && <WorkersSection isSuperAdmin={isSuperAdmin} />}
         </div>
         <div {...tab(section === "users")}>
-          {visited.has("users") && <UsersSection isSuperAdmin={isSuperAdmin} session={session} />}
+          {visited.has("users") && <UsersSection isSuperAdmin={isSuperAdmin} />}
         </div>
         <div {...tab(section === "analytics")}>
           {visited.has("analytics") && <AnalyticsSection />}
@@ -651,7 +651,8 @@ async function adminFetch(path: string, session: { access_token?: string } | nul
 // ── ManagersSection — onboard / offboard canteen managers ─────────────────
 interface ManagerRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
 
-function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
+function ManagersSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const { session } = useAuth();
   const [managers, setManagers] = useState<ManagerRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
@@ -683,7 +684,7 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (session?.access_token) load(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate() {
     setFormBusy(true); setFormError(null);
@@ -844,7 +845,8 @@ function ManagersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; ses
 interface WorkerRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
 interface CanteenOption { id: string; name: string; city: string; college: string; }
 
-function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
+function WorkersSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const { session } = useAuth();
   const [workers,   setWorkers]   = useState<WorkerRow[]>([]);
   const [canteens,  setCanteens]  = useState<CanteenOption[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -892,7 +894,7 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (session?.access_token) load(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate() {
     if (!form.canteen_id) { setFormError("Please select a canteen."); return; }
@@ -1158,7 +1160,8 @@ function WorkersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sess
 }
 
 // ── UsersSection — all platform users from Supabase ───────────────────────
-function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; session: { access_token?: string } | null }) {
+function UsersSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const { session } = useAuth();
   interface UserRow { uid: string; name: string; email: string; phone: string | null; role: string; canteen_id: string | null; created_at: string; }
   const [users,   setUsers]   = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1207,7 +1210,7 @@ function UsersSection({ isSuperAdmin, session }: { isSuperAdmin: boolean; sessio
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (session?.access_token) load(); }, [session?.access_token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreateCoAdmin() {
     if (!form.phone.trim()) { setFormError("Phone number is required."); return; }

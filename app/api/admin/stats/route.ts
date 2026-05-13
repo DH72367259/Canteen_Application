@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     { data: orders6mo },
     { data: recentRows },
   ] = await Promise.all([
-    supabase.from("canteens").select("id", { head: true, count: "exact" }).eq("is_active", true),
+    supabase.from("canteens").select("id", { head: true, count: "exact" }).or("is_active.eq.true,status.eq.active"),
     supabase.from("profiles").select("id", { head: true, count: "exact" }),
     supabase.from("orders").select("id, total_amount, status, canteen_id, created_at").gte("created_at", dayStartUtc.toISOString()),
     supabase.from("orders").select("id, total_amount, status, created_at").gte("created_at", monthStartUtc.toISOString()),
