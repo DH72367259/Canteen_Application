@@ -14,7 +14,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase-server";
-import { sendSmsOtp } from "@/lib/fast2sms";
+import { sendSmsOtp } from "@/lib/twilio-sms";
 import { getRedisClient } from "@/lib/redis-client";
 
 export const dynamic = "force-dynamic";
