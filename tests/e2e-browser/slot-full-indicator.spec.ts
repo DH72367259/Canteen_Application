@@ -54,16 +54,10 @@ test.describe("Slot Full Indicator", () => {
   });
 
   test("student menu displays available slots", async ({ page }) => {
-    // Navigate to menu
+    // Navigate to menu (public page — no auth needed)
     await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login as student
-    await page.fill('input[type="text"]', studentEmail);
-    await page.fill('input[type="password"]', studentPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/dashboard\/menu/, { timeout: 10_000 });
 
     // Wait for slots to load
     await page.waitForTimeout(1000);
@@ -131,16 +125,10 @@ test.describe("Slot Full Indicator", () => {
         });
     }
 
-    // Navigate to menu
+    // Navigate to menu (public page — no auth needed)
     await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login as student
-    await page.fill('input[type="text"]', studentEmail);
-    await page.fill('input[type="password"]', studentPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/dashboard\/menu/, { timeout: 10_000 });
 
     // Wait for slots to load
     await page.waitForTimeout(1500);

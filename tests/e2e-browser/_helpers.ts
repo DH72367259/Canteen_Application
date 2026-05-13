@@ -99,7 +99,7 @@ export async function provisionStaff(
     email,
     password,
     email_confirm: true,
-    user_metadata: { name: `E2E ${role} ${suffix}` },
+    user_metadata: { name: `E2E ${role} ${suffix}`, role },
   });
   if (create.error) throw create.error;
   const id = create.data.user.id;

@@ -19,14 +19,16 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-// Whitelist accounts to preserve (NEVER delete)
-const KEEP_EMAILS = [
-  'admin@noqx.test',
-  'canteen1@noqx.test',
-  'canteen2@noqx.test',
-  'worker1@noqx.test',
-  'coadmin@noqx.test',
+// Whitelist accounts to preserve (NEVER delete) — role must be kept in user_metadata
+// so the auth-context JWT fallback works correctly when the DB fetch is slow in CI.
+const WHITELIST = [
+  { email: 'admin@noqx.test',    role: 'super_admin'   },
+  { email: 'canteen1@noqx.test', role: 'canteen_admin' },
+  { email: 'canteen2@noqx.test', role: 'canteen_admin' },
+  { email: 'worker1@noqx.test',  role: 'worker'        },
+  { email: 'coadmin@noqx.test',  role: 'co_admin'      },
 ];
+const KEEP_EMAILS = WHITELIST.map(w => w.email);
 
 async function cleanup() {
   console.log('🧹 Deep cleanup - comprehensive reset\n');
@@ -151,7 +153,22 @@ async function cleanup() {
       console.log('   ✓ No non-whitelist profiles to delete');
     }
 
-    // ── Step 6: Verify cleanup ─────────────────────────────────────────────────
+    // ── Step 6: Ensure whitelist user_metadata includes role ──────────────────
+    // The auth-context JWT fallback reads user_metadata.role when the DB profile
+    // fetch is slow. Without this, whitelist users appear as role='user' in CI.
+    console.log('\n🔑 Ensuring whitelist users have role in user_metadata...');
+    const { data: { users: allAuthUsers } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    for (const w of WHITELIST) {
+      const match = (allAuthUsers || []).find(u => (u.email || '').toLowerCase() === w.email);
+      if (!match) { console.log(`   ⚠️  Whitelist user not found: ${w.email}`); continue; }
+      const { error: metaErr } = await supabase.auth.admin.updateUserById(match.id, {
+        user_metadata: { ...match.user_metadata, role: w.role },
+      });
+      if (metaErr) console.log(`   ⚠️  Failed to set role for ${w.email}: ${metaErr.message}`);
+      else console.log(`   ✓ ${w.email} → role=${w.role}`);
+    }
+
+    // ── Step 7: Verify cleanup ─────────────────────────────────────────────────
     console.log('\n✅ Verification - Remaining whitelist users:');
     const { data: remaining } = await supabase
       .from('profiles')

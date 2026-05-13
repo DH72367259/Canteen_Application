@@ -56,7 +56,7 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       email: `e2e-manager-inv-${Date.now()}@noqx.test`,
       password: "Manager@12345",
       email_confirm: true,
-      user_metadata: { name: "Inventory Manager" },
+      user_metadata: { name: "Inventory Manager", role: "canteen_admin" },
     });
     if (managerCreate.error) throw managerCreate.error;
     managerId = managerCreate.data.user.id;
@@ -117,7 +117,7 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     let availableBadge = item1Card.locator('text=/✓|Available/');
-    expect(availableBadge).toBeVisible();
+    await expect(availableBadge).toBeVisible();
 
     // Manager marks item 1 as unavailable
     await admin
@@ -139,13 +139,13 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     const outOfStockBadge = item1Card.locator('text=/⛔|Out of Stock/');
-    expect(outOfStockBadge).toBeVisible();
+    await expect(outOfStockBadge).toBeVisible();
 
     // Button should be disabled
     const outOfStockButton = item1Card.locator(
       'button:has-text("OUT OF STOCK")',
     );
-    expect(outOfStockButton).toBeDisabled();
+    await expect(outOfStockButton).toBeDisabled();
 
     await studentPage.close();
 
@@ -186,7 +186,7 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     let outOfStockBadge = item1Card.locator('text=/⛔|Out of Stock/');
-    expect(outOfStockBadge).toBeVisible();
+    await expect(outOfStockBadge).toBeVisible();
 
     // Manager marks item as available again
     await admin
@@ -208,11 +208,11 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     const availableBadge = item1Card.locator('text=/✓|Available/');
-    expect(availableBadge).toBeVisible();
+    await expect(availableBadge).toBeVisible();
 
     // Button should be enabled
     const addButton = item1Card.locator('button:has-text("ADD")');
-    expect(addButton).toBeEnabled();
+    await expect(addButton).toBeEnabled();
 
     await studentPage.close();
   });
@@ -253,8 +253,8 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
 
     let badge1 = item1Card.locator('text=/✓|Available/');
     let badge2 = item2Card.locator('text=/✓|Available/');
-    expect(badge1).toBeVisible();
-    expect(badge2).toBeVisible();
+    await expect(badge1).toBeVisible();
+    await expect(badge2).toBeVisible();
 
     // Manager marks only item 1 as sold out
     await admin
@@ -276,7 +276,7 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     const outOfStockBadge = item1Card.locator('text=/⛔|Out of Stock/');
-    expect(outOfStockBadge).toBeVisible();
+    await expect(outOfStockBadge).toBeVisible();
 
     // Item 2 should still be available
     item2Card = studentPage
@@ -284,7 +284,7 @@ test.describe("Inventory Toggling & Real-time Availability", () => {
       .first()
       .locator("..");
     badge2 = item2Card.locator('text=/✓|Available/');
-    expect(badge2).toBeVisible();
+    await expect(badge2).toBeVisible();
 
     await studentPage.close();
 

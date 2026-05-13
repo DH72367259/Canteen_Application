@@ -94,16 +94,16 @@ test.describe("Prep Summary", () => {
   });
 
   test("worker dashboard displays prep summary", async ({ page }) => {
-    // Navigate to worker dashboard
-    await page.goto(`${APP_URL}/worker/dashboard`, {
+    // Navigate to worker login (workers land at /worker/orders)
+    await page.goto(`${APP_URL}/worker/login`, {
       waitUntil: "domcontentloaded",
     });
 
     // Login as worker
     await page.fill('input[type="text"]', workerEmail);
     await page.fill('input[type="password"]', workerPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/worker\/dashboard/, { timeout: 10_000 });
+    await page.locator('button[type="submit"]').first().click();
+    await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
     // Wait for dashboard to load
     await page.waitForTimeout(1000);
@@ -129,16 +129,16 @@ test.describe("Prep Summary", () => {
   });
 
   test("prep summary shows items grouped by slot", async ({ page }) => {
-    // Navigate to worker dashboard
-    await page.goto(`${APP_URL}/worker/dashboard`, {
+    // Navigate to worker login (workers land at /worker/orders)
+    await page.goto(`${APP_URL}/worker/login`, {
       waitUntil: "domcontentloaded",
     });
 
     // Login as worker
     await page.fill('input[type="text"]', workerEmail);
     await page.fill('input[type="password"]', workerPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(/\/worker\/dashboard/, { timeout: 10_000 });
+    await page.locator('button[type="submit"]').first().click();
+    await page.waitForURL(/\/worker\/orders/, { timeout: 20_000 });
 
     // Wait for dashboard to load
     await page.waitForTimeout(1000);

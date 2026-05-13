@@ -87,12 +87,12 @@ test.describe("Item Visibility & Availability", () => {
     // Should show "✓ Available" or "Available" badge
     const availableBadge = itemCard.locator('text=/✓|Available/');
     await availableBadge.waitFor({ state: "visible" });
-    expect(availableBadge).toBeVisible();
+    await expect(availableBadge).toBeVisible();
 
     // Should show ADD button (enabled)
     const addButton = itemCard.getByText("ADD").first();
-    expect(addButton).toBeVisible();
-    expect(addButton).toBeEnabled();
+    await expect(addButton).toBeVisible();
+    await expect(addButton).toBeEnabled();
   });
 
   test("should show items greyed out with Out of Stock status when sold out", async ({ page, context }) => {
@@ -107,17 +107,11 @@ test.describe("Item Visibility & Availability", () => {
     // Invalidate cache by waiting a moment
     await page.waitForTimeout(100);
 
-    // Navigate to menu in a new context to bypass cache
+    // Navigate to menu in a new page to bypass cache (menu page is public — no auth needed)
     const newPage = await context.newPage();
     await newPage.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login
-    await newPage.fill('input[type="email"]', studentEmail);
-    await newPage.fill('input[type="password"]', studentPassword);
-    await newPage.getByRole("button", { name: /sign in|login/i }).first().click();
-    await newPage.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Find the test item - it should still be visible!
     const itemCard = newPage
@@ -131,13 +125,13 @@ test.describe("Item Visibility & Availability", () => {
       'text=/⛔|Out of Stock/',
     );
     await outOfStockBadge.waitFor({ state: "visible" });
-    expect(outOfStockBadge).toBeVisible();
+    await expect(outOfStockBadge).toBeVisible();
 
     // Should show disabled OUT OF STOCK button
     const outOfStockButton = itemCard.getByText("OUT OF STOCK").first();
     try {
-      expect(outOfStockButton).toBeVisible();
-      expect(outOfStockButton).toBeDisabled();
+      await expect(outOfStockButton).toBeVisible();
+      await expect(outOfStockButton).toBeDisabled();
     } catch {
       // Out of stock button may not be visible
     }
@@ -166,16 +160,10 @@ test.describe("Item Visibility & Availability", () => {
       .update({ is_sold_out: true })
       .eq("id", itemId);
 
-    // Navigate to menu
+    // Navigate to menu (public page — no auth needed)
     await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login
-    await page.fill('input[type="email"]', studentEmail);
-    await page.fill('input[type="password"]', studentPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Try to click ADD button - should be disabled
     const itemCard = page.locator(`text=${itemName}`).first().locator("..");
@@ -203,12 +191,6 @@ test.describe("Item Visibility & Availability", () => {
     await page.goto(`${APP_URL}/dashboard/menu/${canteenId}`, {
       waitUntil: "domcontentloaded",
     });
-
-    // Login
-    await page.fill('input[type="email"]', studentEmail);
-    await page.fill('input[type="password"]', studentPassword);
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
-    await page.waitForURL(`/dashboard/menu/${canteenId}`);
 
     // Find any item in the menu
     const itemCards = page.locator(".card");

@@ -132,7 +132,7 @@ async function main() {
     const { error } = await sb.auth.admin.updateUserById(match.id, {
       password: w.password,
       email_confirm: true,
-      user_metadata: { has_password: true, password_changed_at: new Date().toISOString(), must_change_password: false },
+      user_metadata: { has_password: true, password_changed_at: new Date().toISOString(), must_change_password: false, role: w.role },
     });
     if (error) warn(`pw reset ${w.email}: ${error.message}`);
     else ok(`reset password: ${w.email} → ${w.password}`);

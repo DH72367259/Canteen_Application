@@ -51,7 +51,7 @@ test.describe("negative scenarios — auth & RBAC", () => {
     await page.getByRole("button", { name: /canteen login|login/i }).first().click();
     await page.locator('input[type="email"]').first().fill(WHITELIST.superAdmin.email);
     await page.locator('input[type="password"]').first().fill("WrongPassword123");
-    await page.getByRole("button", { name: /sign in|login/i }).first().click();
+    await page.locator('button:has-text("Sign In")').first().click();
     // Should NOT redirect — should stay on /login and show an error message.
     await page.waitForTimeout(3000);
     expect(page.url()).toContain("/login");
