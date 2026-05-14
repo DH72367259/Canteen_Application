@@ -156,10 +156,10 @@ export async function GET(request: Request) {
       const convenience = subscriptionFromThisPayment || hasActiveProAt(userSubscriptions, o.created_at) ? 0 : 4;
       const deductedFromOrder = platformFee + gstFee;
       const totalAdmin = deductedFromOrder + extraBin + convenience + proRevenue;
-      // Pro Revenue is a direct student→platform subscription payment; it is NOT
-      // deducted from the canteen's payout. Only platform fee, GST, extra-bin,
-      // and convenience charges come out of what the canteen receives.
-      const deductedFromCanteen = deductedFromOrder + extraBin + convenience;
+      // Pro Revenue is a direct student→platform subscription payment — not deducted from canteen.
+      // Convenience fee is charged on top of food price to the student — not deducted from canteen either.
+      // Only platform fee, GST, and extra-bin charges come out of what the canteen receives.
+      const deductedFromCanteen = deductedFromOrder + extraBin;
       const net = r2(Math.max(0, gross - deductedFromCanteen));
       return { gross, platformFee, gstFee, extraBin, convenience, proRevenue, deductedFromOrder, totalAdmin, net };
     });
