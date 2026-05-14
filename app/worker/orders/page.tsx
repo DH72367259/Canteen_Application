@@ -127,7 +127,31 @@ function aggregateBySlot(orders: WorkerOrder[]): SlotAggregate[] {
 
   return Array.from(bySlot.values())
     .map((slot) => ({ ...slot, binPlans: slot.binPlans.sort((a, b) => a.binLabel.localeCompare(b.binLabel)) }))
-    .sort((a, b) => a.slot.localeCompare(b.slot));
+    // Sort by actual start time (numeric), NOT alphabetically — "1:00 PM" must come before "12:00 PM"
+    .sort((a, b) => {
+      const aMin = parseSlotRange(a.slot)?.startMin ?? 9999;
+      const bMin = parseSlotRange(b.slot)?.startMin ?? 9999;
+      return aMin - bMin;
+    });
+}
+
+// Pick which prep slot to show: prefer the NEXT slot starting within 15 min
+// (so workers start preparing early) over the currently active slot.
+function pickBestPrepSlot(summaries: SlotAggregate[]): SlotAggregate | null {
+  if (!summaries.length) return null;
+  const now = getNowISTMin();
+  // Priority 1 — upcoming slot starting within 15 min
+  const upcoming = summaries.find(s => {
+    const r = parseSlotRange(s.slot);
+    return r ? r.startMin > now && r.startMin <= now + 15 : false;
+  });
+  if (upcoming) return upcoming;
+  // Priority 2 — currently active slot (started, not yet ended)
+  const active = summaries.find(s => {
+    const r = parseSlotRange(s.slot);
+    return r ? r.startMin <= now && r.endMin > now : false;
+  });
+  return active ?? summaries[0];
 }
 
 export default function WorkerOrdersPage() {
@@ -238,7 +262,7 @@ export default function WorkerOrdersPage() {
   // Prep tab: only the immediately upcoming slot (15-min window, no past slots)
   const prepOrders = orders.filter((o) => isPrepRelevant(o.pickup_slot));
   const prepSummary = aggregateBySlot(prepOrders);
-  const selectedSummary = prepSummary[0] ?? null;
+  const selectedSummary = pickBestPrepSlot(prepSummary);
 
   if (loading || fetching) return <div className="page-loading"><div className="spinner" /></div>;
 
