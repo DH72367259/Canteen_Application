@@ -155,8 +155,9 @@ export async function GET(request: Request) {
       const convenience = subscriptionFromThisPayment || hasActiveProAt(userSubscriptions, o.created_at) ? 0 : 4;
       const platformOrderTotal = platformFee + gst;
       const totalAdmin = platformOrderTotal + extraBin + convenience;
-      // Convenience fee is charged on top of food price to the student — do NOT deduct from canteen gross
-      const netToCanteen = r2(Math.max(0, gross - platformOrderTotal - extraBin));
+      // Only platform fee + extra-bin are deducted from canteen.
+      // GST (18% on platform fee) and convenience fee are collected from students — not from canteen.
+      const netToCanteen = r2(Math.max(0, gross - platformFee - extraBin));
       return {
         gross,
         platformFee,

@@ -227,7 +227,10 @@ function CartContent() {
   const proAddon   = proSelectedNow ? 69 : 0;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
-  const payable    = Math.max(0, subtotal + convFee + extraBinFee + proAddon);
+  const cgst       = Math.round(subtotal * 0.025 * 100) / 100;
+  const sgst       = Math.round(subtotal * 0.025 * 100) / 100;
+  const gstTotal   = cgst + sgst;
+  const payable    = Math.max(0, subtotal + gstTotal + convFee + extraBinFee + proAddon);
 
   function updateQty(id: string, delta: number) {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
@@ -693,6 +696,12 @@ function CartContent() {
           <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.75rem" }}>Bill Summary</h2>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem" }}>
             <span>Subtotal</span><span>₹{subtotal}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.2rem", color: "#64748b" }}>
+            <span>CGST @ 2.5%</span><span>₹{cgst.toFixed(2)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#64748b" }}>
+            <span>SGST @ 2.5%</span><span>₹{sgst.toFixed(2)}</span>
           </div>
           {extraBinFee > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#9a3412" }}>
