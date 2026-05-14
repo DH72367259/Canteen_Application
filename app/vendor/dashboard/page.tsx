@@ -1499,12 +1499,37 @@ type SalesData = {
   monthly: { month: string; revenue: number; orders: number }[];
 };
 
+type ItemSalesPeriod = "today" | "week" | "month";
+type ItemSalesItem = { name: string; category: string; quantity: number; revenue: number; rank: number };
+type ItemSalesData = {
+  period: string; period_label: string; period_start: string; period_end: string;
+  total_quantity: number; total_revenue: number; total_orders: number;
+  items: ItemSalesItem[];
+};
+
 function VendorSalesView({ session }: { session: Session | null }) {
   // Granularity selector drives which chart + summary the vendor sees. We
   // poll /api/canteen/sales every 5s so the figures move within seconds of
   // a new student order landing.
   const [data, setData] = useState<SalesData | null>(null);
   const [view, setView] = useState<SalesGranularity>("daily");
+  const [itemPeriod, setItemPeriod] = useState<ItemSalesPeriod>("week");
+  const [itemData, setItemData] = useState<ItemSalesData | null>(null);
+  const [itemLoading, setItemLoading] = useState(false);
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    setItemLoading(true);
+    fetch(`/api/canteen/item-sales?period=${itemPeriod}`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setItemData(j); })
+      .catch(() => {})
+      .finally(() => setItemLoading(false));
+  }, [session?.access_token, itemPeriod]);
+
   useEffect(() => {
     const token = session?.access_token;
     if (!token) return;
@@ -1601,6 +1626,66 @@ function VendorSalesView({ session }: { session: Session | null }) {
                 <span style={{ fontSize: "0.6rem", color: "var(--ink-3)", whiteSpace: "nowrap" }}>{b.label}</span>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Item Sales Breakdown ──────────────────────────────────────────── */}
+      <div className="card" style={{ padding: "1.25rem", marginTop: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>Item Sales Breakdown</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>
+              {itemData ? `${itemData.total_quantity} units sold · ₹${itemData.total_revenue.toFixed(0)} revenue · ${itemData.total_orders} orders` : "Loading…"}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.35rem" }}>
+            {(["today", "week", "month"] as ItemSalesPeriod[]).map(p => (
+              <button key={p} onClick={() => setItemPeriod(p)}
+                className={`btn ${itemPeriod === p ? "btn-primary" : "btn-ghost"}`}
+                style={{ fontSize: "0.78rem", padding: "0.3rem 0.65rem", textTransform: "capitalize" }}>
+                {p === "today" ? "Today" : p === "week" ? "This Week" : "This Month"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {itemLoading && !itemData ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>Loading…</div>
+        ) : !itemData || itemData.items.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--ink-3)" }}>No items sold in this period.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {/* Header */}
+            <div style={{ display: "grid", gridTemplateColumns: "2rem 1fr 6rem 5rem 5rem", gap: "0.5rem", padding: "0 0.25rem", fontSize: "0.7rem", color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <span>#</span><span>Item</span><span style={{ textAlign: "right" }}>Qty Sold</span><span style={{ textAlign: "right" }}>Revenue</span><span style={{ textAlign: "right" }}>Avg/unit</span>
+            </div>
+            {/* Max quantity for bar sizing */}
+            {(() => {
+              const maxQty = Math.max(1, ...itemData.items.map(i => i.quantity));
+              return itemData.items.map((item) => (
+                <div key={item.rank} style={{ display: "grid", gridTemplateColumns: "2rem 1fr 6rem 5rem 5rem", gap: "0.5rem", alignItems: "center", padding: "0.5rem 0.25rem", borderRadius: 8, background: item.rank === 1 ? "rgba(255,109,0,0.06)" : item.rank === 2 ? "rgba(255,109,0,0.03)" : "transparent" }}>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: item.rank <= 3 ? "var(--orange)" : "var(--ink-3)", textAlign: "center" }}>
+                    {item.rank <= 3 ? ["🥇","🥈","🥉"][item.rank - 1] : item.rank}
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--ink-1)" }}>{item.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.2rem" }}>
+                      {item.category && (
+                        <span style={{ fontSize: "0.65rem", background: "var(--orange-light, #fff3eb)", color: "var(--orange)", padding: "0.1rem 0.4rem", borderRadius: 4, fontWeight: 500 }}>{item.category}</span>
+                      )}
+                      {/* quantity bar */}
+                      <div style={{ flex: 1, height: 4, background: "#f0f0f0", borderRadius: 2, maxWidth: 120 }}>
+                        <div style={{ height: "100%", width: `${(item.quantity / maxQty) * 100}%`, background: "var(--orange)", borderRadius: 2, transition: "width 0.4s" }} />
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{ textAlign: "right", fontWeight: 700, fontSize: "0.9rem", color: "var(--ink-1)" }}>{item.quantity}</span>
+                  <span style={{ textAlign: "right", fontSize: "0.82rem", color: "var(--ink-2)" }}>₹{item.revenue.toFixed(0)}</span>
+                  <span style={{ textAlign: "right", fontSize: "0.78rem", color: "var(--ink-3)" }}>₹{item.quantity > 0 ? (item.revenue / item.quantity).toFixed(0) : "—"}</span>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>
