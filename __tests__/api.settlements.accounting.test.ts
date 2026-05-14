@@ -155,12 +155,13 @@ describe("settlement accounting regressions", () => {
     expect(json.summary_stats.total_convenience_and_other_charges).toBe(4);
     expect(json.summary_stats.total_pro_revenue).toBe(69);
     expect(json.summary_stats.total_admin_earnings).toBe(79.67);
-    // o-1: 100 - (2+0.36+2+4)=8.36 = 91.64
-    // o-2: 98  - (1.96+0.35+0+0)=2.31 = 95.69  (Pro subscriber; no extraBin/convenience)
-    expect(json.summary_stats.total_net_payable).toBe(187.33);
+    // Canteen pays platform fee ONLY. Extra-bin, convenience, GST → admin from student.
+    // o-1: net = 100 - 2(platformFee) = 98
+    // o-2: net = 98  - 1.96(platformFee) = 96.04  (Pro subscriber; no extraBin/convenience)
+    expect(json.summary_stats.total_net_payable).toBe(194.04);
 
     expect(json.canteens[0].gross_amount).toBe(198);
-    expect(json.canteens[0].net_payable).toBe(187.33);
+    expect(json.canteens[0].net_payable).toBe(194.04);
     expect(json.canteens[0].convenience_charge_amount).toBe(4);
     expect(json.canteens[0].extra_bin_charge_amount).toBe(2);
   });
@@ -189,9 +190,8 @@ describe("settlement accounting regressions", () => {
     const expectedPlatformFee = Math.round((orderGross * snapshotChargePct / 100) * 100) / 100;
     const expectedGstFee = Math.round((expectedPlatformFee * snapshotGstPct / 100) * 100) / 100;
     const expectedTotalPlatformEarnings = Math.round((expectedPlatformFee + expectedGstFee) * 100) / 100;
-    // u-1 has no Pro subscription → convenience = 4; extraBin = 0
-    const expectedConvenience = 4;
-    const expectedNetPayable = Math.round((orderGross - expectedPlatformFee - expectedGstFee - expectedConvenience) * 100) / 100;
+    // Canteen pays platform fee ONLY — convenience, GST on fee, extra-bin all go to admin from student
+    const expectedNetPayable = Math.round((orderGross - expectedPlatformFee) * 100) / 100;
 
     // Use a date within the current ISO week so the order falls inside the report window.
     const today = new Date();
@@ -234,7 +234,7 @@ describe("settlement accounting regressions", () => {
     expect(json.totals.platform_fee).toBe(expectedPlatformFee);
     expect(json.totals.gst_on_fee).toBe(expectedGstFee);
     expect(json.totals.total_platform_earnings).toBe(expectedTotalPlatformEarnings);
-    // Net = gross - platformFee - gst - extraBin(0) - convenience(4)
+    // Net = gross - platformFee only (canteen pays platform fee only)
     expect(json.totals.net_payable).toBe(expectedNetPayable);
   });
 
@@ -287,9 +287,9 @@ describe("settlement accounting regressions", () => {
     expect(json.summary.total_gst).toBe(0.36);
     expect(json.summary.total_extra_bin_charges).toBe(2);
     expect(json.summary.total_convenience_and_other_charges).toBe(4);
-    // gross=100, platformFee=2, gst=0.36, extraBin=2, convenience=4 → net = 91.64
-    expect(json.summary.net_earnings).toBe(91.64);
+    // Canteen pays platform fee ONLY → net = 100 - 2 = 98
+    expect(json.summary.net_earnings).toBe(98);
     expect(json.orders[0].gross_amount).toBe(100);
-    expect(json.orders[0].net_earnings).toBe(91.64);
+    expect(json.orders[0].net_earnings).toBe(98);
   });
 });

@@ -167,8 +167,9 @@ export async function GET(request: Request) {
     const userSubscriptions = subscriptionsByUser.get((o as { user_id?: string | null }).user_id ?? "") ?? [];
     const convenienceAndOther = subscriptionFromThisPayment || hasActiveProAt(userSubscriptions, o.created_at) ? 0 : 4;
     const totalDeductedFromOrder = rawFee + gstOnFee;
-    const totalDeductedFromCanteen = totalDeductedFromOrder + extraBin + convenienceAndOther;
-    const net = r2(Math.max(0, gross - totalDeductedFromCanteen));
+    const totalDeductedFromCanteen = totalDeductedFromOrder + extraBin + convenienceAndOther; // total admin revenue
+    // Canteen pays platform fee only; extra-bin, convenience, and GST go to admin from student
+    const net = r2(Math.max(0, gross - rawFee));
     return {
       order_id:     o.id,
       order_ref:    o.id.slice(-8).toUpperCase(),
