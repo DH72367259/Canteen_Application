@@ -12,7 +12,8 @@ export async function GET(request: Request) {
   // Both super_admin and co_admin can view platform stats. co_admin is the
   // operations / read-only counterpart and the /system dashboard depends on
   // this endpoint.
-  if (!ctx || (ctx.role !== "super_admin" && ctx.role !== "co_admin")) {
+  if (!ctx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (ctx.role !== "super_admin" && ctx.role !== "co_admin") {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const supabase = createAdminClient();

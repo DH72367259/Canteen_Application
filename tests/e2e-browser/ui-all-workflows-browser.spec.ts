@@ -153,16 +153,14 @@ test("1. login page loads with Student and Canteen Login tabs", async ({ page })
   await expect(page.getByText(/Canteen Login/i).first()).toBeVisible({ timeout: 10_000 });
 });
 
-test("2. student tab shows email registration form", async ({ page }) => {
+test("2. student tab shows login form", async ({ page }) => {
   await page.goto(`${APP_URL}/login`, { waitUntil: "domcontentloaded" });
-  // Student tab should already be active by default
-  const emailInput = page.locator('input[type="email"]').first();
+  // Student tab shows username/phone + password sign-in by default
   try {
-    await expect(emailInput).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator("body")).toContainText(/username|mobile|sign in|password/i, { timeout: 8_000 });
   } catch {
-    // may require clicking the Student tab first
     await page.getByText(/^Student/i).first().click();
-    await expect(emailInput).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("body")).toContainText(/username|mobile|sign in|password/i, { timeout: 5_000 });
   }
 });
 
@@ -314,28 +312,28 @@ test("19. worker orders list shows seeded placed_in_bin order", async ({ page })
   }
 });
 
-test("20. worker Prep Summary tab is visible in bottom nav", async ({ page }) => {
+test("20. worker Prep Plan tab is visible in bottom nav", async ({ page }) => {
   await loginWorkerUI(page);
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
   await expect(prepTab).toBeVisible({ timeout: 12_000 });
 });
 
-test("21. worker switches to Prep Summary tab — content loads", async ({ page }) => {
+test("21. worker switches to Prep Plan tab — content loads", async ({ page }) => {
   await loginWorkerUI(page);
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
   await expect(prepTab).toBeVisible({ timeout: 12_000 });
   await prepTab.click();
   await page.waitForTimeout(1500);
   await expect(page.locator("body")).toBeVisible();
-  // Must show Prep Summary heading or slot tab or empty state
-  await expect(page.locator("body")).toContainText(/Prep Summary|No active|AM|PM/i, { timeout: 8_000 });
+  // Must show Prep Plan/Summary heading or slot tab or empty state
+  await expect(page.locator("body")).toContainText(/Prep Plan|Prep Summary|No active|AM|PM/i, { timeout: 8_000 });
 });
 
-test("22. prep summary shows 'Auto-updates every 30s' label", async ({ page }) => {
+test("22. prep plan shows 'Auto-updates every 30s' label", async ({ page }) => {
   await loginWorkerUI(page);
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
   await prepTab.click();
   await page.waitForTimeout(1500);
   try {
@@ -359,18 +357,18 @@ test("23. worker bins/waste-tracking page is reachable", async ({ page }) => {
   await expect(page.locator("body")).toBeVisible();
 });
 
-test("24. worker can navigate between Orders / Prep Summary / Bins tabs", async ({ page }) => {
+test("24. worker can navigate between Orders / Prep Plan / Bins tabs", async ({ page }) => {
   await loginWorkerUI(page);
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
   // Orders tab (default)
   await expect(page.locator("body")).toContainText(/orders|caught up|bin/i, { timeout: 10_000 });
 
-  // Prep Summary tab
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  // Prep Plan tab
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
   await prepTab.click();
   await page.waitForTimeout(800);
-  await expect(page.locator("body")).toContainText(/Prep Summary|No active|AM|PM/i, { timeout: 8_000 });
+  await expect(page.locator("body")).toContainText(/Prep Plan|Prep Summary|No active|AM|PM/i, { timeout: 8_000 });
 
   // Back to Orders tab
   const ordersTab = page.getByText(/^Orders$/i).first();
@@ -699,13 +697,18 @@ test("48. F12 keydown is cancelled by DisableDevTools", async ({ page }) => {
   await page.goto(`${APP_URL}/login`, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 
-  // Inject a listener BEFORE the guard fires to capture whether defaultPrevented
+  // DisableDevTools uses stopPropagation() in capture phase, which can prevent
+  // bubble-phase listeners from seeing the event. Use capture phase + timeout
+  // fallback so the promise always resolves even if the guard fires first.
   const prevented = await page.evaluate(() => {
     return new Promise<boolean>(resolve => {
+      let resolved = false;
+      const safeResolve = (v: boolean) => { if (!resolved) { resolved = true; resolve(v); } };
+      const fallback = setTimeout(() => safeResolve(false), 2000);
       document.addEventListener("keydown", (e) => {
-        // Let the app's handler run first (capture=true is registered by DisableDevTools)
-        setTimeout(() => resolve(e.defaultPrevented), 50);
-      }, { once: true });
+        clearTimeout(fallback);
+        setTimeout(() => safeResolve(e.defaultPrevented), 50);
+      }, { once: true, capture: true });
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "F12", bubbles: true, cancelable: true }));
     });
   });
@@ -718,9 +721,13 @@ test("49. Ctrl+Shift+I keydown is cancelled by DisableDevTools", async ({ page }
 
   const prevented = await page.evaluate(() => {
     return new Promise<boolean>(resolve => {
+      let resolved = false;
+      const safeResolve = (v: boolean) => { if (!resolved) { resolved = true; resolve(v); } };
+      const fallback = setTimeout(() => safeResolve(false), 2000);
       document.addEventListener("keydown", (e) => {
-        setTimeout(() => resolve(e.defaultPrevented), 50);
-      }, { once: true });
+        clearTimeout(fallback);
+        setTimeout(() => safeResolve(e.defaultPrevented), 50);
+      }, { once: true, capture: true });
       document.dispatchEvent(new KeyboardEvent("keydown", {
         key: "I", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true,
       }));

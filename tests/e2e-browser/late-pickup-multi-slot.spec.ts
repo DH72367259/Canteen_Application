@@ -41,6 +41,15 @@ test.beforeAll(async () => {
     canteenId = canteen?.id ?? "";
     if (!canteenId) { setupFailed = true; return; }
 
+    // Verify phase15 migration (late_pickup enum on order_status) is applied
+    const { error: enumCheck } = await admin.from("orders")
+      .select("id").eq("status", "late_pickup").limit(0);
+    if (enumCheck?.message?.includes("invalid input value for enum")) {
+      console.warn("⚠️  late_pickup enum not yet applied to order_status (run phase15) — skipping");
+      setupFailed = true;
+      return;
+    }
+
     const s = await provisionStudent(canteenId, "late-pickup");
     studentId = s.id; studentEmail = s.email; studentPassword = s.password;
     workerToken = await getAccessToken(WHITELIST.worker.email, WHITELIST.worker.password);

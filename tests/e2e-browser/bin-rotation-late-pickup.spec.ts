@@ -64,6 +64,15 @@ test.beforeAll(async () => {
     canteenId = canteen?.id ?? "";
     if (!canteenId) { setupFailed = true; return; }
 
+    // Verify phase15 migration (late_pickup_pending enum) is applied
+    const { error: enumCheck } = await admin.from("orders")
+      .select("id").eq("status", "late_pickup_pending").limit(0);
+    if (enumCheck?.message?.includes("invalid input value for enum")) {
+      console.warn("⚠️  late_pickup_pending enum not yet applied (run phase15 migration) — skipping");
+      setupFailed = true;
+      return;
+    }
+
     const s = await provisionStudent(canteenId, "bin-rot");
     studentId = s.id;
 

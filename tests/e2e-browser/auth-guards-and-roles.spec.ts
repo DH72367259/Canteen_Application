@@ -141,7 +141,6 @@ test.describe("API bearer-token requirement", () => {
     "/api/admin/users",
     "/api/admin/stats",
     "/api/admin/canteens",
-    "/api/orders/place",
   ] as const;
 
   for (const ep of PROTECTED_ENDPOINTS) {

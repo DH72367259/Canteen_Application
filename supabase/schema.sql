@@ -15,7 +15,8 @@ CREATE TYPE user_role       AS ENUM ('user', 'canteen_admin', 'vendor', 'worker'
 CREATE TYPE order_status    AS ENUM (
   'placed', 'confirmed', 'preparing',
   'ready_for_placement', 'placed_in_bin',
-  'ready_for_pickup', 'collected', 'cancelled'
+  'ready_for_pickup', 'collected', 'cancelled',
+  'late_pickup', 'late_pickup_pending'
 );
 CREATE TYPE production_type AS ENUM ('batched', 'made_to_order');
 CREATE TYPE slot_label      AS ENUM ('morning', 'afternoon', 'evening');
@@ -79,12 +80,14 @@ CREATE TABLE public.profiles (
   canteen_id      uuid        REFERENCES public.canteens(id) ON DELETE SET NULL,
   wallet_balance  numeric(10, 2) NOT NULL DEFAULT 0.00,
   avatar_url      text,
+  username        text UNIQUE,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_profiles_role       ON public.profiles(role);
 CREATE INDEX idx_profiles_canteen_id ON public.profiles(canteen_id);
+CREATE INDEX idx_profiles_username   ON public.profiles(username) WHERE username IS NOT NULL;
 
 CREATE TRIGGER trg_profiles_updated_at
   BEFORE UPDATE ON public.profiles
@@ -187,6 +190,7 @@ CREATE TABLE public.bins (
   is_occupied       boolean     NOT NULL DEFAULT false,
   current_order_id  uuid,       -- FK added after orders table
   assigned_order_id uuid,
+  slot_label        text,
   status            text        NOT NULL DEFAULT 'empty' CHECK (status IN (
     'empty','preparing','placed','picked','late_pickup','grace_bin','reserved','occupied','disabled'
   )),
@@ -199,6 +203,7 @@ CREATE INDEX idx_bins_canteen_id       ON public.bins(canteen_id);
 CREATE INDEX idx_bins_is_occupied      ON public.bins(is_occupied);
 CREATE INDEX idx_bins_zone_color       ON public.bins(canteen_id, zone_color, bin_number);
 CREATE INDEX idx_bins_assigned_order   ON public.bins(assigned_order_id);
+CREATE INDEX idx_bins_slot_label       ON public.bins(canteen_id, slot_label) WHERE slot_label IS NOT NULL;
 
 CREATE TRIGGER trg_bins_updated_at
   BEFORE UPDATE ON public.bins
@@ -223,6 +228,10 @@ CREATE TABLE public.orders (
   slot_label            text,
   extra_bin_fee_paise   int            NOT NULL DEFAULT 0 CHECK (extra_bin_fee_paise >= 0),
   bin_count             int            NOT NULL DEFAULT 1 CHECK (bin_count >= 1),
+  bin_label             text,
+  bin_color             text,
+  skipped_count         int            NOT NULL DEFAULT 0,
+  skipped_at            timestamptz,
   created_at            timestamptz    NOT NULL DEFAULT now(),
   updated_at            timestamptz    NOT NULL DEFAULT now()
 );
@@ -384,6 +393,38 @@ CREATE TRIGGER trg_slots_override_updated_at
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================
+-- TABLE: noqx_pro_subscriptions
+-- ============================================================
+CREATE TABLE public.noqx_pro_subscriptions (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     uuid        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  payment_id  text,
+  amount_paid numeric     NOT NULL DEFAULT 0,
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at  timestamptz,
+  status      text        NOT NULL DEFAULT 'active'
+                          CHECK (status IN ('active','expired','cancelled')),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_noqx_pro_user ON public.noqx_pro_subscriptions(user_id, status);
+
+-- ============================================================
+-- TABLE: cart_items
+-- ============================================================
+CREATE TABLE public.cart_items (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  menu_item_id uuid        NOT NULL REFERENCES public.menu_items(id) ON DELETE CASCADE,
+  canteen_id   uuid        NOT NULL REFERENCES public.canteens(id) ON DELETE CASCADE,
+  quantity     int         NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, menu_item_id)
+);
+
+CREATE INDEX idx_cart_items_user ON public.cart_items(user_id);
+
+-- ============================================================
 -- TRIGGER: handle_new_user
 -- Auto-inserts a row into profiles when a new auth.users row is created
 -- ============================================================
@@ -498,9 +539,11 @@ ALTER TABLE public.order_bins          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rewards             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reward_transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.campaigns           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.logs                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.slots_override      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaigns                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.logs                      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.slots_override            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.noqx_pro_subscriptions    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_items                ENABLE ROW LEVEL SECURITY;
 
 -- ---- profiles ----
 CREATE POLICY "profiles: user reads own"
@@ -703,6 +746,24 @@ CREATE POLICY "slots_override: canteen_admin manages"
 CREATE POLICY "slots_override: super_admin all"
   ON public.slots_override FOR ALL
   USING (get_my_role() = 'super_admin');
+
+-- ---- noqx_pro_subscriptions ----
+CREATE POLICY "noqx_pro: users read own"
+  ON public.noqx_pro_subscriptions FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "noqx_pro: service full"
+  ON public.noqx_pro_subscriptions FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- ---- cart_items ----
+CREATE POLICY "cart_items: users manage own"
+  ON public.cart_items FOR ALL
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "cart_items: service full"
+  ON public.cart_items FOR ALL
+  USING (auth.role() = 'service_role');
 
 -- ============================================================
 -- REALTIME  (uncomment to enable live updates)
