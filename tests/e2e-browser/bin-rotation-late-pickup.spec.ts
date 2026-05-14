@@ -64,29 +64,44 @@ test.beforeAll(async () => {
     canteenId = canteen?.id ?? "";
     if (!canteenId) { setupFailed = true; return; }
 
-    // Verify phase15 migration (late_pickup_pending enum) is applied
-    const { error: enumCheck } = await admin.from("orders")
-      .select("id").eq("status", "late_pickup_pending").limit(0);
-    if (enumCheck?.message?.includes("invalid input value for enum")) {
-      console.warn("⚠️  late_pickup_pending enum not yet applied (run phase15 migration) — skipping");
-      setupFailed = true;
-      return;
-    }
-
     const s = await provisionStudent(canteenId, "bin-rot");
     studentId = s.id;
 
-    // Provision a dedicated test bin for this suite
-    const { data: bin } = await admin.from("bins").insert({
-      canteen_id: canteenId,
-      bin_code:   BIN_CODE,
-      color:      BIN_COLOR,
-      zone_color: BIN_COLOR,
-      bin_number: 999,
-      status:     "empty",
-      is_occupied: false,
+    // Verify phase15 migration by probing an INSERT — a SELECT WHERE doesn't
+    // validate enum values in PostgREST, so only a real write attempt works.
+    const { data: probe, error: probeErr } = await admin.from("orders").insert({
+      user_id:      studentId,
+      canteen_id:   canteenId,
+      total_amount: 1,
+      status:       "late_pickup_pending",
+      slot_label:   "E2E-BR-probe",
     }).select("id").single();
-    binId = bin?.id ?? "";
+    if (probeErr) {
+      console.warn("⚠️  phase15 not applied (late_pickup_pending unavailable):", probeErr.message);
+      setupFailed = true;
+      return;
+    }
+    if (probe?.id) await admin.from("orders").delete().eq("id", probe.id);
+
+    // Provision a dedicated test bin — upsert on bin_code to survive reruns
+    const { data: existingBin } = await admin.from("bins")
+      .select("id").eq("canteen_id", canteenId).eq("bin_code", BIN_CODE).maybeSingle();
+    if (existingBin?.id) {
+      binId = existingBin.id;
+      await admin.from("bins").update({ status: "empty", is_occupied: false,
+        order_id: null, assigned_order_id: null, current_order_id: null }).eq("id", binId);
+    } else {
+      const { data: bin } = await admin.from("bins").insert({
+        canteen_id: canteenId,
+        bin_code:   BIN_CODE,
+        color:      BIN_COLOR,
+        zone_color: BIN_COLOR,
+        bin_number: 999,
+        status:     "empty",
+        is_occupied: false,
+      }).select("id").single();
+      binId = bin?.id ?? "";
+    }
   } catch (e) {
     console.warn("⚠️  bin-rotation setup failed:", e);
     setupFailed = true;

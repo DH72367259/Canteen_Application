@@ -35,17 +35,24 @@ test.beforeAll(async () => {
     canteenId = canteen?.id ?? "";
     if (!canteenId) { setupFailed = true; return; }
 
-    // Verify phase15 migration (late_pickup enum on order_status) is applied
-    const { error: enumCheck } = await admin.from("orders")
-      .select("id").eq("status", "late_pickup").limit(0);
-    if (enumCheck?.message?.includes("invalid input value for enum")) {
-      console.warn("⚠️  late_pickup enum not yet applied to order_status (run phase15) — skipping");
+    const s = await provisionStudent(canteenId, "browser-late");
+    studentId = s.id;
+
+    // Verify phase15 migration by probing an INSERT — a SELECT WHERE doesn't
+    // validate enum values in PostgREST, so only a real write attempt works.
+    const { data: probe, error: probeErr } = await admin.from("orders").insert({
+      user_id:      studentId,
+      canteen_id:   canteenId,
+      total_amount: 1,
+      status:       "late_pickup",
+      slot_label:   "E2E-BR-probe",
+    }).select("id").single();
+    if (probeErr) {
+      console.warn("⚠️  phase15 not applied (late_pickup unavailable):", probeErr.message);
       setupFailed = true;
       return;
     }
-
-    const s = await provisionStudent(canteenId, "browser-late");
-    studentId = s.id;
+    if (probe?.id) await admin.from("orders").delete().eq("id", probe.id);
   } catch (e) {
     console.warn("⚠️  browser late-pickup setup failed:", e);
     setupFailed = true;
