@@ -421,38 +421,6 @@ export default function WorkerOrdersPage() {
                     ))}
                   </div>
                 </div>
-
-                {/* Bin placement plan */}
-                <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-                  <div style={{ background: "#f8fafc", padding: "0.7rem 0.9rem", borderBottom: "1px solid #e2e8f0" }}>
-                    <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0f172a" }}>Bin Placement Plan</div>
-                    <div style={{ fontSize: "0.76rem", color: "#64748b" }}>Which items go into which bins</div>
-                  </div>
-                  <div style={{ padding: "0.75rem" }}>
-                    {selectedSummary.binPlans.length === 0 && (
-                      <div style={{ color: "#64748b", fontSize: "0.84rem" }}>Bins will be assigned at slot start time.</div>
-                    )}
-                    {selectedSummary.binPlans.map((bp, idx) => {
-                      const c = BIN_COLORS[bp.binColor] ?? "#f97316";
-                      return (
-                        <div key={`${bp.orderId}-${bp.binLabel}-${idx}`} style={{ border: `1.5px solid ${c}`, borderRadius: 12, marginBottom: "0.55rem", overflow: "hidden" }}>
-                          <div style={{ background: tint(c, "20"), padding: "0.45rem 0.65rem", display: "flex", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
-                            <strong style={{ color: c }}>Bin {bp.binLabel}</strong>
-                            <span style={{ color: "#334155" }}>Order #{bp.orderId.slice(-8).toUpperCase()} · {bp.studentName}</span>
-                          </div>
-                          <div style={{ padding: "0.5rem 0.65rem" }}>
-                            {bp.items.map((it, i) => (
-                              <div key={`${it.name}-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.86rem", fontWeight: 700, borderBottom: i < bp.items.length - 1 ? "1px dashed #cbd5e1" : "none", padding: "0.2rem 0" }}>
-                                <span>{it.name}</span>
-                                <span>x{it.quantity}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </>
             )}
           </div>
