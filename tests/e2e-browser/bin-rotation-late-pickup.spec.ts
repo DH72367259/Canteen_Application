@@ -495,14 +495,7 @@ test("13. worker dashboard shows CLEAR BIN section for late_pickup_pending order
   const orderId = await seedPendingOrder("B013");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const clearBinSection = page.getByText(/CLEAR BIN/i).first();
-    try {
-      await expect(clearBinSection).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // soft — section may not appear if order didn't load within timeout
-    }
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -512,14 +505,9 @@ test("14. CLEAR BIN card shows the bin label", async ({ page }) => {
   const orderId = await seedPendingOrder("B014");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const binBadge = page.getByText(new RegExp(BIN_CODE, "i")).first();
-    try {
-      await expect(binBadge).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // soft
-    }
+    // Wait for CLEAR BIN section, then verify the bin label appears within it
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(BIN_CODE, "i")).first()).toBeVisible({ timeout: 5_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -529,14 +517,8 @@ test("15. CLEAR BIN card shows slot-ended instruction text", async ({ page }) =>
   const orderId = await seedPendingOrder("B015");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const instruction = page.getByText(/Remove food from Bin|slot ended|late pickup counter/i).first();
-    try {
-      await expect(instruction).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // soft
-    }
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Remove food from Bin|late pickup counter/i).first()).toBeVisible({ timeout: 5_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -546,15 +528,10 @@ test("16. Bin Cleared button is present and enabled for late_pickup_pending orde
   const orderId = await seedPendingOrder("B016");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const clearBtn = page.getByRole("button", { name: /Bin Cleared|cleared.*counter/i }).first();
-    try {
-      await expect(clearBtn).toBeVisible({ timeout: 8_000 });
-      await expect(clearBtn).toBeEnabled();
-    } catch {
-      // soft
-    }
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    const clearBtn = page.getByRole("button", { name: /Bin Cleared/i }).first();
+    await expect(clearBtn).toBeVisible({ timeout: 5_000 });
+    await expect(clearBtn).toBeEnabled();
   } finally {
     await deleteOrder(orderId);
   }
@@ -564,30 +541,28 @@ test("17. clicking Bin Cleared frees the bin in the database", async ({ page }) 
   if (!binId) { test.skip(); return; }
   const admin = adminClient();
 
-  // Set up bin as occupied with late_pickup status
   await admin.from("bins").update({ is_occupied: true, status: "late_pickup" }).eq("id", binId);
   const orderId = await seedPendingOrder("B017", { bin_id: binId });
   await admin.from("bins").update({ order_id: orderId }).eq("id", binId);
 
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const clearBtn = page.getByRole("button", { name: /Bin Cleared|cleared.*counter/i }).first();
-    const btnVisible = await clearBtn.isVisible().catch(() => false);
-    if (!btnVisible) { return; }
-
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    const clearBtn = page.getByRole("button", { name: /Bin Cleared/i }).first();
+    await expect(clearBtn).toBeVisible({ timeout: 5_000 });
     await clearBtn.click();
-    await page.waitForTimeout(2000);
+
+    // Poll DB until bin is freed (up to 8 s)
+    await expect.poll(async () => {
+      const { data } = await admin.from("bins").select("is_occupied, status").eq("id", binId)
+        .single<{ is_occupied: boolean; status: string }>();
+      return data?.status;
+    }, { timeout: 8_000 }).toBe("empty");
 
     const { data: bin } = await admin.from("bins").select("is_occupied, status").eq("id", binId)
       .single<{ is_occupied: boolean; status: string }>();
-    try {
-      expect(bin?.is_occupied).toBe(false);
-      expect(bin?.status).toBe("empty");
-    } catch {
-      // soft — may not have matched the specific order
-    }
+    expect(bin?.is_occupied).toBe(false);
+    expect(bin?.status).toBe("empty");
   } finally {
     await deleteOrder(orderId);
     await admin.from("bins").update({ is_occupied: false, status: "empty", order_id: null }).eq("id", binId);
@@ -598,46 +573,26 @@ test("18. after clicking Bin Cleared, order transitions to late_pickup", async (
   const orderId = await seedPendingOrder("B018");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const clearBtn = page.getByRole("button", { name: /Bin Cleared|cleared.*counter/i }).first();
-    const btnVisible = await clearBtn.isVisible().catch(() => false);
-    if (!btnVisible) { return; }
-
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    const clearBtn = page.getByRole("button", { name: /Bin Cleared/i }).first();
+    await expect(clearBtn).toBeVisible({ timeout: 5_000 });
     await clearBtn.click();
-    await page.waitForTimeout(2000);
 
-    const { data: order } = await adminClient().from("orders").select("status").eq("id", orderId).single();
-    try {
-      expect(order?.status).toBe("late_pickup");
-    } catch {
-      // soft
-    }
+    await expect.poll(async () => {
+      const { data } = await adminClient().from("orders").select("status").eq("id", orderId).single();
+      return data?.status;
+    }, { timeout: 8_000 }).toBe("late_pickup");
   } finally {
     await deleteOrder(orderId);
   }
 });
 
 test("19. Late Pickup section shows OTP input after bin is cleared", async ({ page }) => {
-  // Seed an already-cleared order (late_pickup status) to verify OTP entry visible
   const orderId = await seedLateOrder("B019");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const lateSection = page.getByText(/LATE PICKUP/i).first();
-    try {
-      await expect(lateSection).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // soft
-    }
-    // OTP input should be present
-    const otpInput = page.locator('input[placeholder="Enter OTP"]').first();
-    try {
-      await expect(otpInput).toBeVisible({ timeout: 6_000 });
-    } catch {
-      // soft
-    }
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('input[placeholder="Enter OTP"]').first()).toBeVisible({ timeout: 5_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -647,22 +602,12 @@ test("20. wrong OTP in Late Pickup section shows inline error", async ({ page })
   const orderId = await seedLateOrder("B020");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
     const otpInput = page.locator('input[placeholder="Enter OTP"]').first();
-    const inputVisible = await otpInput.isVisible().catch(() => false);
-    if (!inputVisible) { return; }
-
-    await otpInput.fill("9999"); // wrong
-    const verifyBtn = page.getByRole("button", { name: /^verify$/i }).first();
-    try {
-      await verifyBtn.click({ timeout: 5_000 });
-      await page.waitForTimeout(1500);
-      const errMsg = page.getByText(/invalid|failed|incorrect/i).first();
-      await expect(errMsg).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // soft
-    }
+    await expect(otpInput).toBeVisible({ timeout: 5_000 });
+    await otpInput.fill("9999");
+    await page.getByRole("button", { name: /^Verify$/i }).first().click();
+    await expect(page.getByText(/Invalid OTP|invalid|failed/i).first()).toBeVisible({ timeout: 6_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -673,107 +618,65 @@ test("21. correct OTP in Late Pickup section marks order collected", async ({ pa
   const orderId = await seedLateOrder(otp);
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
     const otpInput = page.locator('input[placeholder="Enter OTP"]').first();
-    const inputVisible = await otpInput.isVisible().catch(() => false);
-    if (!inputVisible) { return; }
-
+    await expect(otpInput).toBeVisible({ timeout: 5_000 });
     await otpInput.fill(otp);
-    const verifyBtn = page.getByRole("button", { name: /^verify$/i }).first();
-    try {
-      await verifyBtn.click({ timeout: 5_000 });
-      await page.waitForTimeout(2000);
-      const { data: order } = await adminClient().from("orders").select("status").eq("id", orderId).single();
-      expect(order?.status).toBe("collected");
-    } catch {
-      // soft
-    }
+    await page.getByRole("button", { name: /^Verify$/i }).first().click();
+
+    await expect.poll(async () => {
+      const { data } = await adminClient().from("orders").select("status").eq("id", orderId).single();
+      return data?.status;
+    }, { timeout: 8_000 }).toBe("collected");
   } finally {
     await deleteOrder(orderId);
   }
 });
 
-test("22. late_pickup_pending orders do NOT appear in Awaiting OTP section", async ({ page }) => {
+test("22. late_pickup_pending order appears in CLEAR BIN — not in AWAITING OTP PICKUP", async ({ page }) => {
   const orderId = await seedPendingOrder("B022");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    // "AWAITING OTP PICKUP" section header should NOT contain this order
-    // The pending order should be in CLEAR BIN section, not Awaiting OTP
-    const awaitingSection = page.getByText(/AWAITING OTP PICKUP/i).first();
-    const awaitingSectionVisible = await awaitingSection.isVisible().catch(() => false);
-
-    if (awaitingSectionVisible) {
-      // If section is visible, verify the pending order's short ID does NOT appear there
-      const shortId = orderId.slice(-8).toUpperCase();
-      // The order ID badge should be in CLEAR BIN section, not AWAITING OTP
-      // Soft check only — hard to assert position in a single-column layout
-      const clearBinSection = page.getByText(/CLEAR BIN/i).first();
-      try {
-        await expect(clearBinSection).toBeVisible({ timeout: 5_000 });
-      } catch {
-        // soft
-      }
+    // CLEAR BIN section must be visible (pending order is correctly routed here)
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    // The order's short ID must NOT appear inside an AWAITING OTP PICKUP context
+    const shortId = orderId.slice(-8).toUpperCase();
+    const awaitingCount = await page.getByText(/AWAITING OTP PICKUP/i).count();
+    if (awaitingCount > 0) {
+      // If the awaiting section is visible (from other real orders), the pending
+      // order's ID should not appear in that section's card context.
+      const awaitingText = await page.getByText(/AWAITING OTP PICKUP/i).first().locator("..").textContent();
+      expect(awaitingText ?? "").not.toContain(shortId);
     }
   } finally {
     await deleteOrder(orderId);
   }
 });
 
-test("23. summary banner shows 'bins to clear' message when late_pickup_pending orders exist", async ({ page }) => {
+test("23. CLEAR BIN section count reflects number of late_pickup_pending orders", async ({ page }) => {
   const orderId = await seedPendingOrder("B023");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    const banner = page.getByText(/bin.*to clear|to clear.*late pickup/i).first();
-    try {
-      await expect(banner).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // soft — banner only shows when totalPrep === 0 and latePending > 0
-    }
+    // CLEAR BIN badge appears with a count > 0 for the pending order
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 15_000 });
+    // The badge text includes the count: "⚠️ CLEAR BIN (N)"
+    await expect(page.getByText(/CLEAR BIN \(\d+\)/i).first()).toBeVisible({ timeout: 5_000 });
   } finally {
     await deleteOrder(orderId);
   }
 });
 
-test("24. late_pickup_pending orders are absent from LATE PICKUP section", async ({ page }) => {
-  const pendingOtp = "B024P";
-  const lateOtp    = "B024L";
-  const pendingId  = await seedPendingOrder(pendingOtp);
-  const lateId     = await seedLateOrder(lateOtp);
+test("24. CLEAR BIN and LATE PICKUP sections are both visible when both order types exist", async ({ page }) => {
+  const pendingId = await seedPendingOrder("B024P");
+  const lateId    = await seedLateOrder("B024L");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(2000);
-
-    // LATE PICKUP section should exist (due to lateId order)
-    const lateSection = page.getByText(/LATE PICKUP/i).first();
-    try {
-      await expect(lateSection).toBeVisible({ timeout: 8_000 });
-    } catch {
-      return; // if no late section visible, test passes trivially
-    }
-
-    // CLEAR BIN section should also exist (due to pendingId order)
-    const clearBinSection = page.getByText(/CLEAR BIN/i).first();
-    try {
-      await expect(clearBinSection).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // soft
-    }
-
-    // Verify both sections are distinct in the page
-    const lateCount    = await page.getByText(/LATE PICKUP/i).count();
-    const clearBinCount = await page.getByText(/CLEAR BIN/i).count();
-    // Both sections should be present when both order types exist
-    try {
-      expect(lateCount).toBeGreaterThan(0);
-      expect(clearBinCount).toBeGreaterThan(0);
-    } catch {
-      // soft
-    }
+    // Both sections must be independently visible
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/CLEAR BIN/i).first()).toBeVisible({ timeout: 5_000 });
+    // Both section counts are > 0
+    expect(await page.getByText(/LATE PICKUP \(\d+\)/i).count()).toBeGreaterThan(0);
+    expect(await page.getByText(/CLEAR BIN \(\d+\)/i).count()).toBeGreaterThan(0);
   } finally {
     await deleteOrder(pendingId);
     await deleteOrder(lateId);

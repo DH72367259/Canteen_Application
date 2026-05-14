@@ -120,32 +120,19 @@ test("1. late pickup section appears in worker orders tab", async ({ page }) => 
   const orderId = await seedLateOrder("L001");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(1500);
-
-    // "LATE PICKUP" badge should be visible on the orders tab
-    const lateSection = page.getByText(/LATE PICKUP/i).first();
-    try {
-      await expect(lateSection).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // Section may not show if order didn't load yet — soft assertion
-    }
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
   } finally {
     await deleteOrder(orderId);
   }
 });
 
-test("2. late pickup row shows 'Food moved to separate physical bin' hint", async ({ page }) => {
+test("2. late pickup row shows food-at-counter hint text", async ({ page }) => {
   const orderId = await seedLateOrder("L002");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(1500);
-
-    const hint = page.getByText(/Food moved to separate physical bin/i).first();
-    try {
-      await expect(hint).toBeVisible({ timeout: 8_000 });
-    } catch {
-      // hint may not be visible if order didn't appear — soft assertion
-    }
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Food is at the late pickup counter|Enter OTP when the student arrives/i).first())
+      .toBeVisible({ timeout: 5_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -155,24 +142,12 @@ test("3. wrong OTP in late pickup shows inline error", async ({ page }) => {
   const orderId = await seedLateOrder("L003");
   try {
     await workerLogin(page);
-    await page.waitForTimeout(1500);
-
-    // Find OTP input in late pickup section
-    const otpInputs = page.locator('input[placeholder="Enter OTP"]');
-    const count = await otpInputs.count();
-    if (count === 0) { test.skip(); return; }
-
-    await otpInputs.first().fill("9999"); // wrong OTP
-    const verifyBtn = page.getByRole("button", { name: /^verify$/i }).first();
-    try {
-      await verifyBtn.click({ timeout: 5_000 });
-      await page.waitForTimeout(1000);
-      // Error should appear
-      const errMsg = page.getByText(/invalid|failed|incorrect/i).first();
-      await expect(errMsg).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // error may not appear in some states — soft assertion
-    }
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
+    const otpInput = page.locator('input[placeholder="Enter OTP"]').first();
+    await expect(otpInput).toBeVisible({ timeout: 5_000 });
+    await otpInput.fill("9999");
+    await page.getByRole("button", { name: /^Verify$/i }).first().click();
+    await expect(page.getByText(/Invalid OTP|invalid|failed/i).first()).toBeVisible({ timeout: 6_000 });
   } finally {
     await deleteOrder(orderId);
   }
@@ -183,24 +158,16 @@ test("4. correct OTP in late pickup marks order as collected", async ({ page }) 
   const orderId = await seedLateOrder(correctOtp);
   try {
     await workerLogin(page);
-    await page.waitForTimeout(1500);
+    await expect(page.getByText(/LATE PICKUP/i).first()).toBeVisible({ timeout: 15_000 });
+    const otpInput = page.locator('input[placeholder="Enter OTP"]').first();
+    await expect(otpInput).toBeVisible({ timeout: 5_000 });
+    await otpInput.fill(correctOtp);
+    await page.getByRole("button", { name: /^Verify$/i }).first().click();
 
-    const otpInputs = page.locator('input[placeholder="Enter OTP"]');
-    const count = await otpInputs.count();
-    if (count === 0) { test.skip(); return; }
-
-    await otpInputs.first().fill(correctOtp);
-    const verifyBtn = page.getByRole("button", { name: /^verify$/i }).first();
-    try {
-      await verifyBtn.click({ timeout: 5_000 });
-      await page.waitForTimeout(1500);
-      // Order should disappear from late pickup section or show success
-      const admin = adminClient();
-      const { data: o } = await admin.from("orders").select("status").eq("id", orderId).single();
-      expect(o?.status).toBe("collected");
-    } catch {
-      // soft — dashboard may have already cleaned up
-    }
+    await expect.poll(async () => {
+      const { data: o } = await adminClient().from("orders").select("status").eq("id", orderId).single();
+      return o?.status;
+    }, { timeout: 8_000 }).toBe("collected");
   } finally {
     await deleteOrder(orderId);
   }
@@ -264,42 +231,24 @@ test("6. different-slot order verifies without 409 block", async ({ page }) => {
 
 test("7. prep summary tab is reachable from worker dashboard", async ({ page }) => {
   await workerLogin(page);
-
-  // Click the Prep Summary tab in bottom nav
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
   await expect(prepTab).toBeVisible({ timeout: 10_000 });
   await prepTab.click();
-  await page.waitForTimeout(1000);
-
-  // Should show the prep summary heading
-  const heading = page.getByRole("heading", { name: /Prep Summary/i }).first();
-  try {
-    await expect(heading).toBeVisible({ timeout: 5_000 });
-  } catch {
-    // heading may be rendered differently — check body contains text
-    await expect(page.locator("body")).toContainText(/Prep Summary/i);
-  }
+  await expect(page.locator("body")).toContainText(/Prep Plan|Prep Summary/i, { timeout: 10_000 });
 });
 
 test("8. prep summary shows 'Auto-updates every 30s' label", async ({ page }) => {
   await workerLogin(page);
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
+  await expect(prepTab).toBeVisible({ timeout: 10_000 });
   await prepTab.click();
-  await page.waitForTimeout(1000);
-
-  const autoLabel = page.getByText(/Auto-updates every 30s/i).first();
-  try {
-    await expect(autoLabel).toBeVisible({ timeout: 5_000 });
-  } catch {
-    // soft — label may be off-screen on small viewport
-  }
+  await expect(page.getByText(/Auto-updates every 30s/i).first()).toBeVisible({ timeout: 10_000 });
 });
 
 test("9. prep summary shows slot tabs for confirmed/preparing orders", async ({ page }) => {
   const admin = adminClient();
   const label = `E2E-BR-prep-${Date.now()}`;
 
-  // Seed a confirmed order with a slot label
   const { data: o } = await admin.from("orders").insert({
     user_id: studentId, canteen_id: canteenId,
     total_amount: 60, status: "confirmed",
@@ -308,27 +257,21 @@ test("9. prep summary shows slot tabs for confirmed/preparing orders", async ({ 
 
   try {
     await workerLogin(page);
-    const prepTab = page.getByText(/Prep Summary/i).first();
+    const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
+    await expect(prepTab).toBeVisible({ timeout: 10_000 });
     await prepTab.click();
-    await page.waitForTimeout(2000); // allow fetch
 
-    // The slot label should appear as a tab button
-    const slotTab = page.getByRole("button", { name: new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") }).first();
-    try {
-      await expect(slotTab).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // label might be truncated or not yet loaded — soft assertion
-    }
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await expect(page.getByRole("button", { name: new RegExp(escaped, "i") }).first())
+      .toBeVisible({ timeout: 12_000 });
   } finally {
     if (o?.id) await deleteOrder(o.id);
   }
 });
 
 test("10. prep summary shows 🔜 badge on slot starting within 15 min", async ({ page }) => {
-  // Build a slot label that starts exactly 10 minutes from now (IST)
   const now = new Date();
   const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
-  const ist = new Date(istMs);
   const future10 = new Date(istMs + 10 * 60 * 1000);
   const future25 = new Date(istMs + 25 * 60 * 1000);
 
@@ -349,44 +292,31 @@ test("10. prep summary shows 🔜 badge on slot starting within 15 min", async (
 
   try {
     await workerLogin(page);
-    const prepTab = page.getByText(/Prep Summary/i).first();
+    const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
+    await expect(prepTab).toBeVisible({ timeout: 10_000 });
     await prepTab.click();
-    await page.waitForTimeout(2000);
 
-    // 🔜 badge or ⏰ banner should appear for the upcoming slot
-    const nextBadge = page.getByText(/🔜|Start preparing/i).first();
-    try {
-      await expect(nextBadge).toBeVisible({ timeout: 5_000 });
-    } catch {
-      // May not appear if the slot data didn't load in time — soft assertion
-    }
+    // Slot tab should load; 🔜 or "Start preparing" banner confirms the upcoming-slot detection
+    const escaped = slotLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await expect(page.getByRole("button", { name: new RegExp(escaped, "i") }).first())
+      .toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(/🔜|Start preparing/i).first()).toBeVisible({ timeout: 5_000 });
   } finally {
     if (o?.id) await deleteOrder(o.id);
   }
 });
 
-test("11. prep summary shows 'No active orders' when nothing is queued", async ({ page }) => {
+test("11. prep summary shows slot tabs or empty state — never a blank page", async ({ page }) => {
   await workerLogin(page);
-  const prepTab = page.getByText(/Prep Summary/i).first();
+  const prepTab = page.getByText(/Prep Plan|Prep Summary/i).first();
+  await expect(prepTab).toBeVisible({ timeout: 10_000 });
   await prepTab.click();
-  await page.waitForTimeout(2000);
-
-  // If no orders exist, should show empty state
-  const body = page.locator("body");
-  await expect(body).toBeVisible();
-  // Either slot tabs appear OR the empty state message
-  const hasSlots = await page.locator("button").filter({ hasText: /AM|PM/ }).count();
-  const hasEmpty = await page.getByText(/No active orders/i).count();
-  expect(hasSlots + hasEmpty).toBeGreaterThan(0);
+  // Either slot buttons (AM/PM) or an empty-state message must appear
+  await expect(page.locator("body")).toContainText(/AM|PM|No active orders|All caught up/i, { timeout: 10_000 });
 });
 
-test("12. worker orders tab loads and shows all-caught-up or order cards", async ({ page }) => {
+test("12. worker orders tab loads without JS error banner", async ({ page }) => {
   await workerLogin(page);
-  await page.waitForTimeout(1500);
-  // Page must load without error
-  await expect(page.locator("body")).toBeVisible();
-  // No JS error banner
-  const errorBanner = page.getByText(/something went wrong|unhandled error/i).first();
-  const hasError = await errorBanner.isVisible().catch(() => false);
-  expect(hasError).toBe(false);
+  await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/something went wrong|unhandled error/i).first()).not.toBeVisible();
 });
