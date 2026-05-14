@@ -1,19 +1,15 @@
 /**
- * Slot-expiry bin release.
+ * Slot-expiry bin release — two-step late pickup.
  *
  * When a slot's end time passes, any bin that is still occupied (food placed
- * but student hasn't collected) is transitioned to late_pickup:
+ * but student hasn't collected) is moved to `late_pickup_pending`. The bin
+ * is NOT freed yet — the worker must physically remove the order from the bin
+ * and confirm via POST /api/orders/[id]/clear-bin before the bin is recycled.
  *
- *  1. The order's bin_label / bin_color are snapshotted from the physical bin
- *     so the historical bin assignment is preserved even after the bin is freed.
- *  2. The order status is updated to `late_pickup`.
- *  3. The order's bin_id is cleared (disconnects from the physical bin).
- *  4. The physical bin is freed (is_occupied=false) so it is available for the
- *     next slot's orders.
- *
- * Late pickup orders still appear in the worker and vendor dashboards, students
- * still need to present their OTP, and the full collected workflow applies —
- * the only change is that the physical bin is recycled.
+ * Full status machine:
+ *   placed_in_bin → (slot ends)      → late_pickup_pending (bin still occupied)
+ *                → (worker clears)   → late_pickup         (bin freed)
+ *                → (student OTP)     → collected
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -30,7 +26,6 @@ function nowISTMinutes(): number {
  * Returns minutes-since-midnight (IST) or null if not parseable.
  */
 function parseSlotEndMinutes(slotLabel: string): number | null {
-  // Match the time after the dash/separator
   const m = slotLabel.match(/[-–]\s*(\d+):(\d+)\s*(AM|PM)/i);
   if (!m) return null;
   let h = parseInt(m[1], 10);
@@ -66,13 +61,12 @@ export async function releaseExpiredSlotBins(
     current_order_id: string | null;
   };
 
-  const toRelease: Array<{ binId: string; orderId: string; binCode: string; color: string }> = [];
+  const toRelease: Array<{ binId: string; orderId: string }> = [];
 
   for (const bin of bins as BinRow[]) {
     const label = String(bin.slot_label ?? "");
     const endMin = parseSlotEndMinutes(label);
-    // If we cannot parse the end time (e.g. synthetic test labels), skip —
-    // those are handled by the existing 90-min stale-bin safety net.
+    // If we cannot parse the end time (e.g. synthetic test labels), skip.
     if (endMin === null) continue;
     if (nowMin < endMin) continue;
 
@@ -81,30 +75,19 @@ export async function releaseExpiredSlotBins(
     );
     if (!orderId) continue;
 
-    toRelease.push({
-      binId:   bin.id,
-      orderId,
-      binCode: String(bin.bin_code ?? ""),
-      color:   String(bin.color ?? ""),
-    });
+    toRelease.push({ binId: bin.id, orderId });
   }
 
   if (!toRelease.length) return { released: 0 };
 
   const nowIso = new Date().toISOString();
 
-  // Snapshot bin details onto the order and mark it as late_pickup.
-  // We do this one-at-a-time so a single bad row doesn't block the rest.
+  // Move orders to late_pickup_pending — bin stays occupied until worker confirms.
+  // Do this one-at-a-time so a single bad row doesn't block the rest.
   for (const r of toRelease) {
     await supabase
       .from("orders")
-      .update({
-        status:    "late_pickup",
-        bin_label: r.binCode,
-        bin_color: r.color,
-        bin_id:    null,
-        updated_at: nowIso,
-      })
+      .update({ status: "late_pickup_pending", updated_at: nowIso })
       .eq("id", r.orderId)
       .in("status", [
         "placed", "confirmed", "preparing",
@@ -112,17 +95,10 @@ export async function releaseExpiredSlotBins(
       ]);
   }
 
-  // Free the physical bins in one batch
+  // Mark bins as overdue (still occupied — worker must confirm physical removal)
   await supabase
     .from("bins")
-    .update({
-      is_occupied:        false,
-      order_id:           null,
-      assigned_order_id:  null,
-      slot_label:         null,
-      status:             "empty",
-      updated_at:         nowIso,
-    })
+    .update({ status: "late_pickup", updated_at: nowIso })
     .eq("canteen_id", canteenId)
     .in("id", toRelease.map(r => r.binId));
 
@@ -130,11 +106,11 @@ export async function releaseExpiredSlotBins(
 }
 
 /**
- * End-of-day auto-close: any `late_pickup` order whose `updated_at` is before
- * midnight IST today (i.e. from a previous day) is marked `collected`.
+ * End-of-day auto-close.
  *
- * All stored details (bin_label, bin_color, items, OTP) are untouched, so the
- * order displays exactly like a normal collected order in every dashboard.
+ * `late_pickup` orders from previous days → collected.
+ * `late_pickup_pending` orders from previous days → bins freed + collected
+ * (covers the case where a worker never clicked "Bin Cleared").
  */
 export async function autoCloseEodLateOrders(
   supabase: SupabaseClient,
@@ -149,20 +125,55 @@ export async function autoCloseEodLateOrders(
     5.5 * 60 * 60 * 1000,
   );
 
-  const { data: expired } = await supabase
+  const midnightIso = midnightIST.toISOString();
+  const nowIso = now.toISOString();
+
+  // Close late_pickup orders (bins already freed)
+  const { data: lateOrders } = await supabase
     .from("orders")
     .select("id")
     .eq("canteen_id", canteenId)
     .eq("status", "late_pickup")
-    .lt("updated_at", midnightIST.toISOString());
+    .lt("updated_at", midnightIso);
 
-  if (!expired?.length) return { closed: 0 };
+  if (lateOrders?.length) {
+    await supabase
+      .from("orders")
+      .update({ status: "collected", updated_at: nowIso })
+      .in("id", lateOrders.map((o: { id: string }) => o.id))
+      .eq("status", "late_pickup");
+  }
 
-  await supabase
+  // Close late_pickup_pending orders — also free their still-occupied bins
+  const { data: pendingOrders } = await supabase
     .from("orders")
-    .update({ status: "collected", updated_at: new Date().toISOString() })
-    .in("id", expired.map((o: { id: string }) => o.id))
-    .eq("status", "late_pickup");
+    .select("id, bin_id")
+    .eq("canteen_id", canteenId)
+    .eq("status", "late_pickup_pending")
+    .lt("updated_at", midnightIso);
 
-  return { closed: expired.length };
+  if (pendingOrders?.length) {
+    const pendingIds = pendingOrders.map((o: { id: string }) => o.id);
+    const binIds = (pendingOrders as { id: string; bin_id: string | null }[])
+      .map(o => o.bin_id)
+      .filter((id): id is string => !!id);
+
+    await supabase
+      .from("orders")
+      .update({ status: "collected", updated_at: nowIso })
+      .in("id", pendingIds)
+      .eq("status", "late_pickup_pending");
+
+    if (binIds.length) {
+      await supabase
+        .from("bins")
+        .update({
+          is_occupied: false, order_id: null,
+          assigned_order_id: null, status: "empty", updated_at: nowIso,
+        })
+        .in("id", binIds);
+    }
+  }
+
+  return { closed: (lateOrders?.length ?? 0) + (pendingOrders?.length ?? 0) };
 }
