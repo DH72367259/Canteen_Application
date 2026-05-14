@@ -67,22 +67,6 @@ test.beforeAll(async () => {
     const s = await provisionStudent(canteenId, "bin-rot");
     studentId = s.id;
 
-    // Verify phase15 migration by probing an INSERT — a SELECT WHERE doesn't
-    // validate enum values in PostgREST, so only a real write attempt works.
-    const { data: probe, error: probeErr } = await admin.from("orders").insert({
-      user_id:      studentId,
-      canteen_id:   canteenId,
-      total_amount: 1,
-      status:       "late_pickup_pending",
-      slot_label:   "E2E-BR-probe",
-    }).select("id").single();
-    if (probeErr) {
-      console.warn("⚠️  phase15 not applied (late_pickup_pending unavailable):", probeErr.message);
-      setupFailed = true;
-      return;
-    }
-    if (probe?.id) await admin.from("orders").delete().eq("id", probe.id);
-
     // Provision a dedicated test bin — upsert on bin_code to survive reruns
     const { data: existingBin } = await admin.from("bins")
       .select("id").eq("canteen_id", canteenId).eq("bin_code", BIN_CODE).maybeSingle();

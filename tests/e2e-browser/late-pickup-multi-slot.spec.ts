@@ -43,23 +43,6 @@ test.beforeAll(async () => {
 
     const s = await provisionStudent(canteenId, "late-pickup");
     studentId = s.id; studentEmail = s.email; studentPassword = s.password;
-
-    // Verify phase15 migration by probing an INSERT — a SELECT WHERE doesn't
-    // validate enum values in PostgREST, so only a real write attempt works.
-    const { data: probe, error: probeErr } = await admin.from("orders").insert({
-      user_id:      studentId,
-      canteen_id:   canteenId,
-      total_amount: 1,
-      status:       "late_pickup",
-      slot_label:   "E2E-LP-probe",
-    }).select("id").single();
-    if (probeErr) {
-      console.warn("⚠️  phase15 not applied (late_pickup unavailable):", probeErr.message);
-      setupFailed = true;
-      return;
-    }
-    if (probe?.id) await admin.from("orders").delete().eq("id", probe.id);
-
     workerToken = await getAccessToken(WHITELIST.worker.email, WHITELIST.worker.password);
   } catch (e) {
     console.warn("⚠️  late-pickup-multi-slot setup failed:", e);
