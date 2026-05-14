@@ -173,7 +173,7 @@ test("3. Invoice GST note mentions CGST 2.5% and SGST 2.5%", async () => {
   expect(data.gst_note).toMatch(/SGST\s*2\.5%/i);
 });
 
-test("4. Settlement: net_payable = gross - platform_fee only (GST on platform fee not deducted)", async () => {
+test("4. Settlement: net_payable = gross - platform_fee ONLY (extra-bin, GST, convenience not deducted from canteen)", async () => {
   test.skip(setupFailed, SKIP_MSG);
   const token = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const res   = await apiFetch(`${APP_URL}/api/admin/settlements`, {
@@ -194,14 +194,14 @@ test("4. Settlement: net_payable = gross - platform_fee only (GST on platform fe
   const canteen = data.canteens.find(c => c.canteen_id === canteenId);
   if (!canteen) return; // no completed orders in period — skip assertion
 
-  // net_payable should equal gross - platformFee - extraBin (NOT minus GST on platform fee)
+  // Canteen pays platform fee ONLY — extra-bin, convenience, GST all go to admin from student
   const expected = Math.max(0,
-    Math.round((canteen.gross_amount - canteen.platform_fee_amount - canteen.extra_bin_charge_amount) * 100) / 100
+    Math.round((canteen.gross_amount - canteen.platform_fee_amount) * 100) / 100
   );
   expect(canteen.net_payable).toBeCloseTo(expected, 1);
 });
 
-test("5. Settlement: convenience fee in admin earnings, NOT deducted from canteen net", async () => {
+test("5. Settlement: convenience, extra-bin, GST all in admin earnings — canteen net = gross - platform_fee", async () => {
   test.skip(setupFailed, SKIP_MSG);
   const token = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const res   = await apiFetch(`${APP_URL}/api/admin/settlements`, {
@@ -221,11 +221,11 @@ test("5. Settlement: convenience fee in admin earnings, NOT deducted from cantee
   const canteen = data.canteens.find(c => c.canteen_id === canteenId);
   if (!canteen) return;
 
-  // net_payable must NOT include convenience deduction
-  const withoutConvenience = Math.max(0,
-    Math.round((canteen.gross_amount - canteen.platform_fee_amount - canteen.extra_bin_charge_amount) * 100) / 100
+  // Canteen net = gross - platform_fee only
+  const expected = Math.max(0,
+    Math.round((canteen.gross_amount - canteen.platform_fee_amount) * 100) / 100
   );
-  expect(canteen.net_payable).toBeCloseTo(withoutConvenience, 1);
+  expect(canteen.net_payable).toBeCloseTo(expected, 1);
 });
 
 test("6. Settlement: gross_amount is food-only subtotal (excludes GST and convenience)", async () => {
@@ -243,7 +243,7 @@ test("6. Settlement: gross_amount is food-only subtotal (excludes GST and conven
   expect(canteen.gross_amount).toBeGreaterThan(0);
 });
 
-test("7. Settlement: total_admin_earnings includes convenience but canteen net is food-minus-platform", async () => {
+test("7. Settlement: total_admin_earnings includes platform_fee + extra_bin + convenience; canteen net = gross - platform_fee", async () => {
   test.skip(setupFailed, SKIP_MSG);
   const token = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const res   = await apiFetch(`${APP_URL}/api/admin/settlements`, {
@@ -263,13 +263,13 @@ test("7. Settlement: total_admin_earnings includes convenience but canteen net i
   const canteen = data.canteens.find(c => c.canteen_id === canteenId);
   if (!canteen) return;
 
-  // total_admin_earnings >= platform_fee + convenience (convenience is admin revenue)
+  // total_admin_earnings >= platform_fee + convenience + extra_bin (all are admin revenue)
   expect(canteen.total_admin_earnings).toBeGreaterThanOrEqual(
-    canteen.platform_fee_amount + canteen.convenience_charge_amount - 0.01
+    canteen.platform_fee_amount + canteen.convenience_charge_amount + canteen.extra_bin_charge_amount - 0.01
   );
-  // net_payable + total_admin_earnings should be close to gross (± extra-bin rounding)
-  const reconstructed = canteen.net_payable + canteen.platform_fee_amount + canteen.extra_bin_charge_amount;
-  expect(reconstructed).toBeCloseTo(canteen.gross_amount, 0);
+  // net_payable = gross - platform_fee only
+  const expected = Math.max(0, Math.round((canteen.gross_amount - canteen.platform_fee_amount) * 100) / 100);
+  expect(canteen.net_payable).toBeCloseTo(expected, 1);
 });
 
 test("8. Settlement API returns 403 for worker role", async () => {
@@ -281,46 +281,41 @@ test("8. Settlement API returns 403 for worker role", async () => {
   expect(res.status).toBe(403);
 });
 
-test("9. Settlement: canteen with 0% platform fee → net_payable equals gross", async () => {
+test("9. Settlement math invariant: net_payable = gross - platform_fee for every canteen", async () => {
   test.skip(setupFailed, SKIP_MSG);
-  // This is a math invariant: if charge_pct=0 and flat_charge=0 and no extra-bin,
-  // then net_payable should equal gross.
   const token = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const res   = await apiFetch(`${APP_URL}/api/admin/settlements`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json() as {
-    platform_charges: { charge_pct: number; flat_charge: number };
     canteens: {
       canteen_id: string;
       gross_amount: number;
       platform_fee_amount: number;
-      extra_bin_charge_amount: number;
       net_payable: number;
     }[];
   };
-  // Verify math holds for any canteen: net = gross - platformFee - extraBin
+  // Canteen pays platform fee ONLY — invariant must hold across all canteens
   for (const c of data.canteens) {
     if (c.gross_amount === 0) continue;
-    const expected = Math.max(0, Math.round((c.gross_amount - c.platform_fee_amount - c.extra_bin_charge_amount) * 100) / 100);
+    const expected = Math.max(0, Math.round((c.gross_amount - c.platform_fee_amount) * 100) / 100);
     expect(c.net_payable).toBeCloseTo(expected, 1);
   }
 });
 
-test("10. Settlement: extra_bin_charge IS deducted from canteen net payable", async () => {
+test("10. Settlement: extra_bin_charge goes to admin revenue, NOT deducted from canteen net", async () => {
   test.skip(setupFailed, SKIP_MSG);
-  // Seed an order with extra_bin_fee_paise set
   const db = adminClient();
-  const EXTRA_PAISE = 200; // ₹2 extra bin fee
+  const EXTRA_PAISE = 200; // ₹2 extra bin fee charged to student
   const { data: extraOrder } = await db
     .from("orders")
     .insert({
-      user_id:            studentId,
-      canteen_id:         canteenId,
-      status:             "collected",
-      total_amount:       menuItemPrice,
-      otp:                "8888",
-      payment_id:         `pay_extrabin_${Date.now()}`,
+      user_id:             studentId,
+      canteen_id:          canteenId,
+      status:              "collected",
+      total_amount:        menuItemPrice,
+      otp:                 "8888",
+      payment_id:          `pay_extrabin_${Date.now()}`,
       extra_bin_fee_paise: EXTRA_PAISE,
     })
     .select("id")
@@ -339,20 +334,29 @@ test("10. Settlement: extra_bin_charge IS deducted from canteen net payable", as
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json() as {
-      canteens: { canteen_id: string; extra_bin_charge_amount: number }[];
+      canteens: {
+        canteen_id: string;
+        gross_amount: number;
+        platform_fee_amount: number;
+        extra_bin_charge_amount: number;
+        net_payable: number;
+      }[];
     };
     const canteen = data.canteens.find(c => c.canteen_id === canteenId);
-    // extra_bin_charge_amount should include the ₹2 we just added
-    if (canteen) {
-      expect(canteen.extra_bin_charge_amount).toBeGreaterThanOrEqual(EXTRA_PAISE / 100 - 0.01);
-    }
+    if (!canteen) return;
+
+    // extra_bin shows in admin revenue column
+    expect(canteen.extra_bin_charge_amount).toBeGreaterThanOrEqual(EXTRA_PAISE / 100 - 0.01);
+    // but canteen net is still gross - platform_fee only (extra_bin NOT deducted from canteen)
+    const expected = Math.max(0, Math.round((canteen.gross_amount - canteen.platform_fee_amount) * 100) / 100);
+    expect(canteen.net_payable).toBeCloseTo(expected, 1);
   } finally {
     await db.from("order_items").delete().eq("order_id", extraOrder.id);
     await db.from("orders").delete().eq("id", extraOrder.id);
   }
 });
 
-test("11. Weekly report: net_payable excludes convenience and GST on platform fee", async () => {
+test("11. Weekly report: net_payable = gross - platform_fee only (extra-bin, convenience not deducted from canteen)", async () => {
   test.skip(setupFailed, SKIP_MSG);
   const token = await getAccessToken(WHITELIST.superAdmin.email, WHITELIST.superAdmin.password);
   const res   = await apiFetch(`${APP_URL}/api/admin/settlements/weekly-report`, {
@@ -369,10 +373,10 @@ test("11. Weekly report: net_payable excludes convenience and GST on platform fe
     }[];
     totals: { net_payable: number };
   };
-  // Each week: net = gross - platformFee - extraBin (not minus convenience or GST on fee)
+  // Each week: canteen net = gross - platform_fee ONLY
   for (const week of data.report ?? []) {
     if (week.gross === 0) continue;
-    const expected = Math.max(0, Math.round((week.gross - week.platform_fee - week.extra_bin_charge) * 100) / 100);
+    const expected = Math.max(0, Math.round((week.gross - week.platform_fee) * 100) / 100);
     expect(week.net_payable).toBeCloseTo(expected, 1);
   }
 });
