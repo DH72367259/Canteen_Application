@@ -6,8 +6,9 @@ import { reconcileBinsForCanteen } from "@/lib/binProvisioning";
 export const dynamic = "force-dynamic";
 
 // POST /api/canteen/bins/regenerate
-// Wipes idle bins for the caller's canteen and re-creates the colour-rack
-// rows from slot_control.max_bins. Bins linked to live orders are kept.
+// Reconciles the bin rack to match slot_control.max_bins exactly:
+// deletes idle surplus bins and inserts any missing target bins.
+// Bins linked to live orders are kept.
 // Body (optional): { canteenId?: string }  — required for super_admin/co_admin.
 export async function POST(request: Request) {
   const auth = await getRequestContext(request);

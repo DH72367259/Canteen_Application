@@ -1,15 +1,25 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+      - main
   workflow_dispatch:
     inputs:
       branch:
         description: "Branch to run CI on"
         required: false
-        default: "main"
+        default: "dev"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Resolve which branch to test (manual dispatch only).
+# Resolve which branch to test.
+# For pull_request events  → uses the PR source branch (github.head_ref).
+# For push events          → uses the pushed branch (github.ref_name).
+# For workflow_dispatch    → uses the input, defaulting to "dev".
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
   resolve-branches:
@@ -20,11 +30,17 @@ jobs:
     steps:
       - id: set
         run: |
-          BRANCH="${{ inputs.branch || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BRANCH="${{ github.head_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCH="${{ inputs.branch || 'dev' }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
           echo "matrix={\"branch\":[\"$BRANCH\"]}" >> "$GITHUB_OUTPUT"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 1 — TypeScript type-check
+# Job 1 — TypeScript type-check (runs on every trigger)
 # ─────────────────────────────────────────────────────────────────────────────
   type-check:
     name: Type Check (${{ matrix.branch }})
@@ -56,7 +72,8 @@ jobs:
         run: npx tsc --noEmit
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 2 — Backend unit tests (Jest, all mocked — no live Supabase needed)
+# Job 2 — Backend unit tests (runs on every trigger, all mocked — no live
+#          Supabase needed)
 # ─────────────────────────────────────────────────────────────────────────────
   backend:
     name: Backend Unit Tests (${{ matrix.branch }})
@@ -90,13 +107,24 @@ jobs:
         run: npm test -- --ci --forceExit --passWithNoTests
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 3 — E2E browser tests (Playwright against the deployed Railway app)
+# Job 3 — E2E browser tests against the STAGING Railway deployment.
+#
+# Skipped on pull_request events — E2E only runs on a direct push to dev
+# (and on workflow_dispatch). This prevents CI from hammering staging on
+# every PR open/sync while still giving a full E2E gate after every merge
+# into dev.
+#
+# Uses the "staging" GitHub Environment so that all secrets here resolve to
+# the staging Supabase project and the staging Railway service — production
+# is never touched by CI.
 # ─────────────────────────────────────────────────────────────────────────────
   e2e:
     name: E2E Browser Tests (${{ matrix.branch }})
+    if: github.event_name != 'pull_request'
     needs: resolve-branches
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: staging
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.resolve-branches.outputs.matrix) }}
@@ -172,3 +200,23 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Final sentinel — a fixed-name job that branch protection rules can target.
+# Passes only when type-check and backend pass. E2E is excluded here because
+# it is skipped on pull_request events by design.
+# ─────────────────────────────────────────────────────────────────────────────
+  ci-passed:
+    name: ci-passed
+    needs: [type-check, backend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required jobs
+        run: |
+          if [ "${{ needs.type-check.result }}" != "success" ] || \
+             [ "${{ needs.backend.result }}"     != "success" ]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs passed."
