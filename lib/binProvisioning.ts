@@ -125,3 +125,62 @@ export async function ensureBinsForCanteen(
   return toInsert.length;
 }
 
+/**
+ * Reconcile the physical bin rack so it exactly matches `total`.
+ *
+ * - Deletes idle bins (is_occupied=false, assigned_order_id IS NULL) whose
+ *   bin_code falls outside the target set (i.e. excess bins from a prior
+ *   higher max_bins).
+ * - Inserts any target bins that are missing.
+ *
+ * Bins that are currently occupied or linked to an order are NEVER deleted —
+ * they will remain until they are naturally freed; the Bin Management UI
+ * will show the correct count once those orders are collected.
+ *
+ * Returns { deleted, inserted }.
+ */
+export async function reconcileBinsForCanteen(
+  supabase: SupabaseClient,
+  canteenId: string,
+  total: number,
+): Promise<{ deleted: number; inserted: number }> {
+  if (!canteenId || !Number.isFinite(total) || total <= 0) return { deleted: 0, inserted: 0 };
+
+  const zoneSizes = binsPerZone(total);
+  const targetSet = new Set<string>();
+  ALL_BIN_ZONES.forEach((zone, zoneIdx) => {
+    for (let n = 1; n <= zoneSizes[zoneIdx]; n++) {
+      targetSet.add(binCode(zone, n));
+    }
+  });
+
+  // Fetch all idle bins for this canteen.
+  const { data: idleBins } = await supabase
+    .from("bins")
+    .select("bin_code")
+    .eq("canteen_id", canteenId)
+    .eq("is_occupied", false)
+    .is("assigned_order_id", null);
+
+  const surplusCodes = (idleBins ?? [])
+    .map(r => String(r.bin_code))
+    .filter(code => !targetSet.has(code));
+
+  let deleted = 0;
+  if (surplusCodes.length > 0) {
+    const { error } = await supabase
+      .from("bins")
+      .delete()
+      .eq("canteen_id", canteenId)
+      .in("bin_code", surplusCodes);
+    if (error) {
+      console.warn("[reconcileBinsForCanteen] delete failed:", error.message);
+    } else {
+      deleted = surplusCodes.length;
+    }
+  }
+
+  const inserted = await ensureBinsForCanteen(supabase, canteenId, total);
+  return { deleted, inserted };
+}
+
