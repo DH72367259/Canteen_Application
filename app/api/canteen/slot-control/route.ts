@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { computeSlotCapacity, generateTimeSlots } from "@/lib/slotCapacity";
-import { ensureBinsForCanteen } from "@/lib/binProvisioning";
+import { ensureBinsForCanteen, reconcileBinsForCanteen } from "@/lib/binProvisioning";
 
 export const dynamic = "force-dynamic";
 
@@ -160,15 +160,11 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Failed to update slot control." }, { status: 500 });
   }
 
-  // If max_bins changed, top-up the physical bins table so the order
-  // assignment flow has rows to pick from. Idempotent — only inserts
-  // bins that don't already exist for this canteen.
+  // If max_bins changed, reconcile the physical bins table:
+  // - delete idle bins that are no longer in the target set (shrink)
+  // - insert any missing target bins (grow)
   if ("max_bins" in updates) {
-    await ensureBinsForCanteen(supabase, canteenId, Number(updates.max_bins));
-  }
-
-  if (error || !data) {
-    return NextResponse.json({ error: "Failed to update slot control." }, { status: 500 });
+    await reconcileBinsForCanteen(supabase, canteenId, Number(updates.max_bins));
   }
 
   const row = data as SlotControlRow;

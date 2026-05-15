@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
-import { ensureBinsForCanteen } from "@/lib/binProvisioning";
+import { reconcileBinsForCanteen } from "@/lib/binProvisioning";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/canteen/bins/regenerate
-// Wipes idle bins for the caller's canteen and re-creates the colour-rack
-// rows from slot_control.max_bins. Bins linked to live orders are kept.
+// Reconciles the bin rack to match slot_control.max_bins exactly:
+// deletes idle surplus bins and inserts any missing target bins.
+// Bins linked to live orders are kept.
 // Body (optional): { canteenId?: string }  — required for super_admin/co_admin.
 export async function POST(request: Request) {
   const auth = await getRequestContext(request);
@@ -34,14 +35,6 @@ export async function POST(request: Request) {
     .single();
   const maxBins = Number(sc?.max_bins) || 60;
 
-  // Drop idle bins so the rack snaps to the new size, then re-provision.
-  await supabase
-    .from("bins")
-    .delete()
-    .eq("canteen_id", canteenId)
-    .eq("is_occupied", false)
-    .is("assigned_order_id", null);
-
-  const inserted = await ensureBinsForCanteen(supabase, canteenId, maxBins);
-  return NextResponse.json({ success: true, canteenId, maxBins, inserted });
+  const { deleted, inserted } = await reconcileBinsForCanteen(supabase, canteenId, maxBins);
+  return NextResponse.json({ success: true, canteenId, maxBins, deleted, inserted });
 }
