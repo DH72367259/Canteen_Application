@@ -64,13 +64,13 @@ async function cleanup() {
     const { data: allBins } = await supabase
       .from('bins')
       .select('id')
-      .or('is_occupied.eq.true,order_id.neq.null,assigned_order_id.neq.null');
+      .or('is_occupied.eq.true,current_order_id.neq.null,assigned_order_id.neq.null');
 
     const binIds = (allBins || []).map(b => b.id);
     if (binIds.length > 0) {
       await supabase.from('bins').update({
         is_occupied: false,
-        order_id: null,
+        current_order_id: null,
         assigned_order_id: null,
         status: 'empty',
         updated_at: new Date().toISOString(),

@@ -133,6 +133,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL:      ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      QR_HMAC_SECRET:                ${{ secrets.QR_HMAC_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
@@ -172,6 +173,7 @@ jobs:
           printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n'      "$NEXT_PUBLIC_SUPABASE_URL"      >> .env.local
           printf 'NEXT_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" >> .env.local
           printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n'     "$SUPABASE_SERVICE_ROLE_KEY"     >> .env.local
+          printf 'QR_HMAC_SECRET=%s\n'               "$QR_HMAC_SECRET"               >> .env.local
           printf 'APP_BASE_URL=%s\n'                  "$APP_BASE_URL"                  >> .env.local
 
       - name: Reset E2E database

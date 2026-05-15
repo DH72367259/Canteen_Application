@@ -46,9 +46,9 @@ const ok = (...a) => console.log("  ✅", ...a);
 const warn = (...a) => console.log("  ⚠️ ", ...a);
 const section = (title) => console.log(`\n═══ ${title} ═══`);
 
-async function nuke(table, label = table) {
+async function nuke(table, label = table, filter = (q) => q.not("id", "is", null)) {
   try {
-    const { error, count } = await sb.from(table).delete({ count: "exact" }).not("id", "is", null);
+    const { error, count } = await filter(sb.from(table).delete({ count: "exact" }));
     if (error) {
       if (/relation .* does not exist|table .* does not exist/i.test(error.message ?? "")) {
         warn(`${label} table doesn't exist`);
@@ -83,7 +83,7 @@ async function main() {
   await nuke("reward_transactions", "reward_transactions");
   await nuke("rewards", "rewards");
   await nuke("support_tickets", "support_tickets");
-  await nuke("notification_reads", "notification_reads");
+  await nuke("notification_reads", "notification_reads", (q) => q.gte("read_at", "1970-01-01"));
   await nuke("notifications", "notifications");
   await nuke("device_tokens", "device_tokens");
   await nuke("logs", "activity logs");
@@ -96,7 +96,7 @@ async function main() {
     const { error: binErr, count: binCount } = await sb
       .from("bins")
       .update(
-        { is_occupied: false, order_id: null, assigned_order_id: null, status: "empty" },
+        { is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty" },
         { count: "exact" }
       )
       .not("id", "is", null);

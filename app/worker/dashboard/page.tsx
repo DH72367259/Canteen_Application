@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import dynamic from "next/dynamic";
+
+const QRScanner = dynamic(() => import("@/components/QRScanner"), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface OrderItem { name: string; quantity: number }
@@ -407,15 +410,16 @@ function AwaitingOtpList({ orders, session, onUpdated }: { orders: WorkerOrder[]
 }
 
 function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; session: { access_token: string } | null; onDone: () => void | Promise<void> }) {
-  const [otp, setOtp]     = useState("");
-  const [busy, setBusy]   = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [otp, setOtp]         = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const colorKey = order.binColor ?? order.bin_color ?? "orange";
   const binBg    = BIN_COLORS[colorKey] ?? "#f97316";
   const binCode  = order.binLabel ?? order.bin_code ?? `#${order.bin_number ?? "?"}`;
   const binCount = order.binAssignments?.length ?? order.binCount ?? 1;
 
-  async function verify() {
+  async function verifyOtp() {
     if (!session || otp.length < 4) return;
     setBusy(true); setError(null);
     try {
@@ -433,34 +437,65 @@ function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; sessio
     } finally { setBusy(false); }
   }
 
+  async function verifyQr(payload: string) {
+    setScanning(false);
+    if (!session) return;
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ qrPayload: payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "QR verification failed");
+      await onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "QR scan failed");
+    } finally { setBusy(false); }
+  }
+
   return (
-    <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: binBg }}>
-        <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.05rem" }}>{binCode}{binCount > 1 ? ` +${binCount - 1}` : ""}</span>
-        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.72rem", flex: 1 }}>#{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}</span>
-        <span style={{ color: "#fff", fontSize: "0.7rem", background: "rgba(0,0,0,0.18)", padding: "0.15rem 0.45rem", borderRadius: 999, fontWeight: 700 }}>In bin</span>
-      </div>
-      <div style={{ padding: "0.6rem 0.75rem 0.75rem" }}>
-        <div style={{ fontSize: "0.78rem", color: "#475569", marginBottom: "0.45rem" }}>
-          {order.items.map(i => `${i.name}×${i.quantity}`).join(", ")}
+    <>
+      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} />}
+      <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: binBg }}>
+          <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.05rem" }}>{binCode}{binCount > 1 ? ` +${binCount - 1}` : ""}</span>
+          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.72rem", flex: 1 }}>#{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}</span>
+          <span style={{ color: "#fff", fontSize: "0.7rem", background: "rgba(0,0,0,0.18)", padding: "0.15rem 0.45rem", borderRadius: 999, fontWeight: 700 }}>In bin</span>
         </div>
-        <div style={{ display: "flex", gap: "0.4rem" }}>
-          <input
-            type="text" inputMode="numeric" maxLength={6} value={otp}
-            onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
-            placeholder="OTP"
-            style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center", border: "1.5px solid #e2e8f0", borderRadius: 10 }}
-          />
+        <div style={{ padding: "0.6rem 0.75rem 0.75rem" }}>
+          <div style={{ fontSize: "0.78rem", color: "#475569", marginBottom: "0.5rem" }}>
+            {order.items.map(i => `${i.name}×${i.quantity}`).join(", ")}
+          </div>
+          {/* Primary: QR scan button */}
           <button
-            onClick={verify} disabled={busy || otp.length < 4}
-            style={{ padding: "0 1rem", background: otp.length < 4 ? "#e5e7eb" : "#22c55e", color: otp.length < 4 ? "#94a3b8" : "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: otp.length < 4 ? "default" : "pointer" }}
+            onClick={() => { setScanning(true); setError(null); }}
+            disabled={busy}
+            style={{ width: "100%", padding: "0.65rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
           >
-            {busy ? "…" : "Verify"}
+            📷 Scan QR Code
           </button>
+          {/* Fallback: OTP */}
+          <div style={{ fontSize: "0.7rem", color: "#94a3b8", textAlign: "center", margin: "0.3rem 0" }}>or enter backup OTP</div>
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <input
+              type="text" inputMode="numeric" maxLength={6} value={otp}
+              onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
+              placeholder="OTP"
+              style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center", border: "1.5px solid #e2e8f0", borderRadius: 10 }}
+            />
+            <button
+              onClick={verifyOtp} disabled={busy || otp.length < 4}
+              style={{ padding: "0 1rem", background: otp.length < 4 ? "#e5e7eb" : "#22c55e", color: otp.length < 4 ? "#94a3b8" : "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: otp.length < 4 ? "default" : "pointer" }}
+            >
+              {busy ? "…" : "Verify"}
+            </button>
+          </div>
+          {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
         </div>
-        {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -486,16 +521,17 @@ function LatePickupList({ orders, session, onUpdated }: { orders: WorkerOrder[];
 }
 
 function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session: { access_token: string } | null; onDone: () => void | Promise<void> }) {
-  const [otp, setOtp]     = useState("");
-  const [busy, setBusy]   = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [otp, setOtp]         = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const binCode  = order.binLabel ?? order.bin_code ?? null;
   const colorKey = order.binColor ?? order.bin_color ?? "orange";
   const binBg    = BIN_COLORS[colorKey] ?? "#f97316";
   const slotText = order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—";
 
-  async function verify() {
+  async function verifyOtp() {
     if (!session || otp.length < 4) return;
     setBusy(true); setError(null);
     try {
@@ -513,56 +549,86 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
     } finally { setBusy(false); }
   }
 
+  async function verifyQr(payload: string) {
+    setScanning(false);
+    if (!session) return;
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ qrPayload: payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "QR verification failed");
+      await onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "QR scan failed");
+    } finally { setBusy(false); }
+  }
+
   return (
-    <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #dc2626", boxShadow: "0 4px 14px rgba(220,38,38,0.18)" }}>
-      {/* Header — red strip with bin + slot */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: "#dc2626" }}>
-        {binCode && (
-          <div style={{ background: binBg, color: "#fff", border: "2px solid rgba(255,255,255,0.5)", borderRadius: 8, padding: "0.2rem 0.65rem", fontSize: "0.82rem", fontWeight: 900 }}>{binCode}</div>
-        )}
-        <span style={{ color: "#fff", fontWeight: 600, fontSize: "0.75rem", flex: 1 }}>
-          #{order.id.slice(-8).toUpperCase()} · {slotText}
-        </span>
-        <span style={{ background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 999, padding: "0.15rem 0.5rem", fontSize: "0.68rem", fontWeight: 700 }}>LATE</span>
-      </div>
+    <>
+      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} />}
+      <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #dc2626", boxShadow: "0 4px 14px rgba(220,38,38,0.18)" }}>
+        {/* Header — red strip with bin + slot */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: "#dc2626" }}>
+          {binCode && (
+            <div style={{ background: binBg, color: "#fff", border: "2px solid rgba(255,255,255,0.5)", borderRadius: 8, padding: "0.2rem 0.65rem", fontSize: "0.82rem", fontWeight: 900 }}>{binCode}</div>
+          )}
+          <span style={{ color: "#fff", fontWeight: 600, fontSize: "0.75rem", flex: 1 }}>
+            #{order.id.slice(-8).toUpperCase()} · {slotText}
+          </span>
+          <span style={{ background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 999, padding: "0.15rem 0.5rem", fontSize: "0.68rem", fontWeight: 700 }}>LATE</span>
+        </div>
 
-      {/* Worker action instruction */}
-      <div style={{ margin: "0.65rem 0.75rem 0.35rem", background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "0.55rem 0.7rem", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
-        <span style={{ fontSize: "1.2rem" }}>⚠️</span>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#991b1b" }}>
-            {binCode ? `Move food from ${binCode} to the late pickup counter` : "Move food to the late pickup counter"}
-          </div>
-          <div style={{ fontSize: "0.73rem", color: "#b91c1c", marginTop: "0.15rem" }}>
-            Then enter the student&apos;s OTP below when they arrive
+        {/* Worker action instruction */}
+        <div style={{ margin: "0.65rem 0.75rem 0.35rem", background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "0.55rem 0.7rem", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+          <span style={{ fontSize: "1.2rem" }}>⚠️</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#991b1b" }}>
+              {binCode ? `Move food from ${binCode} to the late pickup counter` : "Move food to the late pickup counter"}
+            </div>
+            <div style={{ fontSize: "0.73rem", color: "#b91c1c", marginTop: "0.15rem" }}>
+              Then scan the student&apos;s QR code when they arrive
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Items */}
-      <div style={{ padding: "0.3rem 0.75rem 0.45rem", fontSize: "0.82rem", color: "#475569" }}>
-        {order.items.map((i, idx) => `${i.name} ×${i.quantity}${idx < order.items.length - 1 ? " · " : ""}`)}
-      </div>
+        {/* Items */}
+        <div style={{ padding: "0.3rem 0.75rem 0.45rem", fontSize: "0.82rem", color: "#475569" }}>
+          {order.items.map((i, idx) => `${i.name} ×${i.quantity}${idx < order.items.length - 1 ? " · " : ""}`)}
+        </div>
 
-      {/* OTP entry */}
-      <div style={{ padding: "0 0.75rem 0.75rem" }}>
-        <div style={{ display: "flex", gap: "0.4rem" }}>
-          <input
-            type="text" inputMode="numeric" maxLength={6} value={otp}
-            onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
-            placeholder="Enter OTP"
-            style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center" as const, border: "1.5px solid #fca5a5", borderRadius: 10 }}
-          />
+        {/* Primary: QR scan */}
+        <div style={{ padding: "0 0.75rem 0.75rem" }}>
           <button
-            onClick={verify} disabled={busy || otp.length < 4}
-            style={{ padding: "0 1rem", background: otp.length < 4 ? "#e5e7eb" : "#22c55e", color: otp.length < 4 ? "#94a3b8" : "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: otp.length < 4 ? "default" : "pointer" }}
+            onClick={() => { setScanning(true); setError(null); }}
+            disabled={busy}
+            style={{ width: "100%", padding: "0.65rem", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
           >
-            {busy ? "…" : "Verify"}
+            📷 Scan QR Code
           </button>
+          {/* Fallback OTP */}
+          <div style={{ fontSize: "0.7rem", color: "#94a3b8", textAlign: "center", margin: "0.3rem 0" }}>or enter backup OTP</div>
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <input
+              type="text" inputMode="numeric" maxLength={6} value={otp}
+              onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
+              placeholder="Enter OTP"
+              style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center" as const, border: "1.5px solid #fca5a5", borderRadius: 10 }}
+            />
+            <button
+              onClick={verifyOtp} disabled={busy || otp.length < 4}
+              style={{ padding: "0 1rem", background: otp.length < 4 ? "#e5e7eb" : "#22c55e", color: otp.length < 4 ? "#94a3b8" : "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: otp.length < 4 ? "default" : "pointer" }}
+            >
+              {busy ? "…" : "Verify"}
+            </button>
+          </div>
+          {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
         </div>
-        {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
       </div>
-    </div>
+    </>
   );
 }
 

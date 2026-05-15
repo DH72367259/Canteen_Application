@@ -6,6 +6,10 @@ import { useAuth } from "@/lib/auth-context";
 import type { CanteenOrder } from "@/types/canteen";
 import type { Session } from "@supabase/supabase-js";
 import CancelOrderModal from "@/components/CancelOrderModal";
+import dynamic from "next/dynamic";
+
+const QRScanner    = dynamic(() => import("@/components/QRScanner"),    { ssr: false });
+const BillReceipt  = dynamic(() => import("@/components/BillReceipt"),  { ssr: false });
 
 /** Fire this from any sub-component that receives a 401 response.
  *  VendorDashboard listens for it and shows the session-expired overlay. */
@@ -174,6 +178,12 @@ export default function VendorDashboard() {
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<{ id: string; amount?: number } | null>(null);
+  const [qrScanning, setQrScanning] = useState(false);
+  const [printOrder, setPrintOrder] = useState<{
+    orderId: string; binLabel?: string | null; slot?: string | null;
+    customerName?: string | null; items: Array<{ name: string; quantity: number; unitPrice?: number }>;
+    totalAmount: number; canteenName?: string; createdAt?: string;
+  } | null>(null);
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [canteenOpen, setCanteenOpen] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
@@ -497,6 +507,50 @@ export default function VendorDashboard() {
       setBins(prev => prev.map(b => b.id === selectedBin.id ? { ...b, status: "completed" } : b));
     }
     setTimeout(() => setSelectedBin(null), 1200);
+  };
+
+  const handleQrScanned = async (payload: string) => {
+    setQrScanning(false);
+    if (!selectedBin?.rawOrderId || !session) return;
+    try {
+      const res = await fetch(`/api/orders/${selectedBin.rawOrderId}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ qrPayload: payload }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) { setOtpError(data.error ?? "QR verification failed."); return; }
+      setOtpSuccess(true);
+      setTimeout(() => setSelectedBin(null), 1200);
+    } catch { setOtpError("QR scan error. Try again."); }
+  };
+
+  const handlePrintBill = async (bin: Bin) => {
+    if (!bin.rawOrderId || !session) return;
+    try {
+      const res = await fetch(`/api/orders/${bin.rawOrderId}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json() as {
+        order?: {
+          items?: Array<{ name: string; quantity: number; unitPrice?: number; unit_price?: number }>;
+          total?: number; total_amount?: number;
+          created_at?: string; createdAt?: string;
+        }
+      };
+      const o = data.order;
+      setPrintOrder({
+        orderId: bin.rawOrderId,
+        binLabel: bin.binLabel,
+        slot: bin.slot,
+        customerName: bin.customerName,
+        items: (o?.items ?? []).map(i => ({ name: i.name, quantity: i.quantity, unitPrice: i.unitPrice ?? i.unit_price })),
+        totalAmount: Number(o?.total ?? o?.total_amount ?? bin.totalAmount ?? 0),
+        canteenName: (o as Record<string, unknown>)?.canteenName as string | undefined ?? undefined,
+        createdAt: o?.created_at ?? o?.createdAt,
+      });
+    } catch { /* ignore */ }
   };
 
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
@@ -970,13 +1024,41 @@ export default function VendorDashboard() {
         {activeNav === "support" && <VendorSupportView />}
       </main>
 
-      {/* OTP Modal */}
+      {/* QR Scanner overlay */}
+      {qrScanning && <QRScanner onScanned={handleQrScanned} onClose={() => setQrScanning(false)} />}
+
+      {/* Bill Receipt modal */}
+      {printOrder && (
+        <BillReceipt
+          orderId={printOrder.orderId}
+          studentName={printOrder.customerName ?? undefined}
+          canteenName={printOrder.canteenName}
+          slotLabel={printOrder.slot ?? undefined}
+          binLabel={printOrder.binLabel ?? undefined}
+          items={printOrder.items}
+          totalAmount={printOrder.totalAmount}
+          createdAt={printOrder.createdAt}
+          onClose={() => setPrintOrder(null)}
+        />
+      )}
+
+      {/* Order Verify Modal (QR primary + OTP fallback) */}
       {selectedBin && (
         <div className="modal-overlay" onClick={() => setSelectedBin(null)}>
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <h3>Verify OTP — Bin #{selectedBin.number}</h3>
-              <button onClick={() => setSelectedBin(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
+              <h3>Verify Order — Bin #{selectedBin.number}</h3>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                {/* Print Bill */}
+                <button
+                  onClick={() => handlePrintBill(selectedBin)}
+                  title="Print Bill"
+                  style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem" }}
+                >
+                  🖨️
+                </button>
+                <button onClick={() => setSelectedBin(null)} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "var(--ink-3)" }}>✕</button>
+              </div>
             </div>
 
             <div className="card" style={{ background: "var(--bg)" }}>
@@ -987,12 +1069,27 @@ export default function VendorDashboard() {
 
             {otpSuccess ? (
               <div style={{ textAlign: "center", padding: "1rem", color: "var(--green)", fontWeight: 700, fontSize: "1.1rem" }}>
-                ✅ OTP Verified! Order marked complete.
+                ✅ Order verified! Marked complete.
               </div>
             ) : (
               <>
+                {/* Primary: QR scan */}
+                <button
+                  onClick={() => { setQrScanning(true); setOtpError(null); }}
+                  style={{ width: "100%", padding: "0.85rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: "1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                >
+                  📷 Scan Student&apos;s QR Code
+                </button>
+
+                {/* Divider */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "0.75rem 0" }}>
+                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>or enter backup OTP</span>
+                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                </div>
+
+                {/* Fallback: OTP */}
                 <div>
-                  <div className="form-label" style={{ marginBottom: "0.5rem" }}>Customer shows OTP — enter below</div>
                   <div className="otp-input-row">
                     {[0, 1, 2, 3].map(i => (
                       <input
@@ -1031,7 +1128,7 @@ export default function VendorDashboard() {
                   {otpError && <p className="error-msg">{otpError}</p>}
                 </div>
                 <button className="btn btn-primary btn-full" onClick={handleOtpVerify} disabled={otpInput.length < 4} style={{ padding: "0.8rem" }}>
-                  Verify & Complete Order
+                  Verify OTP
                 </button>
               </>
             )}

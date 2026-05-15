@@ -4,6 +4,9 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import dynamic from "next/dynamic";
+
+const OrderQRCode = dynamic(() => import("@/components/OrderQRCode"), { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -223,29 +226,48 @@ function OrderStatusContent() {
             <div>
               <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400e" }}>Your slot ended — but your food is still here!</div>
               <div style={{ fontSize: "0.78rem", color: "#78350f", marginTop: "0.3rem", lineHeight: 1.5 }}>
-                The canteen has moved your food to a separate area. Show the OTP below to the canteen staff to collect your order anytime today.
+                The canteen has moved your food to a separate area. Show the QR code below to the canteen staff to collect your order anytime today.
               </div>
             </div>
           </div>
         )}
 
-        {/* ── OTP section — only when bin is assigned and ready ── */}
-        {showOtp && order.otp && (
+        {/* ── QR + OTP section — only when bin is assigned and ready ── */}
+        {showOtp && (
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "2px solid var(--orange)" }}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <div style={{ fontWeight: 900, fontSize: "1.1rem", color: "#15803d" }}>
                 {isLatePickup ? "🍱 Food is waiting for you!" : "🎉 Your order is ready!"}
               </div>
-              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.2rem" }}>Show this OTP to the canteen staff</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginTop: "0.2rem" }}>
+                Show this QR code to the canteen staff
+              </div>
             </div>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginBottom: "0.75rem" }}>
-              {order.otp.toString().padStart(4, "0").split("").map((d, i) => (
-                <div key={i} style={{ width: 54, height: 62, borderRadius: 14, border: "2.5px solid var(--orange)", background: "#fff7ed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.9rem", fontWeight: 900, color: "var(--orange)" }}>
-                  {d}
-                </div>
-              ))}
+
+            {/* Primary: rotating QR code */}
+            <OrderQRCode orderId={order.id} token={session?.access_token ?? ""} size={220} />
+
+            {/* Divider */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "1rem 0 0.75rem" }}>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              <span style={{ fontSize: "0.72rem", color: "var(--ink-3)", whiteSpace: "nowrap" }}>or use backup OTP</span>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
             </div>
-            <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", textAlign: "center" }}>Staff will scan your QR or ask for OTP above</div>
+
+            {/* Fallback: OTP digits */}
+            {order.otp && (
+              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+                {order.otp.toString().padStart(4, "0").split("").map((d, i) => (
+                  <div key={i} style={{ width: 48, height: 56, borderRadius: 12, border: "2px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", fontWeight: 900, color: "#64748b" }}>
+                    {d}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", textAlign: "center", marginTop: "0.6rem" }}>
+              QR refreshes automatically every 30 seconds
+            </div>
           </div>
         )}
 
@@ -296,7 +318,7 @@ function OrderStatusContent() {
         {/* ── Info banner for early states ── */}
         {!showOtp && !isCollected && (
           <div style={{ background: "var(--blue-light)", border: "1px solid #bfdbfe", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#1d4ed8" }}>
-            🔔 This page refreshes every 10 seconds. OTP and bin number will appear here once your order is placed in the bin.
+            🔔 This page refreshes every 10 seconds. QR code and bin number will appear here once your order is placed in the bin.
           </div>
         )}
 
