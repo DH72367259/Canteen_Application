@@ -172,7 +172,6 @@ function BottomNav({ tab, onChange }: { tab: string; onChange: (t: "orders" | "b
 function OrdersTab({ session }: { session: { access_token: string } | null }) {
   const [slotGroups, setSlotGroups]     = useState<{ slot: string; orders: WorkerOrder[] }[]>([]);
   const [awaitingOtp, setAwaitingOtp]   = useState<WorkerOrder[]>([]);
-  const [latePending, setLatePending]   = useState<WorkerOrder[]>([]);
   const [latePickup, setLatePickup]     = useState<WorkerOrder[]>([]);
   const [updating, setUpdating]         = useState<string | null>(null);
   const [confirmPlace, setConfirmPlace] = useState<WorkerOrder | null>(null);
@@ -187,19 +186,15 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
       const data = await res.json();
       const all: WorkerOrder[] = data.orders ?? [];
 
-      const PREP        = ["confirmed", "preparing", "ready_for_placement"];
-      const PICKUP      = ["placed_in_bin", "ready_for_pickup"];
-      const LATE_PEND   = ["late_pickup_pending"];
-      const LATE        = ["late_pickup"];
+      const PREP   = ["confirmed", "preparing", "ready_for_placement"];
+      const PICKUP = ["placed_in_bin", "ready_for_pickup"];
+      const LATE   = ["late_pickup"];
 
       const prepOrders = all
         .filter(o => PREP.includes(o.rawStatus ?? o.status))
         .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
       const pickupOrders = all
         .filter(o => PICKUP.includes(o.rawStatus ?? o.status))
-        .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
-      const latePendOrders = all
-        .filter(o => LATE_PEND.includes(o.rawStatus ?? o.status))
         .sort((a, b) => new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime());
       const lateOrders = all
         .filter(o => LATE.includes(o.rawStatus ?? o.status))
@@ -218,7 +213,6 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
           .map(([slot, orders]) => ({ slot, orders }))
       );
       setAwaitingOtp(pickupOrders);
-      setLatePending(latePendOrders);
       setLatePickup(lateOrders);
     } catch { /* retry */ }
     finally { setFetching(false); }
@@ -464,82 +458,6 @@ function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; sessio
             {busy ? "…" : "Verify"}
           </button>
         </div>
-        {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
-      </div>
-    </div>
-  );
-}
-
-// ─── LATE PENDING LIST ────────────────────────────────────────────────────────
-// Orders whose slot ended but the bin has NOT been cleared yet.
-// Worker must physically remove food and click "Bin Cleared" to free the bin.
-function LatePendingList({ orders, session, onUpdated }: { orders: WorkerOrder[]; session: { access_token: string } | null; onUpdated: () => void | Promise<void> }) {
-  if (orders.length === 0) return null;
-  return (
-    <div style={{ marginTop: "1.25rem" }}>
-      <div style={{ fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.05em", margin: "0 0 0.5rem 0.25rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-        <span style={{ background: "#fef3c7", color: "#92400e", border: "1.5px solid #fbbf24", borderRadius: 6, padding: "0.1rem 0.45rem" }}>⚠️ CLEAR BIN ({orders.length})</span>
-        <span style={{ fontWeight: 400, fontSize: "0.72rem", color: "#94a3b8" }}>Slot ended — move food to late pickup counter</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-        {orders.map(o => (
-          <LatePendingRow key={o.id} order={o} session={session} onDone={onUpdated} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LatePendingRow({ order, session, onDone }: { order: WorkerOrder; session: { access_token: string } | null; onDone: () => void | Promise<void> }) {
-  const [busy, setBusy]   = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const binLabel  = order.binLabel ?? (order.bin_code ? String(order.bin_code) : "—");
-  const colorKey  = order.binColor ?? order.bin_color ?? "orange";
-  const binBg     = BIN_COLORS[colorKey] ?? "#f97316";
-
-  async function clearBin() {
-    if (!session) return;
-    setBusy(true); setError(null);
-    try {
-      const res = await fetch(`/api/orders/${order.id}/clear-bin`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to clear bin");
-      await onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error");
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden", border: "1.5px solid #fbbf24" }}>
-      {/* Header: bin + slot */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.55rem 0.75rem", background: "#fffbeb" }}>
-        <div style={{ background: binBg, color: "#fff", borderRadius: 8, padding: "0.15rem 0.55rem", fontSize: "0.78rem", fontWeight: 800 }}>{binLabel}</div>
-        <span style={{ fontSize: "0.72rem", color: "#92400e", fontWeight: 600, flex: 1 }}>
-          #{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—"}
-        </span>
-        <span style={{ fontSize: "0.68rem", background: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24", borderRadius: 999, padding: "0.1rem 0.45rem", fontWeight: 700 }}>Slot ended</span>
-      </div>
-      {/* Items */}
-      <div style={{ padding: "0.45rem 0.75rem", fontSize: "0.82rem", color: "#475569" }}>
-        {order.items.map((i, idx) => `${i.name} ×${i.quantity}${idx < order.items.length - 1 ? " · " : ""}`)}
-      </div>
-      {/* Instruction */}
-      <div style={{ margin: "0 0.75rem 0.5rem", background: "#fffbeb", border: "1px solid #fbbf24", borderRadius: 8, padding: "0.35rem 0.55rem", fontSize: "0.72rem", color: "#92400e" }}>
-        Remove food from <strong>Bin {binLabel}</strong> and place it at the late pickup counter.
-      </div>
-      {/* Clear button */}
-      <div style={{ padding: "0 0.75rem 0.75rem" }}>
-        <button
-          onClick={clearBin} disabled={busy}
-          style={{ width: "100%", padding: "0.7rem", background: busy ? "#d1d5db" : "#f97316", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: busy ? "not-allowed" : "pointer" }}
-        >
-          {busy ? "Clearing…" : "✓ Bin Cleared — Food at Counter"}
-        </button>
         {error && <div style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "0.4rem" }}>{error}</div>}
       </div>
     </div>
