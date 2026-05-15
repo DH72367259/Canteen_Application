@@ -50,25 +50,36 @@ export async function GET(request: Request) {
   }
   if (!canteenId) return Response.json({ error: "No canteen associated with this account." }, { status: 404 });
 
-  // Load all menu items for this canteen
-  const { data: menuRows, error: menuErr } = await supabase
-    .from("menu_items")
-    .select("id, name, availability_type, quantity_per_slot, total_per_day, is_sold_out, is_available")
-    .eq("canteen_id", canteenId)
-    .order("name", { ascending: true });
-
+  // Load all menu items — try rich projection first, fall back if columns missing
+  let menuRows: Array<Record<string, unknown>> | null = null;
+  let menuErr: { message: string } | null = null;
+  for (const proj of [
+    "id, name, availability_type, quantity_per_slot, total_per_day, is_sold_out, is_available",
+    "id, name, availability_type, quantity_per_slot, total_per_day, is_available",
+    "id, name, availability_type, is_available",
+  ]) {
+    const r = await supabase
+      .from("menu_items")
+      .select(proj)
+      .eq("canteen_id", canteenId)
+      .order("name", { ascending: true });
+    if (!r.error) { menuRows = (r.data ?? []) as unknown as Array<Record<string, unknown>>; menuErr = null; break; }
+    menuErr = r.error;
+    if (!/column .* does not exist/i.test(r.error.message)) break;
+  }
   if (menuErr) return Response.json({ error: menuErr.message }, { status: 500 });
   const rows = menuRows ?? [];
 
   // Get today's usage
   const usage = await getMenuItemUsageForToday(supabase, {
     canteenId,
-    menuItemIds: rows.map((r) => r.id as string),
+    menuItemIds: rows.map((r) => String(r.id ?? "")),
   });
 
   const items = rows.map((r) => {
-    const dayConsumed = usage.dayUsed.get(r.id as string) ?? 0;
-    const slotConsumed = usage.slotUsed.get(r.id as string) ?? 0;
+    const id = String(r.id ?? "");
+    const dayConsumed = usage.dayUsed.get(id) ?? 0;
+    const slotConsumed = usage.slotUsed.get(id) ?? 0;
     const dayCap = Number(r.total_per_day ?? 0);
     const slotCap = Number(r.quantity_per_slot ?? 0);
     const dayRemaining = dayCap > 0 ? Math.max(0, dayCap - dayConsumed) : null;
@@ -78,7 +89,7 @@ export async function GET(request: Request) {
       (slotCap > 0 && slotConsumed >= slotCap);
 
     return {
-      id: r.id,
+      id,
       name: r.name,
       availability_type: r.availability_type ?? "slot_based",
       total_per_day: dayCap > 0 ? dayCap : null,
@@ -87,8 +98,8 @@ export async function GET(request: Request) {
       day_remaining: dayRemaining,
       slot_consumed: slotConsumed,
       slot_remaining: slotRemaining,
-      is_sold_out: !!r.is_sold_out,
-      is_available: !!r.is_available,
+      is_sold_out: !!(r.is_sold_out ?? false),
+      is_available: !!(r.is_available ?? true),
       is_exhausted: isExhausted,
     };
   });
