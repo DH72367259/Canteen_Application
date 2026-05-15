@@ -102,8 +102,16 @@ export async function POST(request: Request) {
     .eq("id", ctx.uid);
 
   if (profileErr) {
-    // Non-fatal: auth is set up correctly; profile update failure is recoverable.
-    // Do NOT log profileErr.message in production — it may contain schema details.
+    // Profile update failed — the password was already set so roll back by
+    // clearing it, forcing the student back through account setup next login.
+    await supabase.auth.admin.updateUserById(ctx.uid, {
+      password: undefined,
+      user_metadata: { has_password: false },
+    }).catch(() => {});
+    const msg = profileErr.message?.includes("unique")
+      ? "Username or phone is already taken. Please choose a different one."
+      : "Failed to save your profile. Please try again.";
+    return Response.json({ error: msg }, { status: 409 });
   }
 
   return Response.json({ success: true });
