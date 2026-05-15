@@ -76,7 +76,7 @@ import {
   APP_URL, WHITELIST,
   adminClient,
   loginViaPasswordTab, loginWorkerUI,
-  provisionStudent, deleteUser,
+  provisionStudent, deleteUser, getWorkerCanteenId,
 } from "./_helpers";
 
 // ─── shared state ─────────────────────────────────────────────────────────────
@@ -88,9 +88,7 @@ let setupFailed = false;
 
 test.beforeAll(async () => {
   try {
-    const admin = adminClient();
-    const { data: canteen } = await admin.from("canteens").select("id").limit(1).maybeSingle();
-    canteenId = canteen?.id ?? "";
+    canteenId = await getWorkerCanteenId();
     if (!canteenId) { setupFailed = true; return; }
     const s = await provisionStudent(canteenId, "ui-all");
     studentId      = s.id;

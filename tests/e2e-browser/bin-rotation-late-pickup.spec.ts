@@ -41,6 +41,7 @@ import {
   APP_URL,
   WHITELIST,
   getAccessToken,
+  getWorkerCanteenId,
   apiFetch,
   provisionStudent,
   deleteUser,
@@ -60,8 +61,7 @@ const BIN_COLOR   = "orange";
 test.beforeAll(async () => {
   try {
     const admin = adminClient();
-    const { data: canteen } = await admin.from("canteens").select("id").limit(1).maybeSingle();
-    canteenId = canteen?.id ?? "";
+    canteenId = await getWorkerCanteenId();
     if (!canteenId) { setupFailed = true; return; }
 
     const s = await provisionStudent(canteenId, "bin-rot");

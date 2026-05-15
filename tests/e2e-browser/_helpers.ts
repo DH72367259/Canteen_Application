@@ -182,6 +182,30 @@ export async function apiFetch(
  * Get an access token for a student/user via REST API password flow.
  * Used by test suites that need to make authenticated API calls.
  */
+/**
+ * Returns the canteen_id belonging to the WHITELIST worker's profile.
+ * Use this instead of fetching the "first canteen" so that orders seeded
+ * in tests are visible to the worker in their dashboard.
+ */
+export async function getWorkerCanteenId(): Promise<string> {
+  const admin = adminClient();
+  let page = 1;
+  const perPage = 500;
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const found = data.users.find((u: { email?: string }) => u.email === WHITELIST.worker.email);
+    if (found) {
+      const { data: profile } = await admin
+        .from("profiles").select("canteen_id").eq("id", found.id).maybeSingle();
+      return (profile as { canteen_id?: string } | null)?.canteen_id ?? "";
+    }
+    if (data.users.length < perPage) break;
+    page++;
+  }
+  return "";
+}
+
 export async function getAccessToken(email: string, password: string): Promise<string> {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
