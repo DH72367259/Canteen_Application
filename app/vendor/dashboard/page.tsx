@@ -54,6 +54,7 @@ const NAV_ITEMS = [
   { id: "slots",        icon: "🕐", label: "Time Slots" },
   { id: "bins",         icon: "📦", label: "Bin Management" },
   { id: "sales",        icon: "💰", label: "Sales" },
+  { id: "analytics",   icon: "📈", label: "Analytics" },
   { id: "earnings",     icon: "💼", label: "Earnings & Payouts" },
   { id: "logs",         icon: "📝", label: "Logs" },
   { id: "settings",     icon: "⚙️", label: "Settings" },
@@ -905,11 +906,20 @@ export default function VendorDashboard() {
                 )}
                 {slotGroups.map(({ slot, bins: slotBins }) => (
                   <div key={slot}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.6rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem", flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#1e293b" }}>{slot}</span>
                       <span style={{ background: "#f1f5f9", borderRadius: 20, padding: "0.15rem 0.55rem", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
                         {slotBins.length} order{slotBins.length !== 1 ? "s" : ""}
                       </span>
+                      <button
+                        title="Print receipts for all orders in this slot"
+                        style={{ marginLeft: "auto", fontSize: "0.72rem", padding: "0.2rem 0.55rem", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", color: "#475569" }}
+                        onClick={async () => {
+                          const binsWithOrders = slotBins.filter(b => b.rawOrderId);
+                          for (const bin of binsWithOrders) await handlePrintBill(bin);
+                        }}>
+                        🖨️ Print All
+                      </button>
                     </div>
                     <div className="bin-grid">
                       {slotBins.map(bin => {
@@ -1017,6 +1027,7 @@ export default function VendorDashboard() {
         {activeNav === "inventory" && <VendorInventoryView session={session} />}
         {activeNav === "slots" && <VendorSlotsView session={session} onNavigate={setActiveNav} />}
         {activeNav === "sales" && <VendorSalesView session={session} />}
+        {activeNav === "analytics" && <VendorAnalyticsView session={session} />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
         {activeNav === "bins" && <VendorBinsView session={session} canteenId={user?.canteenId ?? null} />}
         {activeNav === "logs" && <VendorLogsView session={session} />}
@@ -1582,6 +1593,302 @@ function VendorSlotsView({ session, onNavigate }: { session: Session | null; onN
           <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🕐</div>
           <p>No slots configured yet.</p>
           {onNavigate && <button className="btn btn-primary" onClick={() => onNavigate("slot-control")}>Set Up Slot Windows</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics view — slot breakdown + receipt history
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SlotAnalyticsSlot = {
+  label: string;
+  order_count: number;
+  revenue: number;
+  items: { name: string; category: string; quantity: number; revenue: number }[];
+};
+type SlotAnalyticsData = { date: string; slots: SlotAnalyticsSlot[] };
+
+type ReceiptOrder = {
+  id: string;
+  student_name: string;
+  phone: string;
+  slot_label: string;
+  bin_label: string;
+  bin_color: string | null;
+  total_amount: number;
+  status: string;
+  created_at: string;
+  items: { name: string; quantity: number; unit_price: number }[];
+};
+
+function VendorAnalyticsView({ session }: { session: Session | null }) {
+  const [subTab, setSubTab] = useState<"slots" | "receipts">("slots");
+
+  // ── Slot Analytics ────────────────────────────────────────────────────────
+  const [slotDate, setSlotDate] = useState(() => {
+    // Default to today in IST (YYYY-MM-DD)
+    const d = new Date(Date.now() + 330 * 60_000);
+    return d.toISOString().slice(0, 10);
+  });
+  const [slotData, setSlotData] = useState<SlotAnalyticsData | null>(null);
+  const [slotLoading, setSlotLoading] = useState(false);
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token || subTab !== "slots") return;
+    setSlotLoading(true);
+    setSlotData(null);
+    fetch(`/api/canteen/slot-analytics?date=${slotDate}`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setSlotData(j); })
+      .catch(() => {})
+      .finally(() => setSlotLoading(false));
+  }, [session?.access_token, slotDate, subTab]);
+
+  // ── Receipts ──────────────────────────────────────────────────────────────
+  const [rcptDate, setRcptDate] = useState("");
+  const [rcptSearch, setRcptSearch] = useState("");
+  const [rcptPage, setRcptPage] = useState(0);
+  const [rcptData, setRcptData] = useState<{ total: number; orders: ReceiptOrder[] } | null>(null);
+  const [rcptLoading, setRcptLoading] = useState(false);
+  const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
+  const rcptLimit = 20;
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token || subTab !== "receipts") return;
+    setRcptLoading(true);
+    const params = new URLSearchParams({ page: String(rcptPage), limit: String(rcptLimit) });
+    if (rcptDate) params.set("date", rcptDate);
+    if (rcptSearch) params.set("search", rcptSearch);
+    fetch(`/api/canteen/receipts?${params}`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setRcptData(j); })
+      .catch(() => {})
+      .finally(() => setRcptLoading(false));
+  }, [session?.access_token, subTab, rcptDate, rcptPage, rcptSearch]);
+
+  const COLOR_DOT: Record<string, string> = {
+    red: "#ef4444", yellow: "#eab308", green: "#22c55e",
+    blue: "#3b82f6", purple: "#a855f7", orange: "#f97316",
+  };
+
+  const totalSlotOrders = slotData?.slots.reduce((s, sl) => s + sl.order_count, 0) ?? 0;
+  const totalSlotRev    = slotData?.slots.reduce((s, sl) => s + sl.revenue, 0) ?? 0;
+
+  return (
+    <div className="page-content">
+      <div className="page-header"><h2>Analytics</h2></div>
+
+      {/* Sub-tab switcher */}
+      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "1.25rem" }}>
+        {([["slots", "Slot Breakdown"], ["receipts", "Receipt History"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setSubTab(id)}
+            className={`btn ${subTab === id ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontSize: "0.82rem", padding: "0.4rem 1rem" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Slot Breakdown ─────────────────────────────────────────────────── */}
+      {subTab === "slots" && (
+        <div>
+          {/* Date picker + summary */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+            <input type="date" value={slotDate} onChange={e => setSlotDate(e.target.value)}
+              style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.85rem", background: "var(--surface)", color: "var(--ink-1)" }} />
+            {slotData && (
+              <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>
+                {totalSlotOrders} orders · ₹{totalSlotRev.toFixed(0)} revenue across {slotData.slots.length} slots
+              </span>
+            )}
+          </div>
+
+          {slotLoading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>Loading…</div>
+          ) : !slotData || slotData.slots.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📭</div>
+              <p>No orders found for this date.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {slotData.slots.map(slot => (
+                <div key={slot.label} className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  {/* Slot header — click to expand */}
+                  <button
+                    onClick={() => setExpandedSlot(expandedSlot === slot.label ? null : slot.label)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.9rem 1.1rem", background: "none", border: "none", cursor: "pointer", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--ink-1)" }}>{slot.label}</span>
+                      <span style={{ fontSize: "0.75rem", background: "var(--orange)", color: "#fff", borderRadius: 20, padding: "0.15rem 0.6rem", fontWeight: 600 }}>
+                        {slot.order_count} {slot.order_count === 1 ? "order" : "orders"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                      <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--ink-1)" }}>₹{slot.revenue.toFixed(0)}</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{expandedSlot === slot.label ? "▲" : "▼"}</span>
+                    </div>
+                  </button>
+
+                  {expandedSlot === slot.label && (
+                    <div style={{ borderTop: "1px solid var(--border)", padding: "0.75rem 1.1rem" }}>
+                      {slot.items.length === 0 ? (
+                        <p style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>No item data.</p>
+                      ) : (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 4rem 5rem 4rem", gap: "0.4rem", fontSize: "0.7rem", color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", padding: "0 0.25rem 0.5rem", borderBottom: "1px solid var(--border)", marginBottom: "0.5rem" }}>
+                            <span>Item</span><span style={{ textAlign: "right" }}>Qty</span><span style={{ textAlign: "right" }}>Revenue</span><span style={{ textAlign: "right" }}>Avg</span>
+                          </div>
+                          {(() => {
+                            const maxQ = Math.max(1, ...slot.items.map(i => i.quantity));
+                            return slot.items.map((item, idx) => (
+                              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 4rem 5rem 4rem", gap: "0.4rem", alignItems: "center", padding: "0.4rem 0.25rem", borderRadius: 6, background: idx === 0 ? "rgba(255,109,0,0.05)" : "transparent" }}>
+                                <div>
+                                  <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{item.name}</div>
+                                  <div style={{ height: 3, background: "#f0f0f0", borderRadius: 2, marginTop: "0.2rem", maxWidth: 140 }}>
+                                    <div style={{ height: "100%", width: `${(item.quantity / maxQ) * 100}%`, background: "var(--orange)", borderRadius: 2 }} />
+                                  </div>
+                                </div>
+                                <span style={{ textAlign: "right", fontWeight: 700, fontSize: "0.9rem" }}>{item.quantity}</span>
+                                <span style={{ textAlign: "right", fontSize: "0.82rem", color: "var(--ink-2)" }}>₹{item.revenue.toFixed(0)}</span>
+                                <span style={{ textAlign: "right", fontSize: "0.78rem", color: "var(--ink-3)" }}>₹{item.quantity > 0 ? (item.revenue / item.quantity).toFixed(0) : "—"}</span>
+                              </div>
+                            ));
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Receipt History ────────────────────────────────────────────────── */}
+      {subTab === "receipts" && (
+        <div>
+          {/* Filters */}
+          <div style={{ display: "flex", gap: "0.6rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+            <input type="date" value={rcptDate} onChange={e => { setRcptDate(e.target.value); setRcptPage(0); }}
+              style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.85rem", background: "var(--surface)", color: "var(--ink-1)" }} />
+            <input type="text" placeholder="Search name / phone / order ID…" value={rcptSearch}
+              onChange={e => { setRcptSearch(e.target.value); setRcptPage(0); }}
+              style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.85rem", background: "var(--surface)", color: "var(--ink-1)", minWidth: 220, flex: 1 }} />
+            {(rcptDate || rcptSearch) && (
+              <button className="btn btn-ghost" style={{ fontSize: "0.78rem" }}
+                onClick={() => { setRcptDate(""); setRcptSearch(""); setRcptPage(0); }}>Clear</button>
+            )}
+          </div>
+
+          {rcptLoading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>Loading…</div>
+          ) : !rcptData || rcptData.orders.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🧾</div>
+              <p>No receipts found.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+                Showing {rcptData.orders.length} of {rcptData.total} orders
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {rcptData.orders.map(order => (
+                  <div key={order.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
+                    <button
+                      onClick={() => setExpandedReceipt(expandedReceipt === order.id ? null : order.id)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", background: "none", border: "none", cursor: "pointer", gap: "0.5rem", textAlign: "left" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--ink-1)" }}>{order.student_name}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.1rem" }}>
+                          {order.slot_label} · Bin {order.bin_label}
+                          {order.bin_color && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: COLOR_DOT[order.bin_color] ?? "#888", marginLeft: 4, verticalAlign: "middle" }} />}
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.05rem" }}>
+                          {new Date(order.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>₹{order.total_amount.toFixed(0)}</div>
+                        <div style={{ fontSize: "0.7rem", color: order.status === "collected" ? "#22c55e" : "var(--orange)", fontWeight: 600, textTransform: "capitalize" }}>{order.status}</div>
+                      </div>
+                    </button>
+
+                    {expandedReceipt === order.id && (
+                      <div style={{ borderTop: "1px solid var(--border)", padding: "0.75rem 1rem" }}>
+                        <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginBottom: "0.5rem" }}>
+                          Order #{order.id.slice(0, 8).toUpperCase()} · {order.phone}
+                        </div>
+                        {order.items.map((item, idx) => (
+                          <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.2rem 0" }}>
+                            <span>{item.name} × {item.quantity}</span>
+                            <span style={{ color: "var(--ink-2)" }}>₹{(item.quantity * item.unit_price).toFixed(0)}</span>
+                          </div>
+                        ))}
+                        <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                          <span>Total</span><span>₹{order.total_amount.toFixed(0)}</span>
+                        </div>
+                        <button className="btn btn-ghost" style={{ marginTop: "0.6rem", fontSize: "0.78rem", width: "100%" }}
+                          onClick={() => {
+                            // Open print window for this specific order receipt
+                            const win = window.open("", "_blank", "width=400,height=600");
+                            if (!win) return;
+                            const itemRows = order.items.map(i =>
+                              `<tr><td>${i.name}</td><td style="text-align:center">×${i.quantity}</td><td style="text-align:right">₹${(i.quantity * i.unit_price).toFixed(0)}</td></tr>`
+                            ).join("");
+                            win.document.write(`<!DOCTYPE html><html><head><title>Receipt</title>
+                              <style>body{font-family:monospace;width:302px;margin:0;padding:8px;font-size:12px}
+                              h2{text-align:center;margin:0 0 4px}p{margin:2px 0;text-align:center}
+                              table{width:100%;border-collapse:collapse}td{padding:2px 0}
+                              .total{border-top:1px dashed #000;font-weight:bold;padding-top:4px}
+                              @media print{body{width:302px}}</style></head>
+                              <body>
+                              <h2>NOQX Receipt</h2>
+                              <p>Order #${order.id.slice(0, 8).toUpperCase()}</p>
+                              <p>${new Date(order.created_at).toLocaleString("en-IN")}</p>
+                              <p>Slot: ${order.slot_label} | Bin: ${order.bin_label}</p>
+                              <p>${order.student_name} · ${order.phone}</p>
+                              <hr/>
+                              <table><tbody>${itemRows}</tbody></table>
+                              <table><tbody><tr class="total"><td colspan="2">TOTAL</td><td style="text-align:right">₹${order.total_amount.toFixed(0)}</td></tr></tbody></table>
+                              <p style="margin-top:8px;font-size:10px">Thank you!</p>
+                              </body></html>`);
+                            win.document.close();
+                            win.focus();
+                            win.print();
+                          }}>
+                          🖨️ Print Receipt
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {rcptData.total > rcptLimit && (
+                <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "1rem", alignItems: "center" }}>
+                  <button className="btn btn-ghost" disabled={rcptPage === 0} onClick={() => setRcptPage(p => p - 1)}
+                    style={{ fontSize: "0.82rem" }}>← Prev</button>
+                  <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Page {rcptPage + 1} of {Math.ceil(rcptData.total / rcptLimit)}</span>
+                  <button className="btn btn-ghost" disabled={(rcptPage + 1) * rcptLimit >= rcptData.total} onClick={() => setRcptPage(p => p + 1)}
+                    style={{ fontSize: "0.82rem" }}>Next →</button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
