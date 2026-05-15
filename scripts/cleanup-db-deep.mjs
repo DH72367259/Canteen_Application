@@ -27,6 +27,8 @@ const WHITELIST = [
   { email: 'canteen2@noqx.test', role: 'canteen_admin' },
   { email: 'worker1@noqx.test',  role: 'worker'        },
   { email: 'coadmin@noqx.test',  role: 'co_admin'      },
+  { email: 'student1@noqx.test', role: 'user'          },
+  { email: 'student2@noqx.test', role: 'user'          },
 ];
 const KEEP_EMAILS = WHITELIST.map(w => w.email);
 
