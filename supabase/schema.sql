@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================
 -- CUSTOM TYPES / ENUMS
 -- ============================================================
-CREATE TYPE user_role       AS ENUM ('user', 'canteen_admin', 'vendor', 'worker', 'super_admin');
+CREATE TYPE user_role       AS ENUM ('user', 'canteen_admin', 'vendor', 'worker', 'super_admin', 'co_admin');
 CREATE TYPE order_status    AS ENUM (
   'placed', 'confirmed', 'preparing',
   'ready_for_placement', 'placed_in_bin',
@@ -665,7 +665,7 @@ CREATE POLICY "order_bins: user reads own"
           OR EXISTS (
             SELECT 1 FROM public.profiles p
             WHERE p.id = auth.uid()
-              AND p.role IN ('canteen_admin', 'vendor', 'worker', 'super_admin')
+              AND p.role IN ('canteen_admin', 'vendor', 'worker', 'super_admin', 'co_admin')
           )
         )
     )

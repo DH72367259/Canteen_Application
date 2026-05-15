@@ -12,7 +12,7 @@ jest.mock("@/lib/authServer", () => ({
 
 interface QB {
   select: jest.Mock; insert: jest.Mock; update: jest.Mock; upsert: jest.Mock; delete: jest.Mock;
-  eq: jest.Mock; in: jest.Mock; order: jest.Mock; limit: jest.Mock;
+  eq: jest.Mock; in: jest.Mock; is: jest.Mock; order: jest.Mock; limit: jest.Mock;
   single: jest.Mock; maybeSingle: jest.Mock;
 }
 function makeQB(): QB {
@@ -24,6 +24,7 @@ function makeQB(): QB {
   qb.delete = jest.fn(() => qb as QB);
   qb.eq = jest.fn(() => qb as QB);
   qb.in = jest.fn(() => qb as QB);
+  qb.is = jest.fn(() => qb as QB);
   qb.order = jest.fn(() => qb as QB);
   qb.limit = jest.fn(() => qb as QB);
   qb.single = jest.fn().mockResolvedValue({ data: null, error: null });
