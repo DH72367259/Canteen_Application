@@ -15,12 +15,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 
-// ── Load env ──────────────────────────────────────────────────────────────────
+// ── Load env (only fills gaps — does NOT override already-set vars) ───────────
+const envFile = process.env.ENV_FILE ?? ".env.local";
 try {
-  const raw = readFileSync(".env.local", "utf8");
+  const raw = readFileSync(envFile, "utf8");
   for (const line of raw.split("\n")) {
     const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-    if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    if (m && !process.env[m[1]]) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
   }
 } catch { /* CI: rely on process.env */ }
 
