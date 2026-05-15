@@ -92,13 +92,13 @@ VALUES
     'aaaaaaaa-0001-0001-0001-000000000001',
     'b8eaef34-6734-497f-b7ec-b058f33833f2',
     'Paneer Rice', 'Paneer fried rice combo', 80.00, 'Meals',
-    'batched_prepared', true, true, 'batched_prepared', 30, 150, false
+    'batched', true, true, 'batched_prepared', 30, 150, false
   ),
   (
     'aaaaaaaa-0001-0001-0001-000000000002',
     'b8eaef34-6734-497f-b7ec-b058f33833f2',
     'Dal Roti Combo', 'Dal with 3 rotis and salad', 60.00, 'Meals',
-    'batched_prepared', true, true, 'batched_prepared', 25, 100, false
+    'batched', true, true, 'batched_prepared', 25, 100, false
   ),
   (
     'aaaaaaaa-0001-0001-0001-000000000003',
@@ -110,14 +110,14 @@ VALUES
     'aaaaaaaa-0001-0001-0001-000000000004',
     'b8eaef34-6734-497f-b7ec-b058f33833f2',
     'Veg Thali', 'Complete veg meal with rice dal sabzi roti', 70.00, 'Meals',
-    'batched_prepared', true, true, 'slot_based', 20, null, false
+    'batched', true, true, 'slot_based', 20, null, false
   ),
   -- Snack items (is_meal = false)
   (
     'aaaaaaaa-0001-0001-0001-000000000005',
     'b8eaef34-6734-497f-b7ec-b058f33833f2',
     'Samosa', 'Crispy potato samosa (2 pcs)', 20.00, 'Snacks',
-    'batched_prepared', true, false, 'batched_prepared', 50, 200, false
+    'batched', true, false, 'batched_prepared', 50, 200, false
   ),
   (
     'aaaaaaaa-0001-0001-0001-000000000006',
@@ -141,7 +141,7 @@ VALUES
     'aaaaaaaa-0001-0001-0001-000000000009',
     'b8eaef34-6734-497f-b7ec-b058f33833f2',
     'Poha', 'Flattened rice snack', 25.00, 'Snacks',
-    'batched_prepared', true, false, 'slot_based', 40, 160, false
+    'batched', true, false, 'slot_based', 40, 160, false
   ),
   (
     'aaaaaaaa-0001-0001-0001-000000000010',
@@ -163,7 +163,7 @@ VALUES
     'bbbbbbbb-0002-0002-0002-000000000001',
     'cccccccc-0002-0002-0002-000000000002',
     'Rajma Rice', 'Rajma chawal comfort meal', 65.00, 'Meals',
-    'batched_prepared', true, true, 'batched_prepared', 25, 120, false
+    'batched', true, true, 'batched_prepared', 25, 120, false
   ),
   (
     'bbbbbbbb-0002-0002-0002-000000000002',
@@ -175,7 +175,7 @@ VALUES
     'bbbbbbbb-0002-0002-0002-000000000003',
     'cccccccc-0002-0002-0002-000000000002',
     'Idli Sambar', 'Soft idlis with sambar and chutney', 30.00, 'Snacks',
-    'batched_prepared', true, false, 'batched_prepared', 60, 200, false
+    'batched', true, false, 'batched_prepared', 60, 200, false
   ),
   (
     'bbbbbbbb-0002-0002-0002-000000000004',
@@ -187,6 +187,6 @@ VALUES
     'bbbbbbbb-0002-0002-0002-000000000005',
     'cccccccc-0002-0002-0002-000000000002',
     'Vada Pav', 'Mumbai style vada pav', 25.00, 'Snacks',
-    'batched_prepared', true, false, 'slot_based', 45, 180, false
+    'batched', true, false, 'slot_based', 45, 180, false
   )
 ON CONFLICT (id) DO NOTHING;
