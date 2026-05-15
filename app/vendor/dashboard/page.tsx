@@ -2522,7 +2522,7 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
           <div className="dashboard-grid" style={{ marginBottom: "1.25rem" }}>
             {[
               { label: "Gross Collected",        value: fmt(data.summary.gross_collected),           color: "var(--ink)"    },
-              { label: "Platform Fee Deducted",  value: `–${fmt(data.summary.total_platform_charges)}`, color: "var(--red)" },
+              { label: "Platform Fee Deducted",  value: `–${fmt(data.summary.total_platform_fee)}`, color: "var(--red)" },
               { label: "Net Earnings",           value: fmt(data.summary.net_earnings),               color: "var(--primary)", fw: 800 },
               { label: "Paid by Admin",          value: fmt(data.summary.total_paid_by_admin),        color: "var(--green)"  },
               { label: "Pending Payout",         value: fmt(data.summary.pending_payout),             color: data.summary.pending_payout > 0 ? "var(--orange)" : "var(--ink-3)" },
@@ -2600,7 +2600,7 @@ function VendorEarningsView({ session }: { session: { access_token: string } | n
 interface EarningsData {
   canteen: { canteen_id: string; canteen_name: string };
   platform_charges: { charge_pct: number; flat_charge: number; gst_pct: number } | null;
-  summary: { gross_collected: number; total_platform_charges: number; net_earnings: number; total_paid_by_admin: number; pending_payout: number };
+  summary: { gross_collected: number; total_platform_charges: number; total_platform_fee: number; net_earnings: number; total_paid_by_admin: number; pending_payout: number };
   orders: EarningsOrder[];
   payment_history: EarningsPayment[];
   period_start: string; period_end: string;

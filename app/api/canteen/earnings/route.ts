@@ -158,9 +158,11 @@ export async function GET(request: Request) {
     const extraBin = r2((Number((o as { extra_bin_fee_paise?: number | null }).extra_bin_fee_paise ?? 0) || 0) / 100);
     const gross = r2(foodGrossByOrder.get(o.id) ?? Math.max(0, Number(o.total_amount) - extraBin));
     const payment = paymentsByOrder.get(o.id);
-    const pct = Number(payment?.charge_pct_snapshot ?? chargePct);
-    const flat = Number(payment?.flat_charge_snapshot ?? flatCharge);
-    const gstPctSnapshot = Number(payment?.gst_pct_snapshot ?? gstPct);
+    // Use snapshot if it was captured (non-null, non-zero); fall back to current
+    // platform_charges if the row exists but has a zero-default from migration.
+    const pct = Number(payment?.charge_pct_snapshot || chargePct);
+    const flat = payment?.flat_charge_snapshot != null ? Number(payment.flat_charge_snapshot) : flatCharge;
+    const gstPctSnapshot = Number(payment?.gst_pct_snapshot || gstPct);
     const rawFee = r2(gross * (pct / 100) + flat);
     const gstOnFee = r2(rawFee * (gstPctSnapshot / 100));
     const subscriptionFromThisPayment = o.payment_id ? subscriptionsByPayment.get(o.payment_id) : undefined;
@@ -216,7 +218,7 @@ export async function GET(request: Request) {
     canteen: canteenRow,
     period_start,
     period_end,
-    platform_charges: { chargePct, flatCharge, gstPct },
+    platform_charges: { charge_pct: chargePct, flat_charge: flatCharge, gst_pct: gstPct },
     summary: { ...summary, pending_payout },
     orders,
     payment_history: paymentsRaw ?? [],
