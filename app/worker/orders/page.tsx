@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
@@ -165,6 +165,9 @@ export default function WorkerOrdersPage() {
   const [otpModal, setOtpModal]     = useState<string | null>(null);
   const [otpInput, setOtpInput]     = useState("");
   const [otpSubmitting, setOtpSubmitting] = useState(false);
+  const [modalMode, setModalMode]   = useState<"otp" | "qr">("otp");
+  const [qrError, setQrError]       = useState<string | null>(null);
+  const qrInstanceRef               = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -242,7 +245,7 @@ export default function WorkerOrdersPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ otp: otpInput }),
       });
-      const data = await res.json();
+      const data = await res.json() as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Verification failed");
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "collected" } : o)));
       setOtpModal(null);
@@ -250,6 +253,79 @@ export default function WorkerOrdersPage() {
     } catch (e) {
       alert(e instanceof Error ? e.message : "Error verifying OTP");
     } finally { setOtpSubmitting(false); }
+  }
+
+  // Start QR camera scanner inside the modal when in QR mode
+  useEffect(() => {
+    if (!otpModal || modalMode !== "qr" || !session) return;
+    let cancelled = false;
+
+    async function startQr() {
+      const { Html5Qrcode } = await import("html5-qrcode");
+      const el = document.getElementById("modal-qr-reader");
+      if (!el || cancelled) return;
+      const qr = new Html5Qrcode("modal-qr-reader");
+      qrInstanceRef.current = qr;
+      try {
+        await qr.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 200, height: 200 } },
+          async (decodedText: string) => {
+            if (cancelled) return;
+            const parts = decodedText.split("|");
+            if (parts.length !== 4 || parts[0] !== "NOQX") return; // not our QR, keep scanning
+            cancelled = true;
+            try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
+            qrInstanceRef.current = null;
+            setOtpSubmitting(true);
+            try {
+              const res = await fetch(`/api/orders/${otpModal}/verify-qr`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session!.access_token}` },
+                body: JSON.stringify({ qrPayload: decodedText }),
+              });
+              const data = await res.json() as { error?: string };
+              if (!res.ok) throw new Error(data.error ?? "QR verification failed");
+              setOrders((prev) => prev.map((o) => (o.id === otpModal ? { ...o, status: "collected" } : o)));
+              setOtpModal(null);
+              setOtpInput("");
+              setModalMode("otp");
+            } catch (e: unknown) {
+              setQrError(e instanceof Error ? e.message : "QR verification failed");
+            } finally {
+              setOtpSubmitting(false);
+            }
+          },
+          () => { /* per-frame errors are normal */ },
+        );
+      } catch {
+        setQrError("Camera access denied. Please allow camera permission.");
+      }
+    }
+
+    const t = setTimeout(startQr, 80);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      const qr = qrInstanceRef.current;
+      if (qr) {
+        qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
+        qrInstanceRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpModal, modalMode, session]);
+
+  function closeModal() {
+    const qr = qrInstanceRef.current;
+    if (qr) {
+      qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
+      qrInstanceRef.current = null;
+    }
+    setOtpModal(null);
+    setOtpInput("");
+    setModalMode("otp");
+    setQrError(null);
   }
 
   // Orders tab: same wide window as before (late + current + 60-min upcoming)
@@ -444,47 +520,114 @@ export default function WorkerOrdersPage() {
         </button>
       </div>
 
-      {/* OTP Verification Modal */}
+      {/* OTP / QR Verification Modal */}
       {otpModal && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
-          onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "1rem" }}
+          onClick={() => !otpSubmitting && closeModal()}
         >
           <div
-            style={{ background: "#fff", borderRadius: 16, padding: "1.5rem", width: "90%", maxWidth: 320, boxShadow: "0 10px 40px rgba(0,0,0,0.2)" }}
+            style={{ background: "#fff", borderRadius: 20, padding: "1.25rem", width: "100%", maxWidth: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.25)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink-3)", marginBottom: "0.5rem", textTransform: "uppercase" }}>
-              Order ID: {otpModal.slice(-8).toUpperCase()}
+            {/* Order ID + close */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
+                Order #{otpModal.slice(-8).toUpperCase()}
+              </span>
+              <button onClick={() => !otpSubmitting && closeModal()} style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>✕</button>
             </div>
-            <h3 style={{ margin: "0.5rem 0 1rem", fontSize: "1.1rem", fontWeight: 800 }}>Enter OTP</h3>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              value={otpInput}
-              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
-              placeholder="0000"
-              autoFocus
-              disabled={otpSubmitting}
-              style={{ display: "block", width: "100%", padding: "0.8rem", fontSize: "1.8rem", letterSpacing: "0.3rem", textAlign: "center", border: "2px solid var(--border)", borderRadius: 12, marginBottom: "1rem", fontWeight: 700, boxSizing: "border-box" }}
-            />
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                onClick={() => !otpSubmitting && (setOtpModal(null), setOtpInput(""))}
-                disabled={otpSubmitting}
-                style={{ flex: 1, padding: "0.7rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: otpSubmitting ? "not-allowed" : "pointer", opacity: otpSubmitting ? 0.5 : 1 }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => verifyOtp(otpModal)}
-                disabled={otpInput.length < 4 || otpSubmitting}
-                style={{ flex: 1, padding: "0.7rem", background: otpInput.length < 4 ? "#e5e7eb" : "#16a34a", color: otpInput.length < 4 ? "var(--ink-3)" : "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: otpInput.length < 4 ? "not-allowed" : "pointer" }}
-              >
-                {otpSubmitting ? "Verifying..." : "Verify"}
-              </button>
+
+            {/* Mode tabs */}
+            <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 10, padding: 3, gap: 3, marginBottom: "1rem" }}>
+              {(["otp", "qr"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { setModalMode(m); setQrError(null); setOtpInput(""); }}
+                  disabled={otpSubmitting}
+                  style={{
+                    flex: 1, padding: "0.5rem 0", border: "none", borderRadius: 8, cursor: "pointer",
+                    fontWeight: 700, fontSize: "0.8rem",
+                    background: modalMode === m ? "#1e293b" : "transparent",
+                    color: modalMode === m ? "#fff" : "#64748b",
+                  }}
+                >
+                  {m === "otp" ? "🔢 OTP" : "📷 Scan QR"}
+                </button>
+              ))}
             </div>
+
+            {/* OTP mode */}
+            {modalMode === "otp" && (
+              <>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                  placeholder="0 0 0 0"
+                  autoFocus
+                  disabled={otpSubmitting}
+                  style={{ display: "block", width: "100%", padding: "0.9rem", fontSize: "2rem", letterSpacing: "0.35rem", textAlign: "center", border: "2px solid var(--border)", borderRadius: 12, marginBottom: "1rem", fontWeight: 700, boxSizing: "border-box" }}
+                />
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    onClick={() => !otpSubmitting && closeModal()}
+                    disabled={otpSubmitting}
+                    style={{ flex: 1, padding: "0.7rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => verifyOtp(otpModal)}
+                    disabled={otpInput.length < 4 || otpSubmitting}
+                    style={{ flex: 1, padding: "0.7rem", background: otpInput.length < 4 ? "#e5e7eb" : "#16a34a", color: otpInput.length < 4 ? "var(--ink-3)" : "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: otpInput.length < 4 ? "not-allowed" : "pointer" }}
+                  >
+                    {otpSubmitting ? "Verifying..." : "Verify"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* QR scan mode */}
+            {modalMode === "qr" && (
+              <>
+                {qrError ? (
+                  <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
+                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", marginBottom: "1rem" }}>{qrError}</p>
+                    <button
+                      onClick={() => { setQrError(null); }}
+                      style={{ padding: "0.6rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
+                      Point camera at student&apos;s QR code
+                    </p>
+                    {/* html5-qrcode attaches here */}
+                    <div
+                      id="modal-qr-reader"
+                      style={{ width: "100%", borderRadius: 12, overflow: "hidden", border: "2px solid #e2e8f0", background: "#000", minHeight: 220 }}
+                    />
+                    {otpSubmitting && (
+                      <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
+                        Verifying...
+                      </p>
+                    )}
+                  </>
+                )}
+                <button
+                  onClick={() => !otpSubmitting && closeModal()}
+                  style={{ width: "100%", marginTop: "0.85rem", padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
