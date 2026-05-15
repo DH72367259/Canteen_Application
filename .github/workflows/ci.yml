@@ -200,3 +200,23 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Final sentinel — a fixed-name job that branch protection rules can target.
+# Passes only when type-check and backend pass. E2E is excluded here because
+# it is skipped on pull_request events by design.
+# ─────────────────────────────────────────────────────────────────────────────
+  ci-passed:
+    name: ci-passed
+    needs: [type-check, backend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required jobs
+        run: |
+          if [ "${{ needs.type-check.result }}" != "success" ] || \
+             [ "${{ needs.backend.result }}"     != "success" ]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs passed."
