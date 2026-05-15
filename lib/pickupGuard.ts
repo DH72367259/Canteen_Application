@@ -20,7 +20,14 @@ export type SiblingBlock = {
   siblings: Array<{ id: string; status: string; binLabel: string | null }>;
 };
 
-const PHYSICAL_DONE = ["placed_in_bin", "ready_for_pickup", "collected", "cancelled", "completed"];
+// late_pickup_pending = bin still occupied but slot ended (worker moving food)
+// late_pickup         = bin freed, food at counter — student can collect
+// Both count as "physically accounted for" so they don't block sibling OTP
+const PHYSICAL_DONE = [
+  "placed_in_bin", "ready_for_pickup",
+  "late_pickup_pending", "late_pickup",
+  "collected", "cancelled", "completed",
+];
 
 export async function findUnfulfilledSiblings(
   supabase: SupabaseClient,

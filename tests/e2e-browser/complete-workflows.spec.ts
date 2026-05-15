@@ -24,7 +24,7 @@ test.describe("🔄 Complete Workflows - All User Journeys", () => {
     const admin = adminClient();
 
     // Get or create canteen
-    const canteens = await admin.from("canteens").select("id").limit(1).single();
+    const canteens = await admin.from("canteens").select("id").limit(1).maybeSingle();
     canteenId = canteens.data?.id ?? "";
 
     if (!canteenId) {

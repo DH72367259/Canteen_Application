@@ -22,7 +22,7 @@
 
 import { test, expect } from "@playwright/test";
 import {
-  adminClient, APP_URL, getAccessToken, provisionStudent, deleteUser,
+  adminClient, APP_URL, getAccessToken, getWorkerCanteenId, provisionStudent, deleteUser,
   WHITELIST,
 } from "./_helpers";
 
@@ -36,9 +36,7 @@ let setupFailed = false;
 
 test.beforeAll(async () => {
   try {
-    const admin = adminClient();
-    const { data: canteen } = await admin.from("canteens").select("id").limit(1).maybeSingle();
-    canteenId = canteen?.id ?? "";
+    canteenId = await getWorkerCanteenId();
     if (!canteenId) { setupFailed = true; return; }
 
     const s = await provisionStudent(canteenId, "late-pickup");

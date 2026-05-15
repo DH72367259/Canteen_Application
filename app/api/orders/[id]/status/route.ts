@@ -105,24 +105,42 @@ export async function PATCH(
 
   // ── Pseudo: skip ───────────────────────────────────────────────
   if (status === "skip") {
-    const { data: cur } = await supabase
+    const { data: cur, error: curErr } = await supabase
       .from("orders").select("skipped_count, canteen_id")
       .eq("id", orderId).single();
-    if (!cur) return NextResponse.json({ error: "Order not found." }, { status: 404 });
 
-    const { data: updated, error } = await supabase
+    // If column is missing the error message contains "column" — fall back to basic fetch
+    let canteenIdForNotif = "";
+    let skipCount = 0;
+    if (curErr || !cur) {
+      if (curErr && !/column|does not exist/i.test(curErr.message ?? "")) {
+        return NextResponse.json({ error: "Order not found." }, { status: 404 });
+      }
+      const { data: basic } = await supabase
+        .from("orders").select("canteen_id").eq("id", orderId).maybeSingle();
+      if (!basic) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+      canteenIdForNotif = (basic as { canteen_id?: string }).canteen_id ?? "";
+    } else {
+      canteenIdForNotif = (cur as { canteen_id?: string }).canteen_id ?? "";
+      skipCount = ((cur as { skipped_count?: number | null }).skipped_count ?? 0) + 1;
+    }
+
+    const isoNow = new Date().toISOString();
+    // Try full update with optional skip-tracking columns; fall back without them
+    let updated: Record<string, unknown> | null = null;
+    const { data: u1, error: e1 } = await supabase
       .from("orders")
-      .update({
-        status: "confirmed",
-        skipped_at: new Date().toISOString(),
-        skipped_count: ((cur.skipped_count as number | null) ?? 0) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", orderId)
-      .select("id, status, skipped_at, skipped_count")
-      .single();
-    if (error || !updated) {
-      return NextResponse.json({ error: "Failed to skip order." }, { status: 500 });
+      .update({ status: "confirmed", skipped_at: isoNow, skipped_count: skipCount, updated_at: isoNow })
+      .eq("id", orderId).select("id, status").single();
+    if (e1) {
+      const { data: u2, error: e2 } = await supabase
+        .from("orders")
+        .update({ status: "confirmed", updated_at: isoNow })
+        .eq("id", orderId).select("id, status").single();
+      if (e2 || !u2) return NextResponse.json({ error: "Failed to skip order." }, { status: 500 });
+      updated = u2 as Record<string, unknown>;
+    } else {
+      updated = u1 as Record<string, unknown>;
     }
 
     await supabase.from("notifications").insert({
@@ -130,7 +148,7 @@ export async function PATCH(
       body: `Worker skipped order ${orderId} — needs review.`,
       type: "warning",
       recipient_type: "canteen",
-      recipient_id: cur.canteen_id,
+      recipient_id: canteenIdForNotif,
       target_role: "canteen_admin",
       created_by: auth.uid,
     }).then(() => {}, () => {});
