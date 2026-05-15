@@ -25,19 +25,6 @@ CREATE TYPE campaign_status AS ENUM ('draft', 'scheduled', 'sent');
 CREATE TYPE log_action      AS ENUM ('otp_attempt', 'manual_override', 'staff_action');
 
 -- ============================================================
--- HELPER FUNCTIONS (used in RLS policies)
--- ============================================================
-CREATE OR REPLACE FUNCTION get_my_role()
-  RETURNS text
-  LANGUAGE sql SECURITY DEFINER STABLE
-AS $$ SELECT role::text FROM public.profiles WHERE id = auth.uid() $$;
-
-CREATE OR REPLACE FUNCTION get_my_canteen_id()
-  RETURNS uuid
-  LANGUAGE sql SECURITY DEFINER STABLE
-AS $$ SELECT canteen_id FROM public.profiles WHERE id = auth.uid() $$;
-
--- ============================================================
 -- updated_at TRIGGER FUNCTION
 -- ============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
@@ -92,6 +79,19 @@ CREATE INDEX idx_profiles_username   ON public.profiles(username) WHERE username
 CREATE TRIGGER trg_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- HELPER FUNCTIONS (used in RLS policies — must be after profiles)
+-- ============================================================
+CREATE OR REPLACE FUNCTION get_my_role()
+  RETURNS text
+  LANGUAGE sql SECURITY DEFINER STABLE
+AS $$ SELECT role::text FROM public.profiles WHERE id = auth.uid() $$;
+
+CREATE OR REPLACE FUNCTION get_my_canteen_id()
+  RETURNS uuid
+  LANGUAGE sql SECURITY DEFINER STABLE
+AS $$ SELECT canteen_id FROM public.profiles WHERE id = auth.uid() $$;
 
 -- ============================================================
 -- TABLE: menu_items
@@ -665,7 +665,7 @@ CREATE POLICY "order_bins: user reads own"
           OR EXISTS (
             SELECT 1 FROM public.profiles p
             WHERE p.id = auth.uid()
-              AND p.role IN ('canteen_admin', 'vendor', 'worker', 'super_admin', 'co_admin')
+              AND p.role IN ('canteen_admin', 'vendor', 'worker', 'super_admin')
           )
         )
     )
