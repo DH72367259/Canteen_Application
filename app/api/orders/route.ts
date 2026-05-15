@@ -69,16 +69,17 @@ export async function GET(request: Request) {
       const adminSupa = createAdminClient();
       if (canManageOrders(context.role)) {
         if (isPlatformAdmin) {
-          await autoAcceptPlacedOrders({ supabase: adminSupa });
+          await autoAcceptPlacedOrders({ supabase: adminSupa }).catch(() => {});
         } else if (context.canteenId) {
-          await autoAcceptPlacedOrders({ supabase: adminSupa, canteenId: context.canteenId });
-          // Release bins whose slot has ended → late_pickup before assigning new ones
+          // Each step has its own .catch() so one failure never silently
+          // blocks assignDeferredBins — the critical step for bin assignment.
+          await autoAcceptPlacedOrders({ supabase: adminSupa, canteenId: context.canteenId }).catch(() => {});
           await releaseExpiredSlotBins(adminSupa, context.canteenId).catch(() => {});
           await autoCloseEodLateOrders(adminSupa, context.canteenId).catch(() => {});
           await assignDeferredBins(adminSupa, context.canteenId).catch(() => {});
         }
       } else {
-        await autoAcceptPlacedOrders({ supabase: adminSupa, userId: context.uid });
+        await autoAcceptPlacedOrders({ supabase: adminSupa, userId: context.uid }).catch(() => {});
       }
     } catch (e) {
       // Auto-accept is best-effort; listing orders should still work.

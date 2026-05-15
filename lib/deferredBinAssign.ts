@@ -50,11 +50,20 @@ export async function assignDeferredBins(
 
   if (!unassigned?.length) return { assigned: 0 };
 
-  // Only assign bins for slots whose start time has passed
-  const readyOrders = unassigned.filter((o) => {
-    const startMin = parseSlotStartMinutes(String(o.slot_label ?? ""));
-    return startMin !== null && nowMin >= startMin;
-  });
+  // Only assign bins for slots whose start time has passed.
+  // Sort by slot start time ascending so the most overdue slot always
+  // gets bins first — prevents a later-created order for an earlier slot
+  // from being skipped when a race puts an older order first in the queue.
+  const readyOrders = unassigned
+    .filter((o) => {
+      const startMin = parseSlotStartMinutes(String(o.slot_label ?? ""));
+      return startMin !== null && nowMin >= startMin;
+    })
+    .sort((a, b) => {
+      const aMin = parseSlotStartMinutes(String(a.slot_label ?? "")) ?? 9999;
+      const bMin = parseSlotStartMinutes(String(b.slot_label ?? "")) ?? 9999;
+      return aMin - bMin; // earliest slot first
+    });
 
   if (!readyOrders.length) return { assigned: 0 };
 
