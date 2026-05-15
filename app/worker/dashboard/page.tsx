@@ -14,6 +14,7 @@ interface WorkerOrder {
   binColor?: string;    // color e.g. "red"
   binId?: string;
   pickupSlot?: string;  // time slot name e.g. "Lunch"
+  slotLabel?: string;   // display label e.g. "1:00 PM - 1:15 PM" (from orders.slot_label)
   items: OrderItem[];
   createdAt?: string;
   // legacy snake_case aliases (from old bins API, kept for fallback)
@@ -500,7 +501,7 @@ function LatePendingRow({ order, session, onDone }: { order: WorkerOrder; sessio
       <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.55rem 0.75rem", background: "#fffbeb" }}>
         <div style={{ background: binBg, color: "#fff", borderRadius: 8, padding: "0.15rem 0.55rem", fontSize: "0.78rem", fontWeight: 800 }}>{binLabel}</div>
         <span style={{ fontSize: "0.72rem", color: "#92400e", fontWeight: 600, flex: 1 }}>
-          #{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? "—"}
+          #{order.id.slice(-8).toUpperCase()} · {order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—"}
         </span>
         <span style={{ fontSize: "0.68rem", background: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24", borderRadius: 999, padding: "0.1rem 0.45rem", fontWeight: 700 }}>Slot ended</span>
       </div>
@@ -580,7 +581,7 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
       <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.55rem 0.75rem", background: "#fef2f2" }}>
         <div style={{ background: binBg, color: "#fff", borderRadius: 8, padding: "0.15rem 0.55rem", fontSize: "0.78rem", fontWeight: 800 }}>{binCode}</div>
         <span style={{ fontSize: "0.72rem", color: "#b91c1c", fontWeight: 600, flex: 1 }}>
-          #{order.id.slice(-8).toUpperCase()} · was in this bin · {order.pickupSlot ?? order.pickup_slot ?? "—"}
+          #{order.id.slice(-8).toUpperCase()} · was in this bin · {order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—"}
         </span>
         <span style={{ fontSize: "0.68rem", background: "#fee2e2", color: "#991b1b", borderRadius: 999, padding: "0.1rem 0.45rem", fontWeight: 700 }}>Late</span>
       </div>
