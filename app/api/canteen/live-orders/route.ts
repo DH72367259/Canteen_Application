@@ -142,24 +142,13 @@ export async function GET(request: Request) {
       const now = new Date();
       const ninetyMinsAgo = new Date(now.getTime() - 90 * 60_000).toISOString();
 
-      // Orders that are genuinely holding a bin right now:
-      // - active statuses (in-flight), OR
-      // - late_pickup_pending (slot expired but bin still physically occupied — worker must clear)
-      // late_pickup_pending has no created_at time restriction since it may be hours old.
-      const { data: activeNoRestriction } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("canteen_id", canteenId)
-        .eq("status", "late_pickup_pending");
-
-      const { data: recentInflight } = await supabase
+      // Orders that are genuinely in-flight right now (placed within last 90 min)
+      const { data: recentActive } = await supabase
         .from("orders")
         .select("id")
         .eq("canteen_id", canteenId)
         .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
         .gte("created_at", ninetyMinsAgo);
-
-      const recentActive = [...(activeNoRestriction ?? []), ...(recentInflight ?? [])];
 
       const activeOrderIds = new Set((recentActive ?? []).map(o => o.id));
 
