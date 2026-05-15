@@ -241,7 +241,7 @@ CREATE INDEX idx_orders_canteen_id ON public.orders(canteen_id);
 CREATE INDEX idx_orders_status     ON public.orders(status);
 CREATE INDEX idx_orders_created_at ON public.orders(created_at DESC);
 CREATE INDEX idx_orders_slot_cap   ON public.orders(canteen_id, slot_label, created_at)
-  WHERE status NOT IN ('cancelled', 'failed', 'refunded');
+  WHERE status = 'cancelled';
 
 CREATE TRIGGER trg_orders_updated_at
   BEFORE UPDATE ON public.orders
