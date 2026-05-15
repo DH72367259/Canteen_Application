@@ -114,6 +114,12 @@ export default function WorkerApp() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9", display: "flex", flexDirection: "column" }}>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.88; transform: scale(0.995); }
+        }
+      `}</style>
       <TopBar onLogout={() => logout().then(() => router.replace("/worker/login"))} />
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: "4.5rem" }}>
         {tab === "orders" && <OrdersTab session={session} />}
@@ -243,13 +249,27 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
 
   return (
     <div style={{ padding: "1rem" }}>
+      {/* Late pickup alert — pulsing banner, shown FIRST so worker sees it immediately */}
+      {latePickup.length > 0 && (
+        <div style={{ background: "#dc2626", borderRadius: 12, padding: "0.75rem 1rem", marginBottom: "0.85rem", display: "flex", alignItems: "center", gap: "0.65rem", animation: "pulse 1.5s ease-in-out infinite", boxShadow: "0 4px 18px rgba(220,38,38,0.45)" }}>
+          <span style={{ fontSize: "1.5rem" }}>🔔</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#fff" }}>
+              {latePickup.length} Late Pickup Order{latePickup.length !== 1 ? "s" : ""}
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.88)", marginTop: "0.1rem" }}>
+              ⚠️ Move food from the physical bin to the late pickup counter now
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Summary banner — shows total orders + slot count, refreshes every 5s */}
       <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "0.55rem 0.85rem", marginBottom: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#9a3412" }}>
           {totalPrep > 0
             ? `${totalPrep} order${totalPrep !== 1 ? "s" : ""} to prepare · ${slotGroups.length} slot${slotGroups.length !== 1 ? "s" : ""}`
-            : latePending.length > 0 ? `${latePending.length} bin${latePending.length !== 1 ? "s" : ""} to clear — late pickup`
-            : awaitingOtp.length > 0 ? "All prepared — awaiting pickup" : "All caught up!"}
+            : awaitingOtp.length > 0 ? "All prepared — awaiting pickup" : latePickup.length > 0 ? "Slot ended — handle late pickups below" : "All caught up!"}
         </span>
         <span style={{ fontSize: "0.68rem", color: "#c2410c", fontWeight: 600 }}>↻ 5s</span>
       </div>
@@ -285,7 +305,6 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
       ))}
 
       <AwaitingOtpList orders={awaitingOtp} session={session} onUpdated={fetchOrders} />
-      <LatePendingList orders={latePending} session={session} onUpdated={fetchOrders} />
       <LatePickupList orders={latePickup} session={session} onUpdated={fetchOrders} />
 
       {/* Placement confirm modal */}
@@ -528,17 +547,18 @@ function LatePendingRow({ order, session, onDone }: { order: WorkerOrder; sessio
 }
 
 // ─── LATE PICKUP LIST ─────────────────────────────────────────────────────────
-// Orders whose bin has been cleared; food is at the late pickup counter.
-// Worker enters OTP when student arrives.
+// Slot expired → order moved to late_pickup automatically.
+// Worker needs to move the food from the physical bin to the late pickup counter,
+// then enter OTP when the student arrives.
 function LatePickupList({ orders, session, onUpdated }: { orders: WorkerOrder[]; session: { access_token: string } | null; onUpdated: () => void | Promise<void> }) {
   if (orders.length === 0) return null;
   return (
     <div style={{ marginTop: "1.25rem" }}>
-      <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#b91c1c", letterSpacing: "0.05em", margin: "0 0 0.5rem 0.25rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-        <span style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 6, padding: "0.1rem 0.45rem" }}>LATE PICKUP ({orders.length})</span>
-        <span style={{ fontWeight: 400, fontSize: "0.72rem", color: "#94a3b8" }}>Bin cleared — food at counter, enter OTP when student arrives</span>
+      <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#b91c1c", letterSpacing: "0.05em", margin: "0 0 0.6rem 0.25rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <span style={{ background: "#fee2e2", color: "#b91c1c", border: "1.5px solid #fca5a5", borderRadius: 6, padding: "0.1rem 0.5rem" }}>🔴 LATE PICKUP ({orders.length})</span>
+        <span style={{ fontWeight: 500, fontSize: "0.72rem", color: "#64748b" }}>Move food from bin → late pickup counter, then enter OTP</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {orders.map(o => (
           <LatePickupRow key={o.id} order={o} session={session} onDone={onUpdated} />
         ))}
@@ -552,10 +572,10 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // bin_label / bin_color are snapshotted onto the order when the slot expired
-  const binCode  = order.binLabel ?? order.bin_code ?? "—";
+  const binCode  = order.binLabel ?? order.bin_code ?? null;
   const colorKey = order.binColor ?? order.bin_color ?? "orange";
   const binBg    = BIN_COLORS[colorKey] ?? "#f97316";
+  const slotText = order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—";
 
   async function verify() {
     if (!session || otp.length < 4) return;
@@ -576,23 +596,36 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
   }
 
   return (
-    <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden", border: "1.5px solid #fecaca" }}>
-      {/* Header: was-in bin + slot */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.55rem 0.75rem", background: "#fef2f2" }}>
-        <div style={{ background: binBg, color: "#fff", borderRadius: 8, padding: "0.15rem 0.55rem", fontSize: "0.78rem", fontWeight: 800 }}>{binCode}</div>
-        <span style={{ fontSize: "0.72rem", color: "#b91c1c", fontWeight: 600, flex: 1 }}>
-          #{order.id.slice(-8).toUpperCase()} · was in this bin · {order.pickupSlot ?? order.pickup_slot ?? order.slotLabel ?? "—"}
+    <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #dc2626", boxShadow: "0 4px 14px rgba(220,38,38,0.18)" }}>
+      {/* Header — red strip with bin + slot */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: "#dc2626" }}>
+        {binCode && (
+          <div style={{ background: binBg, color: "#fff", border: "2px solid rgba(255,255,255,0.5)", borderRadius: 8, padding: "0.2rem 0.65rem", fontSize: "0.82rem", fontWeight: 900 }}>{binCode}</div>
+        )}
+        <span style={{ color: "#fff", fontWeight: 600, fontSize: "0.75rem", flex: 1 }}>
+          #{order.id.slice(-8).toUpperCase()} · {slotText}
         </span>
-        <span style={{ fontSize: "0.68rem", background: "#fee2e2", color: "#991b1b", borderRadius: 999, padding: "0.1rem 0.45rem", fontWeight: 700 }}>Late</span>
+        <span style={{ background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 999, padding: "0.15rem 0.5rem", fontSize: "0.68rem", fontWeight: 700 }}>LATE</span>
       </div>
+
+      {/* Worker action instruction */}
+      <div style={{ margin: "0.65rem 0.75rem 0.35rem", background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "0.55rem 0.7rem", display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+        <span style={{ fontSize: "1.2rem" }}>⚠️</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#991b1b" }}>
+            {binCode ? `Move food from ${binCode} to the late pickup counter` : "Move food to the late pickup counter"}
+          </div>
+          <div style={{ fontSize: "0.73rem", color: "#b91c1c", marginTop: "0.15rem" }}>
+            Then enter the student&apos;s OTP below when they arrive
+          </div>
+        </div>
+      </div>
+
       {/* Items */}
-      <div style={{ padding: "0.45rem 0.75rem", fontSize: "0.82rem", color: "#475569" }}>
+      <div style={{ padding: "0.3rem 0.75rem 0.45rem", fontSize: "0.82rem", color: "#475569" }}>
         {order.items.map((i, idx) => `${i.name} ×${i.quantity}${idx < order.items.length - 1 ? " · " : ""}`)}
       </div>
-      {/* Note for worker */}
-      <div style={{ margin: "0 0.75rem 0.45rem", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "0.35rem 0.55rem", fontSize: "0.72rem", color: "#92400e" }}>
-        Food is at the late pickup counter. Enter OTP when the student arrives.
-      </div>
+
       {/* OTP entry */}
       <div style={{ padding: "0 0.75rem 0.75rem" }}>
         <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -600,7 +633,7 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
             type="text" inputMode="numeric" maxLength={6} value={otp}
             onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setError(null); }}
             placeholder="Enter OTP"
-            style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center" as const, border: "1.5px solid #e2e8f0", borderRadius: 10 }}
+            style={{ flex: 1, padding: "0.6rem 0.75rem", fontSize: "1.05rem", letterSpacing: "0.25rem", fontWeight: 700, textAlign: "center" as const, border: "1.5px solid #fca5a5", borderRadius: 10 }}
           />
           <button
             onClick={verify} disabled={busy || otp.length < 4}
