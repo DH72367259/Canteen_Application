@@ -4,7 +4,9 @@
  * QRScanner — camera-based QR scanner for workers.
  *
  * Uses html5-qrcode under the hood (works on Android Chrome + iOS Safari).
- * Opens the rear camera by default.
+ * Camera selection strategy (works on Samsung, Realme, Vivo, Redmi, etc.):
+ *   1. getCameras() → enumerate real hardware IDs, prefer rear camera by label
+ *   2. Constraint-based fallback: environment → {} (no constraint)
  *
  * Props:
  *   onScanned(payload)  — called once with the raw QR string
@@ -63,23 +65,40 @@ export default function QRScanner({ onScanned, onClose, width = 280 }: Props) {
         scanner.stop().catch(() => {}).finally(() => { onScanned(decodedText); });
       };
 
-      // Try rear camera, fall back to any camera on OverconstrainedError
-      const constraints: MediaTrackConstraints[] = [
-        { facingMode: { ideal: "environment" } },
-        { facingMode: "user" },
-        {},
-      ];
       let started = false;
-      for (const c of constraints) {
-        if (destroyed) break;
-        try {
-          await scanner.start(c, config, onDecoded, () => { /* per-frame errors normal */ });
-          started = true;
-          break;
-        } catch {
-          // Always try the next constraint — some Android devices throw
-          // non-standard errors for facingMode constraints even when {} succeeds.
-          continue;
+
+      // Strategy 1: enumerate real hardware camera IDs (most reliable across all
+      // Android brands — Samsung, Realme, Vivo, Redmi, etc. — bypasses facingMode
+      // constraint issues entirely by using the actual device camera ID)
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras.length > 0 && !destroyed) {
+          // Prefer rear-facing camera (identified by label on most devices)
+          const sorted = [
+            ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
+            ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
+          ];
+          for (const cam of sorted) {
+            if (destroyed) break;
+            try {
+              await scanner.start(cam.id, config, onDecoded, () => {});
+              started = true;
+              break;
+            } catch { continue; }
+          }
+        }
+      } catch { /* getCameras denied or not supported — fall through */ }
+
+      // Strategy 2: constraint-based fallback (handles browsers where getCameras
+      // requires a permission grant first, or returns an empty list)
+      if (!started && !destroyed) {
+        for (const c of [{ facingMode: { ideal: "environment" } }, {}] as MediaTrackConstraints[]) {
+          if (destroyed) break;
+          try {
+            await scanner.start(c, config, onDecoded, () => {});
+            started = true;
+            break;
+          } catch { continue; }
         }
       }
 
@@ -87,7 +106,7 @@ export default function QRScanner({ onScanned, onClose, width = 280 }: Props) {
         if (started) {
           setScanning(true);
         } else {
-          setError("Camera unavailable. Make sure camera permission is allowed in browser settings. On Android, you may need to reload the page after granting permission.");
+          setError("Camera unavailable. Please allow camera permission and try again. If you just granted permission in system settings, reload the page.");
         }
       }
     }
@@ -140,15 +159,23 @@ export default function QRScanner({ onScanned, onClose, width = 280 }: Props) {
           marginTop: "1rem", background: "#fef2f2",
           border: "1px solid #fca5a5",
           borderRadius: 10, padding: "0.75rem 1rem",
-          maxWidth: 280, fontSize: "0.85rem", color: "#dc2626", textAlign: "center",
+          maxWidth: 290, fontSize: "0.85rem", color: "#dc2626", textAlign: "center",
         }}>
-          <div style={{ marginBottom: "0.75rem", lineHeight: 1.5 }}>{error}</div>
-          <button
-            onClick={() => setRetryKey(k => k + 1)}
-            style={{ padding: "0.45rem 1.2rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
-          >
-            Try Again
-          </button>
+          <div style={{ marginBottom: "0.85rem", lineHeight: 1.5 }}>{error}</div>
+          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+            <button
+              onClick={() => setRetryKey(k => k + 1)}
+              style={{ padding: "0.45rem 1rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ padding: "0.45rem 1rem", background: "#f97316", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+            >
+              Reload Page
+            </button>
+          </div>
         </div>
       )}
 

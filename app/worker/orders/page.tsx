@@ -321,30 +321,43 @@ export default function WorkerOrdersPage() {
 
       const config = { fps: 10, qrbox: { width: 200, height: 200 } };
 
-      // Try rear camera first, fall back to any camera if constraint fails
-      const cameraConstraints: MediaTrackConstraints[] = [
-        { facingMode: { ideal: "environment" } },
-        { facingMode: "user" },
-        {},
-      ];
-
       let started = false;
-      for (const constraint of cameraConstraints) {
-        if (cancelled) break;
-        try {
-          await qr.start(constraint, config, onDecoded, () => { /* per-frame errors normal */ });
-          started = true;
-          break;
-        } catch {
-          // Always try the next constraint — some Android devices (e.g. Samsung)
-          // throw non-standard errors for facingMode constraints even when the
-          // fallback {} (no constraint) would succeed.
-          continue;
+
+      // Strategy 1: enumerate real hardware camera IDs (most reliable across all
+      // Android brands — Samsung, Realme, Vivo, Redmi, etc.)
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras.length > 0 && !cancelled) {
+          // Prefer rear-facing camera
+          const sorted = [
+            ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
+            ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
+          ];
+          for (const cam of sorted) {
+            if (cancelled) break;
+            try {
+              await qr.start(cam.id, config, onDecoded, () => {});
+              started = true;
+              break;
+            } catch { continue; }
+          }
+        }
+      } catch { /* getCameras denied or not supported — fall through */ }
+
+      // Strategy 2: constraint-based fallback
+      if (!started && !cancelled) {
+        for (const c of [{ facingMode: { ideal: "environment" } }, {}] as MediaTrackConstraints[]) {
+          if (cancelled) break;
+          try {
+            await qr.start(c, config, onDecoded, () => {});
+            started = true;
+            break;
+          } catch { continue; }
         }
       }
 
       if (!started && !cancelled) {
-        setQrError("Camera unavailable. Make sure camera permission is allowed in browser settings. On Android, you may need to reload the page after granting permission.");
+        setQrError("Camera unavailable. Allow camera permission and tap Try Again. If you just granted permission in settings, use Reload Page.");
       }
     }
 
@@ -749,15 +762,23 @@ export default function WorkerOrdersPage() {
 
                 {qrError && (
                   <div style={{ textAlign: "center", padding: "0.5rem 0 0.25rem" }}>
-                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.85rem", marginBottom: "1rem", lineHeight: 1.5 }}>
                       {qrError}
                     </p>
-                    <button
-                      onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
-                      style={{ padding: "0.6rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
-                    >
-                      Try Again
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
+                        style={{ padding: "0.6rem 1.2rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+                      >
+                        Try Again
+                      </button>
+                      <button
+                        onClick={() => window.location.reload()}
+                        style={{ padding: "0.6rem 1.2rem", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+                      >
+                        Reload Page
+                      </button>
+                    </div>
                   </div>
                 )}
 
