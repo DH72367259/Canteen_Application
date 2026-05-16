@@ -457,7 +457,7 @@ function AwaitingOtpRow({ order, session, onDone }: { order: WorkerOrder; sessio
 
   return (
     <>
-      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} />}
+      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} onManualOtp={() => setScanning(false)} />}
       <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.07)", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: binBg }}>
           <span style={{ color: "#fff", fontWeight: 900, fontSize: "1.05rem" }}>{binCode}{binCount > 1 ? ` +${binCount - 1}` : ""}</span>
@@ -569,7 +569,7 @@ function LatePickupRow({ order, session, onDone }: { order: WorkerOrder; session
 
   return (
     <>
-      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} />}
+      {scanning && <QRScanner onScanned={verifyQr} onClose={() => setScanning(false)} onManualOtp={() => setScanning(false)} />}
       <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #dc2626", boxShadow: "0 4px 14px rgba(220,38,38,0.18)" }}>
         {/* Header — red strip with bin + slot */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.6rem 0.75rem", background: "#dc2626" }}>

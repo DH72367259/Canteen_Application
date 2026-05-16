@@ -1039,7 +1039,7 @@ export default function VendorDashboard() {
       </main>
 
       {/* QR Scanner overlay */}
-      {qrScanning && <QRScanner onScanned={handleQrScanned} onClose={() => setQrScanning(false)} />}
+      {qrScanning && <QRScanner onScanned={handleQrScanned} onClose={() => setQrScanning(false)} onManualOtp={() => setQrScanning(false)} />}
 
       {/* Bill Receipt modal */}
       {printOrder && (
