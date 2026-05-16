@@ -63,16 +63,23 @@ function getNowISTMin(): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
 
-// Orders tab: show late, current, or slots starting within the next 60 min (unchanged).
+// Orders tab: show current slot or slots starting within the next 60 min.
 function isOrderRelevant(slotLabel: string | null | undefined): boolean {
   if (!slotLabel) return true;
   const range = parseSlotRange(slotLabel);
   if (!range) return true;
   const now = getNowISTMin();
-  const isLate     = range.endMin <= now;
   const isCurrent  = range.startMin <= now && range.endMin > now;
   const isUpcoming = range.startMin > now && range.startMin <= now + 60;
-  return isLate || isCurrent || isUpcoming;
+  return isCurrent || isUpcoming;
+}
+
+// Late Pickup tab: slot has ended but student hasn't collected yet.
+function isLatePickup(slotLabel: string | null | undefined): boolean {
+  if (!slotLabel) return false;
+  const range = parseSlotRange(slotLabel);
+  if (!range) return false;
+  return range.endMin <= getNowISTMin();
 }
 
 // Prep tab: show only the immediately upcoming slot (within 15 min before start)
@@ -161,7 +168,7 @@ export default function WorkerOrdersPage() {
   const [fetching, setFetching]     = useState(true);
   const [updating, setUpdating]     = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<string>("__all__");
-  const [tab, setTab]               = useState<"orders" | "prep">("orders");
+  const [tab, setTab]               = useState<"orders" | "prep" | "late">("orders");
   const [otpModal, setOtpModal]     = useState<string | null>(null);
   const [otpInput, setOtpInput]     = useState("");
   const [otpSubmitting, setOtpSubmitting] = useState(false);
@@ -377,6 +384,11 @@ export default function WorkerOrdersPage() {
   const prepSummary = aggregateBySlot(prepOrders);
   const selectedSummary = pickBestPrepSlot(prepSummary);
 
+  // Late Pickup tab: slot has ended, student hasn't collected yet
+  const lateOrders = orders.filter(
+    (o) => isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status)
+  );
+
   if (loading || fetching) return <div className="page-loading"><div className="spinner" /></div>;
 
   return (
@@ -542,23 +554,108 @@ export default function WorkerOrdersPage() {
             )}
           </div>
         )}
+
+        {/* ── LATE PICKUP TAB — slot has ended, student hasn't collected ── */}
+        {tab === "late" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+            {lateOrders.length === 0 ? (
+              <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 0", fontSize: "0.9rem" }}>
+                ✅ No late pickups right now.
+              </div>
+            ) : (
+              <>
+                <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "0.55rem 0.9rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#b91c1c" }}>
+                    {lateOrders.length} order{lateOrders.length !== 1 ? "s" : ""} past pickup time
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "#64748b" }}>Scan QR or enter OTP</span>
+                </div>
+
+                {lateOrders.map((order) => {
+                  const assignments =
+                    order.bin_assignments && order.bin_assignments.length > 0
+                      ? order.bin_assignments
+                      : [{ binIndex: 1, binLabel: order.bin_label ?? "⏳ Pending", binColor: order.bin_color ?? "orange", items: order.items }];
+
+                  return (
+                    <div key={order.id} style={{ background: "#fff", borderRadius: 16, boxShadow: "0 3px 10px rgba(0,0,0,0.09)", border: "1.5px solid #fca5a5", overflow: "hidden" }}>
+                      <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #fee2e2", background: "#fef2f2" }}>
+                        <div style={{ fontWeight: 800, color: "#b91c1c", fontSize: "0.95rem" }}>
+                          {order.customer_name && !/^[0-9a-f]{8}-/i.test(order.customer_name)
+                            ? order.customer_name
+                            : `#${order.id.slice(-8).toUpperCase()}`}
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
+                          Order #{order.id.slice(-8).toUpperCase()} · Slot {order.pickup_slot ?? "—"} · <span style={{ color: "#dc2626", fontWeight: 700 }}>LATE</span>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
+                        {assignments.map((a) => {
+                          const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
+                          return (
+                            <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
+                              <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
+                                <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-8).toUpperCase()}</span>
+                              </div>
+                              <div style={{ padding: "0.55rem 0.7rem" }}>
+                                {a.items.map((it, idx) => (
+                                  <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
+                                    <span>{it.name}</span>
+                                    <span style={{ color: "#b45309" }}>x{it.quantity}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ padding: "0 0.75rem 0.75rem" }}>
+                        <button
+                          onClick={() => { setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
+                          style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                        >
+                          🔐 Verify OTP / Scan QR to Complete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom nav — inline styles so desktop media-query doesn't hide it */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)" }}>
         {([
-          { key: "orders", label: "Orders",   icon: "📦" },
-          { key: "prep",   label: "Prep Plan", icon: "📊" },
-        ] as { key: "orders"|"prep"; label: string; icon: string }[]).map(({ key, label, icon }) => (
+          { key: "orders", label: "Orders",      icon: "📦" },
+          { key: "prep",   label: "Prep Plan",   icon: "📊" },
+          { key: "late",   label: "Late Pickup", icon: "⚠️" },
+        ] as { key: "orders"|"prep"|"late"; label: string; icon: string }[]).map(({ key, label, icon }) => (
           <button key={key} onClick={() => setTab(key)}
-            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 600, color: tab === key ? "var(--orange,#f97316)" : "var(--ink-3,#64748b)" }}>
-            <span style={{ fontSize: "1.35rem" }}>{icon}</span>{label}
+            style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem",
+              padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer",
+              fontSize: "0.65rem", fontWeight: 600,
+              color: tab === key
+                ? (key === "late" ? "#dc2626" : "var(--orange,#f97316)")
+                : "var(--ink-3,#64748b)",
+              position: "relative",
+            }}>
+            <span style={{ fontSize: "1.35rem" }}>{icon}</span>
+            {label}
+            {key === "late" && lateOrders.length > 0 && (
+              <span style={{ position: "absolute", top: 4, right: "50%", transform: "translateX(200%)", background: "#dc2626", color: "#fff", borderRadius: 99, fontSize: "0.6rem", fontWeight: 900, padding: "1px 5px", lineHeight: 1.4 }}>
+                {lateOrders.length}
+              </span>
+            )}
           </button>
         ))}
-        <button onClick={() => router.push("/worker/bins")}
-          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer", fontSize: "0.65rem", fontWeight: 600, color: "var(--ink-3,#64748b)" }}>
-          <span style={{ fontSize: "1.35rem" }}>🧺</span>Bins
-        </button>
       </div>
 
       {/* OTP / QR Verification Modal */}
