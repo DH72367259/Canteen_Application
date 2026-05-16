@@ -76,10 +76,10 @@ export default function QRScanner({ onScanned, onClose, width = 280 }: Props) {
           await scanner.start(c, config, onDecoded, () => { /* per-frame errors normal */ });
           started = true;
           break;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (/overconstrained|not.*satisfi/i.test(msg)) continue;
-          break;
+        } catch {
+          // Always try the next constraint — some Android devices throw
+          // non-standard errors for facingMode constraints even when {} succeeds.
+          continue;
         }
       }
 
@@ -87,7 +87,7 @@ export default function QRScanner({ onScanned, onClose, width = 280 }: Props) {
         if (started) {
           setScanning(true);
         } else {
-          setError("Camera access denied. Please allow camera permission in browser settings, then tap Try Again.");
+          setError("Camera unavailable. Make sure camera permission is allowed in browser settings. On Android, you may need to reload the page after granting permission.");
         }
       }
     }

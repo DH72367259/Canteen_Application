@@ -3,7 +3,7 @@ import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
 import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
-import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
+import { assignBins, computeSlotCapacity, type CartLine, type SlotMode } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
 
@@ -191,8 +191,9 @@ export async function POST(req: NextRequest) {
   // maxOrdersPerSlot is derived from the canteen manager's max_bins setting
   // via computeSlotCapacity (100% capacity). Canteen managers control this through
   // the Slot & Bin Control panel — changing max_bins changes the cap in real time.
-  const maxBins          = Number(sc?.max_bins) || 60;
-  const { maxOrdersPerSlot, batchedPreparedCap, madeToOrderCap } = computeSlotCapacity(maxBins);
+  const maxBins = Number(sc?.max_bins) || 60;
+  const slotMode = ((sc as Record<string, unknown>)?.slot_mode as SlotMode | undefined) ?? 'both';
+  const { maxOrdersPerSlot, batchedPreparedCap, madeToOrderCap } = computeSlotCapacity(maxBins, slotMode);
 
   // ── MADE-TO-ORDER vs BATCHED-PREPARED SPLIT (enforce slot-level caps) ────
   // Split: 60% for batched/prepared, 40% for made-to-order.

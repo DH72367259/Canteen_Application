@@ -3264,6 +3264,7 @@ interface SlotControlState {
   max_orders_per_slot: number;
   batched_prepared_cap: number;
   made_to_order_cap: number;
+  slot_mode?: "both" | "batched_only";
 }
 interface SlotControlResp {
   slot_control: SlotControlState;
@@ -3277,6 +3278,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   const [error, setError] = useState<string | null>(null);
   const [maxBinsInput, setMaxBinsInput] = useState<string>("");
   const [duration, setDuration] = useState<string>("15");
+  const [slotMode, setSlotMode] = useState<"both" | "batched_only">("both");
   const [saving, setSaving] = useState(false);
   const [morningStart, setMorningStart]     = useState("07:00");
   const [morningEnd, setMorningEnd]         = useState("11:00");
@@ -3295,6 +3297,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
       if (!res.ok) throw new Error(j.error || "Failed");
       setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
       setDuration(String(j.slot_control.slot_duration_mins));
+      setSlotMode(j.slot_control.slot_mode ?? "both");
       setMorningStart(j.slot_control.morning_start.slice(0,5));
       setMorningEnd(j.slot_control.morning_end.slice(0,5));
       setAfternoonStart(j.slot_control.afternoon_start.slice(0,5));
@@ -3317,6 +3320,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
         body: JSON.stringify({
           max_bins: Number(maxBinsInput),
           slot_duration_mins: Number(duration),
+          slot_mode: slotMode,
           morning_start:   morningStart   + ":00",
           morning_end:     morningEnd     + ":00",
           afternoon_start: afternoonStart + ":00",
@@ -3337,8 +3341,8 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
 
   const sc = data.slot_control, cap = data.capacity, win = data.windows;
   const previewMaxOrders  = Number(maxBinsInput) || 0;
-  const previewBatched    = Math.floor(previewMaxOrders * 0.6);
-  const previewMadeToOrd  = previewMaxOrders - previewBatched;
+  const previewBatched    = slotMode === "batched_only" ? previewMaxOrders : Math.floor(previewMaxOrders * 0.6);
+  const previewMadeToOrd  = slotMode === "batched_only" ? 0 : previewMaxOrders - previewBatched;
 
   return (
     <div className="page-content">
@@ -3382,8 +3386,39 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
-        <p style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "0.85rem" }}>
-          Capacity updated: <strong>{previewMaxOrders}</strong> orders per slot. For kitchen planning: <strong>{previewBatched}</strong> batched, <strong>{previewMadeToOrd}</strong> made-to-order.
+
+        {/* Mode selection */}
+        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.5rem" }}>Slot Mode</div>
+          <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+            {([
+              { value: "both",         label: "Both",         desc: `${previewBatched} batched + ${previewMadeToOrd} made-to-order` },
+              { value: "batched_only", label: "Batched Only", desc: `${previewMaxOrders} bins all for batched items` },
+            ] as { value: "both"|"batched_only"; label: string; desc: string }[]).map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSlotMode(opt.value)}
+                style={{
+                  padding: "0.5rem 0.9rem", border: "2px solid",
+                  borderColor: slotMode === opt.value ? "#f97316" : "#e5e7eb",
+                  background: slotMode === opt.value ? "#fff7ed" : "#f8fafc",
+                  borderRadius: 8, cursor: "pointer", textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: slotMode === opt.value ? "#ea580c" : "#374151" }}>{opt.label}</div>
+                <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: 2 }}>{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+          {slotMode === "batched_only" && (
+            <p style={{ fontSize: "0.75rem", color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 6, padding: "0.4rem 0.65rem", marginTop: "0.5rem" }}>
+              ⚠️ Made-to-order orders will be <strong>rejected</strong> in this slot when this mode is active.
+            </p>
+          )}
+        </div>
+
+        <p style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "0.75rem" }}>
+          Capacity: <strong>{previewMaxOrders}</strong> orders/slot · Batched: <strong>{previewBatched}</strong> · Made-to-order: <strong>{previewMadeToOrd}</strong>
         </p>
 
         <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>

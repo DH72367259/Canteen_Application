@@ -17,20 +17,30 @@ export interface SlotCapacity {
   bufferBins: number;
 }
 
-export function computeSlotCapacity(maxBins: number): SlotCapacity {
+export type SlotMode = 'both' | 'batched_only';
+
+export function computeSlotCapacity(maxBins: number, mode: SlotMode = 'both'): SlotCapacity {
   if (!Number.isFinite(maxBins) || maxBins <= 0) {
     throw new Error('maxBins must be a positive number');
   }
-  const maxOrdersPerSlot = maxBins; // 100% capacity per slot
-  const batchedPreparedCap = Math.floor(maxBins * 0.6); // 60% for batched prepared items
-  const madeToOrderCap = maxBins - batchedPreparedCap; // 40% for made-to-order items
-  const bufferBins = 0; // No buffer (all bins available)
+  const maxOrdersPerSlot = maxBins;
+  let batchedPreparedCap: number;
+  let madeToOrderCap: number;
+  if (mode === 'batched_only') {
+    // All bins reserved for batched-prepared items; no made-to-order accepted
+    batchedPreparedCap = maxBins;
+    madeToOrderCap = 0;
+  } else {
+    // Default: 60% batched-prepared, 40% made-to-order
+    batchedPreparedCap = Math.floor(maxBins * 0.6);
+    madeToOrderCap = maxBins - batchedPreparedCap;
+  }
   return {
     maxBins,
     maxOrdersPerSlot,
     batchedPreparedCap,
     madeToOrderCap,
-    bufferBins,
+    bufferBins: 0,
   };
 }
 

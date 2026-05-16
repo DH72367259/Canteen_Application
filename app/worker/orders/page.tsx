@@ -179,7 +179,8 @@ export default function WorkerOrdersPage() {
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
-    if (!loading && user && user.role !== "worker") router.push("/");
+    // Only redirect if role is fully resolved — prevents flicker during auth
+    if (!loading && user && user.role && user.role !== "worker") router.push("/");
   }, [user, loading, router]);
 
   useEffect(() => {
@@ -334,16 +335,16 @@ export default function WorkerOrdersPage() {
           await qr.start(constraint, config, onDecoded, () => { /* per-frame errors normal */ });
           started = true;
           break;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          // OverconstrainedError → try next constraint; NotAllowedError → bail
-          if (/overconstrained|not.*satisfi/i.test(msg)) continue;
-          break;
+        } catch {
+          // Always try the next constraint — some Android devices (e.g. Samsung)
+          // throw non-standard errors for facingMode constraints even when the
+          // fallback {} (no constraint) would succeed.
+          continue;
         }
       }
 
       if (!started && !cancelled) {
-        setQrError("Camera access denied. Please allow camera permission in your browser settings, then tap Try Again.");
+        setQrError("Camera unavailable. Make sure camera permission is allowed in browser settings. On Android, you may need to reload the page after granting permission.");
       }
     }
 

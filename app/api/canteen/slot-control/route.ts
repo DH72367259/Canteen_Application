@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
-import { computeSlotCapacity, generateTimeSlots } from "@/lib/slotCapacity";
+import { computeSlotCapacity, generateTimeSlots, type SlotMode } from "@/lib/slotCapacity";
 import { ensureBinsForCanteen, reconcileBinsForCanteen } from "@/lib/binProvisioning";
 
 export const dynamic = "force-dynamic";
@@ -89,7 +89,8 @@ export async function GET(request: Request) {
   }
 
   const row = data as SlotControlRow;
-  const capacity = computeSlotCapacity(row.max_bins);
+  const slotMode = ((row as Record<string, unknown>).slot_mode as SlotMode | undefined) ?? 'both';
+  const capacity = computeSlotCapacity(row.max_bins, slotMode);
   // Generate today's slot windows for visualization
   const windows = {
     morning:   generateTimeSlots(row.morning_start.slice(0, 5),   row.morning_end.slice(0, 5),   row.slot_duration_mins),
@@ -119,6 +120,7 @@ export async function PATCH(request: Request) {
     "afternoon_start", "afternoon_end",
     "evening_start", "evening_end",
     "extra_bin_fee_paise", "meals_per_bin", "snacks_per_bin",
+    "slot_mode",
   ];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -142,6 +144,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "slot_duration_mins must be 10, 15 or 20." }, { status: 400 });
     }
     updates.slot_duration_mins = v;
+  }
+
+  if ("slot_mode" in updates) {
+    if (!["both", "batched_only"].includes(String(updates.slot_mode))) {
+      return NextResponse.json({ error: "slot_mode must be 'both' or 'batched_only'." }, { status: 400 });
+    }
   }
 
   updates.updated_at = new Date().toISOString();
@@ -177,5 +185,6 @@ export async function PATCH(request: Request) {
     afternoon: generateTimeSlots(row.afternoon_start.slice(0, 5), row.afternoon_end.slice(0, 5), row.slot_duration_mins),
     evening:   generateTimeSlots(row.evening_start.slice(0, 5),   row.evening_end.slice(0, 5),   row.slot_duration_mins),
   };
-  return NextResponse.json({ slot_control: row, capacity: computeSlotCapacity(row.max_bins), windows });
+  const patchSlotMode = ((row as Record<string, unknown>).slot_mode as SlotMode | undefined) ?? 'both';
+  return NextResponse.json({ slot_control: row, capacity: computeSlotCapacity(row.max_bins, patchSlotMode), windows });
 }
