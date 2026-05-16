@@ -49,6 +49,12 @@ export async function POST(req: NextRequest) {
   if (cartItems.length > MAX_CART_ITEMS) {
     return Response.json({ error: `Cart cannot exceed ${MAX_CART_ITEMS} items` }, { status: 400 });
   }
+  if (slotLabel != null) {
+    const SLOT_LABEL_RE = /^\d{1,2}:\d{2}\s*(AM|PM)\s*-\s*\d{1,2}:\d{2}\s*(AM|PM)$/i;
+    if (typeof slotLabel !== "string" || !SLOT_LABEL_RE.test(slotLabel.trim())) {
+      return Response.json({ error: "Invalid slot label format" }, { status: 400 });
+    }
+  }
 
   // Validate every cart item has a string id and positive integer qty
   for (const item of cartItems) {
@@ -251,7 +257,7 @@ export async function POST(req: NextRequest) {
   // New bin packing: 1 meal + up to 3 snacks per bin, or 5 snacks alone
   const mealsPerBin    = 1;  // 1 meal per bin (fixed)
   const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;  // Snacks paired with meal
-  const extraFeePaise0 = Number(sc?.extra_bin_fee_paise)  || 200;
+  const extraFeePaise0 = sc?.extra_bin_fee_paise != null ? Number(sc.extra_bin_fee_paise) : 200;
   const binPlan = assignBins(cartLines, mealsPerBin, snacksWithMealPerBin, extraFeePaise0);
 
   const extraBinFeeRupees = Math.round(binPlan.extraFeePaise) / 100;

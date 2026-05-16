@@ -103,31 +103,40 @@ export async function assignDeferredBins(
     const slotLabel = String(order.slot_label ?? "");
     const pickIds = pick.map((b) => b.id);
 
-    // Atomic claim: UPDATE WHERE is_occupied=false prevents races
-    const { data: claimed } = await supabase
-      .from("bins")
-      .update({
-        is_occupied: true,
-        order_id: order.id,
-        assigned_order_id: order.id,
-        status: "reserved",
-        slot_label: slotLabel,
-        updated_at: now,
-      })
-      .eq("canteen_id", canteenId)
-      .eq("is_occupied", false)
-      .in("id", pickIds)
-      .select("id");
+    // Atomic claim: UPDATE WHERE is_occupied=false prevents races.
+    // Try with order_id first (production schema); fall back to current_order_id
+    // (staging schema variant) so bin assignment works on both DB instances.
+    let claimed: { id: string }[] | null = null;
+    for (const binPayload of [
+      { is_occupied: true, order_id: order.id, assigned_order_id: order.id, status: "reserved", slot_label: slotLabel, updated_at: now },
+      { is_occupied: true, current_order_id: order.id, assigned_order_id: order.id, status: "reserved", slot_label: slotLabel, updated_at: now },
+    ] as const) {
+      const r = await supabase
+        .from("bins")
+        .update(binPayload)
+        .eq("canteen_id", canteenId)
+        .eq("is_occupied", false)
+        .in("id", pickIds)
+        .select("id");
+      if (!r.error) { claimed = (r.data ?? []) as { id: string }[]; break; }
+      const isSchemaErr = /column .* does not exist/i.test(r.error.message) || r.error.code === "42703" || r.error.code === "PGRST204";
+      if (!isSchemaErr) break;
+    }
 
     const claimedCount = (claimed ?? []).length;
     if (claimedCount < needed) {
       // Race condition — rollback any partial claims
       if (claimedCount > 0) {
         const ids = (claimed as { id: string }[]).map((r) => r.id);
-        await supabase
-          .from("bins")
-          .update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: now })
-          .in("id", ids);
+        for (const rollbackPayload of [
+          { is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: now },
+          { is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty", updated_at: now },
+        ] as const) {
+          const r = await supabase.from("bins").update(rollbackPayload).in("id", ids);
+          if (!r.error) break;
+          const isSchemaErr = /column .* does not exist/i.test(r.error?.message ?? "") || r.error?.code === "42703" || r.error?.code === "PGRST204";
+          if (!isSchemaErr) break;
+        }
       }
       continue;
     }
@@ -152,11 +161,16 @@ export async function assignDeferredBins(
     }
 
     if (orderErr) {
-      // Rollback bin claims
-      await supabase
-        .from("bins")
-        .update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: now })
-        .in("id", pickIds);
+      // Rollback bin claims (try order_id first, then current_order_id for schema variants)
+      for (const rb of [
+        { is_occupied: false, order_id: null, assigned_order_id: null, status: "empty", updated_at: now },
+        { is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty", updated_at: now },
+      ] as const) {
+        const r = await supabase.from("bins").update(rb).in("id", pickIds);
+        if (!r.error) break;
+        const isSchemaErr = /column .* does not exist/i.test(r.error?.message ?? "") || r.error?.code === "42703" || r.error?.code === "PGRST204";
+        if (!isSchemaErr) break;
+      }
       continue;
     }
 
