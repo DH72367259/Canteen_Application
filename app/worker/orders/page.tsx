@@ -32,7 +32,7 @@ const BIN_COLORS: Record<string, string> = {
   yellow: "#eab308", purple: "#a855f7", orange: "#f97316",
 };
 
-const ACTIVE_STATUSES = ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"];
+const ACTIVE_STATUSES = ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup", "late_pickup"];
 
 function tint(hex: string, alpha: string): string {
   if (!hex.startsWith("#") || hex.length !== 7) return `${hex}${alpha}`;
@@ -278,6 +278,16 @@ export default function WorkerOrdersPage() {
         qrInstanceRef.current = null;
       }
 
+      // Pre-check: if camera is already denied, skip getUserMedia to avoid
+      // re-triggering the permission dialog on every modal open/retry.
+      try {
+        const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
+        if (perm.state === "denied") {
+          if (!cancelled) setQrError("Camera permission blocked. Open Chrome site settings, set Camera to Allow, then Reload Page.");
+          return;
+        }
+      } catch { /* Permissions API not supported (iOS) — proceed */ }
+
       const { Html5Qrcode } = await import("html5-qrcode");
 
       // Wait for the DOM element to appear (it may be freshly mounted after retry)
@@ -386,8 +396,8 @@ export default function WorkerOrdersPage() {
     setQrError(null);
   }
 
-  // Orders tab: same wide window as before (late + current + 60-min upcoming)
-  const relevantOrders = orders.filter((o) => isOrderRelevant(o.pickup_slot));
+  // Orders tab: current slot + 60-min upcoming (never late_pickup — those go to Late tab)
+  const relevantOrders = orders.filter((o) => o.status !== "late_pickup" && isOrderRelevant(o.pickup_slot));
   const slots = [...new Set(relevantOrders.map((o) => o.pickup_slot).filter((s): s is string => Boolean(s)))].sort();
   const displayedOrders = activeSlot === "__all__"
     ? relevantOrders
@@ -398,9 +408,11 @@ export default function WorkerOrdersPage() {
   const prepSummary = aggregateBySlot(prepOrders);
   const selectedSummary = pickBestPrepSlot(prepSummary);
 
-  // Late Pickup tab: slot has ended, student hasn't collected yet
+  // Late Pickup tab: DB status is late_pickup, OR slot has ended with an active status
+  // (the second arm catches orders that are transitioning before the next auto-update runs)
   const lateOrders = orders.filter(
-    (o) => isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status)
+    (o) => o.status === "late_pickup" ||
+           (isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
   );
 
   if (loading || fetching) return <div className="page-loading"><div className="spinner" /></div>;
