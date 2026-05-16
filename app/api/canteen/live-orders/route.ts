@@ -76,24 +76,26 @@ export async function GET(request: Request) {
   // for each slot column, then progressively strip optional columns. Without
   // this any single missing column 500s the whole endpoint and Bin
   // Management / Live Orders show "Failed to load orders."
+  // FK hints removed — plain joins work regardless of constraint name.
+  // Fallback retries on both "column does not exist" and PostgREST relationship errors.
   const slotCols = ["slot_label", "pickup_slot"] as const;
   type ProjBuilder = (sc: string) => string;
   const richProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
-    profiles!orders_user_id_fkey(name),
-    bins!orders_bin_id_fkey(bin_code, color),
+    profiles(name),
+    bins(bin_code, color),
     order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const baseProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
-    profiles!orders_user_id_fkey(name),
-    bins!orders_bin_id_fkey(bin_code, color),
+    profiles(name),
+    bins(bin_code, color),
     order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const legacyItemProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
-    profiles!orders_user_id_fkey(name),
-    bins!orders_bin_id_fkey(bin_code, color),
+    profiles(name),
+    bins(bin_code, color),
     order_items(id, menu_item_id, quantity, unit_price, menu_items(name, is_meal))
   `;
   const minimalProj: ProjBuilder = (sc) => `
@@ -123,8 +125,13 @@ export async function GET(request: Request) {
         break outer;
       }
       orderErr = r.error;
-      // Only retry on schema-shape errors; bail out on RLS/auth/etc.
-      if (!/column .* does not exist/i.test(r.error.message)) break outer;
+      // Retry on schema-shape errors (missing column or unknown relationship).
+      // Non-schema errors (auth, network, etc.) bail immediately.
+      const isSchemaError = /column .* does not exist/i.test(r.error.message)
+        || /relationship/i.test(r.error.message)
+        || r.error.code === "PGRST200"
+        || r.error.code === "42703";
+      if (!isSchemaError) break outer;
     }
   }
 

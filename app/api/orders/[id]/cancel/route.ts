@@ -87,23 +87,47 @@ export async function POST(
   const { id: orderId } = await context.params;
   const supabase = createAdminClient();
 
-  // ─── Load + validate order ────────────────────────────────────────────
-  const { data: order, error: loadErr } = await supabase
-    .from("orders")
-    .select("id, status, canteen_id, bin_id, user_id, total_amount, payment_id, cancelled_at")
-    .eq("id", orderId)
-    .single<{
-      id: string;
-      status: string;
-      canteen_id: string;
-      bin_id: string | null;
-      user_id: string | null;
-      total_amount: number;
-      payment_id: string | null;
-      cancelled_at: string | null;
-    }>();
+  // ─── Load + validate order (schema-resilient) ─────────────────────────
+  // Try full column set first; fall back to minimal if schema drift causes
+  // a "column does not exist" error rather than silently returning 404.
+  type OrderRow = {
+    id: string;
+    status: string;
+    canteen_id: string;
+    bin_id: string | null;
+    user_id: string | null;
+    total_amount: number;
+    payment_id: string | null;
+    cancelled_at: string | null;
+  };
+  let order: OrderRow | null = null;
+  {
+    const full = await supabase
+      .from("orders")
+      .select("id, status, canteen_id, bin_id, user_id, total_amount, payment_id, cancelled_at")
+      .eq("id", orderId)
+      .maybeSingle<OrderRow>();
 
-  if (loadErr || !order) {
+    if (full.error && /column .* does not exist/i.test(full.error.message)) {
+      // Staging DB might be missing cancellation columns — retry with minimal set
+      const slim = await supabase
+        .from("orders")
+        .select("id, status, canteen_id, bin_id, user_id, total_amount")
+        .eq("id", orderId)
+        .maybeSingle<Omit<OrderRow, "payment_id" | "cancelled_at">>();
+      if (!slim.error && slim.data) {
+        order = { ...slim.data, payment_id: null, cancelled_at: null };
+      } else if (slim.error) {
+        return NextResponse.json({ error: `Failed to load order: ${slim.error.message}` }, { status: 500 });
+      }
+    } else if (full.error) {
+      return NextResponse.json({ error: `Failed to load order: ${full.error.message}` }, { status: 500 });
+    } else {
+      order = full.data;
+    }
+  }
+
+  if (!order) {
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 

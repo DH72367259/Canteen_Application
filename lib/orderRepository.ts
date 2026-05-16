@@ -80,8 +80,8 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
 export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
   const supabase = createAdminClient();
   const projections = [
-    "*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
-    "*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name), canteens(name)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
     "*, order_items(*, menu_items(name))",
   ];
   for (let i = 0; i < projections.length; i++) {
@@ -92,7 +92,11 @@ export async function listOrdersForUser(uid: string): Promise<CanteenOrder[]> {
       .order("created_at", { ascending: false })
       .limit(50);
     if (!error) return (data ?? []).map((row) => toCanteenOrder(row as unknown as Record<string, unknown>));
-    if (!/column .* does not exist/i.test(error.message)) throw error;
+    const isSchemaError = /column .* does not exist/i.test(error.message)
+      || /relationship/i.test(error.message)
+      || error.code === "PGRST200"
+      || error.code === "42703";
+    if (!isSchemaError) throw error;
   }
   return [];
 }
@@ -102,9 +106,9 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
   // Resilient against prod schema drift: try rich projection (with skipped_at,
   // bins, time_slots), then fall back to progressively simpler queries.
   const projections = [
-    "*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name), canteens(name), bins!orders_bin_id_fkey(id, bin_code, color), time_slots(slot_name, start_time, end_time), order_bins(bin_index, bin_code, bin_color, items)",
-    "*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
-    "*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name), canteens(name)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), bins(id, bin_code, color), time_slots(slot_name, start_time, end_time), order_bins(bin_index, bin_code, bin_color, items)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name), order_bins(bin_index, bin_code, bin_color, items)",
+    "*, order_items(*, menu_items(name)), profiles(name), canteens(name)",
     "*, order_items(*, menu_items(name))",
   ];
   for (let i = 0; i < projections.length; i++) {
@@ -116,7 +120,11 @@ export async function listRecentOrders(limitCount = 100, canteenId?: string): Pr
     if (canteenId) query = query.eq("canteen_id", canteenId);
     const { data, error } = await query;
     if (!error) return (data ?? []).map((row) => toCanteenOrder(row as unknown as Record<string, unknown>));
-    if (!/column .* does not exist/i.test(error.message)) throw error;
+    const isSchemaError = /column .* does not exist/i.test(error.message)
+      || /relationship/i.test(error.message)
+      || error.code === "PGRST200"
+      || error.code === "42703";
+    if (!isSchemaError) throw error;
   }
   return [];
 }
@@ -176,7 +184,7 @@ export async function updateOrderStatus(id: string, status: OrderStatus): Promis
     .from("orders")
     .update({ status })
     .eq("id", id)
-    .select("*, order_items(*, menu_items(name)), profiles!orders_user_id_fkey(name)")
+    .select("*, order_items(*, menu_items(name)), profiles(name)")
     .single();
   if (error) return null;
   return toCanteenOrder(row as Record<string, unknown>);
