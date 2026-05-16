@@ -353,7 +353,9 @@ test.describe("Browser — cart extra bin fee display", () => {
   });
 
   async function loginStudent(page: Page) {
+    await page.context().clearCookies();
     await page.goto(`${APP_URL}/login`);
+    await page.waitForURL(/login/, { timeout: 5_000 }).catch(() => {});
     await page.fill("input[type=email]",    ACCOUNTS.student1.email);
     await page.fill("input[type=password]", ACCOUNTS.student1.password);
     await page.click("button[type=submit], button:has-text('Sign in'), button:has-text('Login')");
@@ -416,11 +418,9 @@ test.describe("Browser — cart extra bin fee display", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe("Vendor dashboard — extra bin fee hidden", () => {
   test("vendor slot-control page contains no extra bin fee input", async ({ page }) => {
-    await page.goto(`${APP_URL}/vendor/dashboard`);
-    await page.fill("input[type=email]",    ACCOUNTS.canteenAdmin.email);
-    await page.fill("input[type=password]", ACCOUNTS.canteenAdmin.password);
-    await page.click("button[type=submit], button:has-text('Sign in'), button:has-text('Login')");
-    await page.waitForURL(/vendor/, { timeout: 15_000 }).catch(() => {});
+    const { loginCanteenAdmin } = await import("./_helpers");
+    await loginCanteenAdmin(page);
+    await expect(page).toHaveURL(/vendor/, { timeout: 15_000 });
 
     // Navigate to Slot Control tab
     const slotTab = page.locator("button:has-text('Slot'), button:has-text('Bin Control')");

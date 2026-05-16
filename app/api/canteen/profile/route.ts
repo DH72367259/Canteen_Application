@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const [canteenRes, profileRes] = await Promise.all([
     supabase
       .from("canteens")
-      .select("id, name, address, location, college, city")
+      .select("id, name, address, college, city")
       .eq("id", canteenId)
       .maybeSingle(),
     supabase

@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       const supabase = createAdminClient();
       const { data: rows } = await supabase
         .from('orders')
-        .select('id, profiles(name)')
+        .select('id, profiles!user_id(name)')
         .in('id', orderIds)
         .returns<Array<{ id: string; profiles: { name: string | null } | null }>>();
       for (const row of rows ?? []) {

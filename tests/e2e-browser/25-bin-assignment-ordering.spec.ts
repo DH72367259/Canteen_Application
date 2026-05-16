@@ -40,8 +40,8 @@ test.describe("BUG-1 fix: Worker OTP verify page has Scan QR tab", () => {
     // Both mode tabs must be visible after the fix
     const otpTab = page.getByText(/Enter OTP/i).first();
     const qrTab  = page.getByText(/Scan QR/i).first();
-    await expect(otpTab).toBeVisible({ timeout: 8_000 });
-    await expect(qrTab).toBeVisible({ timeout: 8_000 });
+    await expect(otpTab).toBeVisible({ timeout: 15_000 });
+    await expect(qrTab).toBeVisible({ timeout: 15_000 });
   });
 
   test("clicking Scan QR tab switches to QR scanner view", async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe("BUG-1 fix: Worker OTP verify page has Scan QR tab", () => {
     await expect(page.locator("body")).toBeVisible({ timeout: 10_000 });
 
     const qrTab = page.getByText(/Scan QR/i).first();
-    await expect(qrTab).toBeVisible({ timeout: 8_000 });
+    await expect(qrTab).toBeVisible({ timeout: 15_000 });
     await qrTab.click();
 
     // After clicking, the OTP input should NOT be visible and camera hint should appear

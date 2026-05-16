@@ -9,8 +9,11 @@ export async function getOrder(orderId: string) {
   // dev DBs still work. Phase 7 column drift on `orders` (bin_count,
   // extra_bin_fee_paise) is tolerated by Postgres because we SELECT *.
   const projections = [
-    '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*), order_bins(bin_index, bin_code, bin_color, items)',
-    '*, order_items(*, menu_items(*)), profiles(name, email), time_slots(*), bins(*)',
+    '*, order_items(*, menu_items(*)), profiles!user_id(name, email), time_slots(*), bins!orders_bin_id_fkey(*), order_bins(bin_index, bin_code, bin_color, items)',
+    '*, order_items(*, menu_items(*)), profiles!user_id(name, email), time_slots(*), bins!orders_bin_id_fkey(*)',
+    '*, order_items(*, menu_items(*)), profiles!user_id(name, email), time_slots(*)',
+    '*, order_items(*, menu_items(*)), profiles!user_id(name, email)',
+    '*, order_items(*, menu_items(*))',
   ]
   let data: Record<string, unknown> | null = null
   let error: { message: string; code?: string } | null = null
@@ -21,7 +24,7 @@ export async function getOrder(orderId: string) {
     error = err
     const errMsg = typeof err === 'string' ? err : (err as any)?.message ?? ''
     const isSchemaError = /relation .* does not exist|column .* does not exist|relationship/i.test(errMsg)
-      || err.code === 'PGRST200' || err.code === '42703'
+      || err.code === 'PGRST200' || err.code === 'PGRST201' || err.code === '42703'
     if (!isSchemaError) break
   }
 

@@ -82,20 +82,20 @@ export async function GET(request: Request) {
   type ProjBuilder = (sc: string) => string;
   const richProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at, skipped_at,
-    profiles(name),
-    bins(bin_code, color),
+    profiles!user_id(name),
+    bins!orders_bin_id_fkey(bin_code, color),
     order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const baseProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
-    profiles(name),
-    bins(bin_code, color),
+    profiles!user_id(name),
+    bins!orders_bin_id_fkey(bin_code, color),
     order_items(id, menu_item_id, quantity, cancelled_quantity, unit_price, menu_items(name, is_meal))
   `;
   const legacyItemProj: ProjBuilder = (sc) => `
     id, status, bin_id, ${sc}, total_amount, created_at,
-    profiles(name),
-    bins(bin_code, color),
+    profiles!user_id(name),
+    bins!orders_bin_id_fkey(bin_code, color),
     order_items(id, menu_item_id, quantity, unit_price, menu_items(name, is_meal))
   `;
   const minimalProj: ProjBuilder = (sc) => `

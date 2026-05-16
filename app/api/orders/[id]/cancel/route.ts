@@ -85,6 +85,13 @@ export async function POST(
   }
 
   const { id: orderId } = await context.params;
+
+  // Reject obviously invalid UUIDs before hitting the database
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(orderId)) {
+    return NextResponse.json({ error: "Order not found." }, { status: 404 });
+  }
+
   const supabase = createAdminClient();
 
   // ─── Load + validate order (schema-resilient) ─────────────────────────

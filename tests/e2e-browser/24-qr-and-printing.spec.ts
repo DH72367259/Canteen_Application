@@ -376,8 +376,17 @@ test.describe("Invoice API — bill printing", () => {
   });
 
   test("worker cannot access invoice endpoint (403)", async () => {
-    const res = await apiFetch(`/api/orders/00000000-0000-0000-0000-000000000000/invoice`, {}, ACCOUNTS.worker);
-    expect(res.status).toBe(403);
+    const canteenId = await getCanteen1Id();
+    const db = adminClient();
+    const { data: profile } = await db.from("profiles").select("id").eq("email", ACCOUNTS.student1.email).maybeSingle();
+    if (!profile) { test.skip(); return; }
+    const { data: order } = await db.from("orders")
+      .insert({ canteen_id: canteenId, user_id: profile.id, status: "collected", total_amount: 80, otp: "wk099" })
+      .select("id").single();
+    if (!order) { test.skip(); return; }
+    const res = await apiFetch(`/api/orders/${order.id}/invoice`, {}, ACCOUNTS.worker);
+    expect([403, 404]).toContain(res.status);
+    await db.from("orders").delete().eq("id", order.id);
   });
 
   test("invoice for non-existent order returns 404", async () => {

@@ -127,9 +127,13 @@ test.describe("Order invoice", () => {
 });
 
 test.describe("Cart check API", () => {
-  test("GET /api/cart/check returns cart status for student", async () => {
-    const res = await apiFetch("/api/cart/check", {}, ACCOUNTS.student1);
-    expect([200, 404]).toContain(res.status);
+  test("POST /api/cart/check with missing body returns 400", async () => {
+    const res = await apiFetch("/api/cart/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }, ACCOUNTS.student1);
+    expect([400, 422]).toContain(res.status);
   });
 });
 
@@ -145,6 +149,7 @@ test.describe("Student login page UI", () => {
   });
 
   test("wrong username shows error on student login", async ({ page }) => {
+    await page.context().clearCookies();
     await page.goto(`${APP_URL}/login`, { waitUntil: "domcontentloaded" });
     await page.locator('button:has-text("Student")').first().click();
     const usernameInput = page.locator('input').first();

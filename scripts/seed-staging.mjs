@@ -75,8 +75,30 @@ async function createCanteen(acct) {
   // Check if profile already exists
   const existing = await profileExists(acct.email);
   if (existing) {
-    skip(`Canteen admin: ${acct.email}`);
-    return existing.canteen_id;
+    // Profile exists — but verify the linked canteen still exists in the canteens table.
+    // After a DB wipe the canteen row may have been deleted while the profile survived.
+    if (existing.canteen_id) {
+      const { data: canteenCheck } = await db.from("canteens").select("id").eq("id", existing.canteen_id).maybeSingle();
+      if (canteenCheck) {
+        skip(`Canteen admin: ${acct.email}`);
+        return existing.canteen_id;
+      }
+      // Canteen was deleted — fall through to create a new one and re-link the profile
+      console.log(`  ♻️  Canteen admin ${acct.email} exists but canteen was deleted — recreating canteen`);
+    }
+    // Create a new canteen and re-link the profile
+    const { data: newCanteen, error: canteenErr } = await db.from("canteens").insert({
+      name:      acct.canteenName,
+      college:   acct.college,
+      city:      acct.city,
+      address:   acct.address,
+      is_active: false,
+      status:    "closed",
+    }).select("id").single();
+    if (canteenErr) { warn(`Canteen recreate failed (${acct.canteenName}): ${canteenErr.message}`); return existing.canteen_id; }
+    await db.from("profiles").update({ canteen_id: newCanteen.id }).eq("id", existing.id);
+    console.log(`  ✅  Canteen admin ${acct.email} re-linked to new canteen ${newCanteen.id}`);
+    return newCanteen.id;
   }
 
   // 1. Create auth user
@@ -240,11 +262,11 @@ async function seed() {
       skip("Menu items already exist for canteen 1");
     } else {
       const items = [
-        { name: "Veg Thali",       category: "Meals",  price: 80,  availability_type: "batched_prepared", is_available: true },
-        { name: "Chicken Biryani", category: "Meals",  price: 120, availability_type: "batched_prepared", is_available: true },
-        { name: "Masala Dosa",     category: "Snacks", price: 45,  availability_type: "slot_based",       is_available: true },
-        { name: "Cold Coffee",     category: "Drinks", price: 50,  availability_type: "slot_based",       is_available: true },
-        { name: "Paneer Roll",     category: "Snacks", price: 60,  availability_type: "batched_prepared", is_available: true },
+        { name: "Veg Thali",       category: "Meals",  price: 80,  availability_type: "batched_prepared", is_available: true, is_meal: true  },
+        { name: "Chicken Biryani", category: "Meals",  price: 120, availability_type: "batched_prepared", is_available: true, is_meal: true  },
+        { name: "Masala Dosa",     category: "Snacks", price: 45,  availability_type: "slot_based",       is_available: true, is_meal: false },
+        { name: "Cold Coffee",     category: "Drinks", price: 50,  availability_type: "slot_based",       is_available: true, is_meal: false },
+        { name: "Paneer Roll",     category: "Snacks", price: 60,  availability_type: "batched_prepared", is_available: true, is_meal: false },
       ];
       const { error: menuErr } = await db.from("menu_items").insert(items.map(i => ({ ...i, canteen_id: canteen1Id })));
       if (menuErr) warn(`Menu seed failed: ${menuErr.message}`);

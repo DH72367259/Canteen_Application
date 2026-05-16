@@ -78,7 +78,7 @@ export async function GET(request: Request) {
       total_amount,
       status,
       created_at,
-      profiles(name, phone)
+      profiles!user_id(name, phone)
     `, { count: "exact" })
     .eq("canteen_id", canteenId)
     .neq("status", "cancelled")
