@@ -38,17 +38,26 @@ export async function assignDeferredBins(
 ): Promise<{ assigned: number }> {
   const nowMin = nowISTMinutes();
 
-  // Find active orders for this canteen that still have no physical bin
-  const { data: unassigned } = await supabase
-    .from("orders")
-    .select("id, slot_label, bin_count, status")
-    .eq("canteen_id", canteenId)
-    .is("bin_id", null)
-    .in("status", ["placed", "confirmed", "preparing"])
-    .not("slot_label", "is", null)
-    .order("created_at", { ascending: true });
+  // Find active orders for this canteen that still have no physical bin.
+  // Try with bin_count first; fall back without it if the column doesn't exist.
+  type UnassignedRow = { id: string; slot_label: unknown; bin_count: unknown; status: string };
+  let unassigned: UnassignedRow[] = [];
+  const unassignedProjs = ["id, slot_label, bin_count, status", "id, slot_label, status"];
+  for (const proj of unassignedProjs) {
+    const r = await supabase
+      .from("orders")
+      .select(proj)
+      .eq("canteen_id", canteenId)
+      .is("bin_id", null)
+      .in("status", ["placed", "confirmed", "preparing"])
+      .not("slot_label", "is", null)
+      .order("created_at", { ascending: true });
+    if (!r.error) { unassigned = (r.data ?? []) as unknown as UnassignedRow[]; break; }
+    const isSchemaErr = /column .* does not exist/i.test(r.error.message) || r.error.code === "42703";
+    if (!isSchemaErr) break;
+  }
 
-  if (!unassigned?.length) return { assigned: 0 };
+  if (!unassigned.length) return { assigned: 0 };
 
   // Only assign bins for slots whose start time has passed.
   // Sort by slot start time ascending so the most overdue slot always
@@ -123,16 +132,24 @@ export async function assignDeferredBins(
       continue;
     }
 
-    // Stamp the order with its bin
-    const { error: orderErr } = await supabase
-      .from("orders")
-      .update({
-        bin_id: firstBin.id,
-        bin_label: firstBin.bin_code,
-        bin_color: firstBin.color ?? "blue",
-      })
-      .eq("id", order.id)
-      .is("bin_id", null); // guard: skip if already assigned by a concurrent poll
+    // Stamp the order with its bin.
+    // Try full update (bin_id + bin_label + bin_color); if bin_label/bin_color
+    // columns don't exist in this DB (pre-phase15), retry with just bin_id.
+    let orderErr: { message: string; code?: string } | null = null;
+    for (const payload of [
+      { bin_id: firstBin.id, bin_label: firstBin.bin_code, bin_color: firstBin.color ?? "blue" },
+      { bin_id: firstBin.id },
+    ] as const) {
+      const r = await supabase
+        .from("orders")
+        .update(payload)
+        .eq("id", order.id)
+        .is("bin_id", null); // guard: skip if already assigned by a concurrent poll
+      if (!r.error) { orderErr = null; break; }
+      orderErr = r.error as { message: string; code?: string };
+      const isSchemaErr = /column .* does not exist/i.test(r.error.message) || r.error.code === "42703";
+      if (!isSchemaErr) break;
+    }
 
     if (orderErr) {
       // Rollback bin claims
