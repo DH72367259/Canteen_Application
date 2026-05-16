@@ -219,8 +219,9 @@ function OrderStatusContent() {
             {order.total != null && (() => {
               const extraBinFeeRupees = order.extraBinFeePaise ? Math.round(order.extraBinFeePaise) / 100 : 0;
               const subtotalWithGst = order.total - extraBinFeeRupees;
-              const subtotal = Math.round(subtotalWithGst / 1.05 * 100) / 100;
-              const gst = Math.round((subtotalWithGst - subtotal) * 100) / 100;
+              const gstDisabled = process.env.NEXT_PUBLIC_DISABLE_GST === "true";
+              const subtotal = gstDisabled ? subtotalWithGst : Math.round(subtotalWithGst / 1.05 * 100) / 100;
+              const gst = gstDisabled ? 0 : Math.round((subtotalWithGst - subtotal) * 100) / 100;
               const showBreakdown = extraBinFeeRupees > 0 || gst > 0;
               return showBreakdown ? (
                 <div style={{ marginTop: "0.25rem", borderTop: "1px solid var(--border)", paddingTop: "0.5rem" }}>
