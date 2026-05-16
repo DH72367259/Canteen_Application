@@ -253,11 +253,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Compute bin plan + extra-bin fee from canteen settings ───────────────
-  // New bin packing: 1 meal + up to 3 snacks per bin, or 5 snacks alone
-  const mealsPerBin    = 1;  // 1 meal per bin (fixed)
-  const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;  // Snacks paired with meal
-  const extraFeePaise0 = sc?.extra_bin_fee_paise != null ? Number(sc.extra_bin_fee_paise) : 200;
+  // ── Compute bin plan + extra-bin fee ────────────────────────────────────
+  // Extra bin fee is a global platform setting (platform_charges table).
+  // Fall back to slot_control.extra_bin_fee_paise for legacy rows, then 200 paise.
+  const { data: pcRow } = await supabase
+    .from("platform_charges")
+    .select("extra_bin_fee_paise")
+    .limit(1)
+    .maybeSingle();
+  const extraFeePaise0 = pcRow?.extra_bin_fee_paise != null
+    ? Number(pcRow.extra_bin_fee_paise)
+    : (sc?.extra_bin_fee_paise != null ? Number(sc.extra_bin_fee_paise) : 200);
+
+  const mealsPerBin          = 1;
+  const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;
   const binPlan = assignBins(cartLines, mealsPerBin, snacksWithMealPerBin, extraFeePaise0);
 
   const extraBinFeeRupees = Math.round(binPlan.extraFeePaise) / 100;

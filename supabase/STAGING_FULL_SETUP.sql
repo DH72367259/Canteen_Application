@@ -441,13 +441,17 @@ CREATE TABLE IF NOT EXISTS public.notification_reads (
 );
 
 CREATE TABLE IF NOT EXISTS public.platform_charges (
-  id         uuid    PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_pct numeric NOT NULL DEFAULT 2,
-  flat_charge numeric NOT NULL DEFAULT 0,
-  gst_pct    numeric NOT NULL DEFAULT 18,
-  updated_by uuid    REFERENCES public.profiles(id) ON DELETE SET NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
+  id                  uuid    PRIMARY KEY DEFAULT gen_random_uuid(),
+  charge_pct          numeric NOT NULL DEFAULT 2,
+  flat_charge         numeric NOT NULL DEFAULT 0,
+  gst_pct             numeric NOT NULL DEFAULT 18,
+  extra_bin_fee_paise integer NOT NULL DEFAULT 200,
+  updated_by          uuid    REFERENCES public.profiles(id) ON DELETE SET NULL,
+  updated_at          timestamptz NOT NULL DEFAULT now()
 );
+-- Seed default global row
+INSERT INTO public.platform_charges (charge_pct, flat_charge, gst_pct, extra_bin_fee_paise)
+VALUES (2, 0, 18, 200) ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.settlement_payments (
   id              uuid  PRIMARY KEY DEFAULT gen_random_uuid(),

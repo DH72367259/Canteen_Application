@@ -232,9 +232,6 @@ function CanteensSection() {
   const [savingCanteen, setSavingCanteen] = useState(false);
   const [canteenApiError, setCanteenApiError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [extraBinFeeRupees, setExtraBinFeeRupees] = useState<string>("2");
-  const [savingExtraBinFee, setSavingExtraBinFee] = useState(false);
-  const [extraBinFeeError, setExtraBinFeeError] = useState("");
 
   // Timings modal state
   type Timing = { day: string; opens: string; closes: string; active: boolean };
@@ -308,14 +305,6 @@ function CanteensSection() {
     setAdding(false);
     setGmapParseError("");
     setCanteenApiError("");
-    setExtraBinFeeRupees("2");
-    setExtraBinFeeError("");
-    if (session?.access_token) {
-      fetch(`/api/canteen/slot-control?canteenId=${c.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-        .then(r => r.ok ? r.json() : null)
-        .then(j => { if (j?.slot_control) setExtraBinFeeRupees(String(Math.round((j.slot_control.extra_bin_fee_paise ?? 200) / 100))); })
-        .catch(() => {});
-    }
   };
   const openAdd = () => {
     setEditing(null);
@@ -325,23 +314,7 @@ function CanteensSection() {
     setCanteenApiError("");
     setShowPassword(false);
   };
-  const closeModal = () => { setEditing(null); setAdding(false); setGmapParseError(""); setCanteenApiError(""); setExtraBinFeeError(""); };
-
-  const saveExtraBinFee = async (canteenId: string) => {
-    if (!session?.access_token) return;
-    const feePaise = Math.round(Math.max(0, Number(extraBinFeeRupees) || 0) * 100);
-    setSavingExtraBinFee(true); setExtraBinFeeError("");
-    try {
-      const res = await fetch(`/api/canteen/slot-control?canteenId=${canteenId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ extra_bin_fee_paise: feePaise }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setExtraBinFeeError(data.error || "Failed to save extra bin fee."); }
-    } catch { setExtraBinFeeError("Network error — please try again."); }
-    finally { setSavingExtraBinFee(false); }
-  };
+  const closeModal = () => { setEditing(null); setAdding(false); setGmapParseError(""); setCanteenApiError(""); };
 
   const saveEdit = async () => {
     if (!form.name.trim()) return;
@@ -606,38 +579,6 @@ function CanteensSection() {
                         {showPassword ? "🙈" : "👁️"}
                       </button>
                     </div>
-                  </div>
-                </>
-              )}
-
-              {/* Extra bin fee — only for existing canteens (platform revenue setting) */}
-              {editing && !adding && (
-                <>
-                  <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "0.25rem 0" }} />
-                  <div>
-                    <label className="form-label">Extra Bin Fee (₹) <span style={{ fontWeight: 400, color: "var(--ink-3)", fontSize: "0.78rem" }}>— platform revenue, charged per extra bin beyond first</span></label>
-                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", flex: 1 }}>
-                        <span style={{ fontWeight: 700, color: "#64748b" }}>₹</span>
-                        <input
-                          className="form-input"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={extraBinFeeRupees}
-                          onChange={e => setExtraBinFeeRupees(e.target.value)}
-                          placeholder="2"
-                        />
-                      </div>
-                      <button
-                        onClick={() => saveExtraBinFee(editing.id)}
-                        disabled={savingExtraBinFee}
-                        style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "0.55rem 1rem", fontWeight: 700, cursor: savingExtraBinFee ? "not-allowed" : "pointer", opacity: savingExtraBinFee ? 0.6 : 1, whiteSpace: "nowrap" }}
-                      >
-                        {savingExtraBinFee ? "Saving…" : "Set Fee"}
-                      </button>
-                    </div>
-                    {extraBinFeeError && <p style={{ fontSize: "0.78rem", color: "var(--red)", marginTop: "0.25rem" }}>{extraBinFeeError}</p>}
                   </div>
                 </>
               )}
@@ -2018,7 +1959,7 @@ function PaymentsSection() {
   const [reportErr,     setReportErr]     = useState<string | null>(null);
 
   // ── Fee config tab ──
-  const [feeConfig,  setFeeConfig]  = useState<FeeConfig>({ charge_pct: 2, flat_charge: 0, gst_pct: 18 });
+  const [feeConfig,  setFeeConfig]  = useState<FeeConfig>({ charge_pct: 2, flat_charge: 0, gst_pct: 18, extra_bin_fee_paise: 200 });
   const [feeLoading, setFeeLoading] = useState(false);
   const [feeSaving,  setFeeSaving]  = useState(false);
   const [feeErr,     setFeeErr]     = useState<string | null>(null);
@@ -2148,7 +2089,7 @@ function PaymentsSection() {
     fetch("/api/admin/platform-charges", { headers: { Authorization: `Bearer ${session.access_token}` } })
       .then(r => r.json())
       .then(d => {
-        if (d.platform_charges) setFeeConfig({ charge_pct: d.platform_charges.charge_pct ?? 2, flat_charge: d.platform_charges.flat_charge ?? 0, gst_pct: d.platform_charges.gst_pct ?? 18 });
+        if (d.platform_charges) setFeeConfig({ charge_pct: d.platform_charges.charge_pct ?? 2, flat_charge: d.platform_charges.flat_charge ?? 0, gst_pct: d.platform_charges.gst_pct ?? 18, extra_bin_fee_paise: d.platform_charges.extra_bin_fee_paise ?? 200 });
       })
       .finally(() => setFeeLoading(false));
   }, [tab, session?.access_token]);
@@ -2487,18 +2428,32 @@ function PaymentsSection() {
                   Net payable to canteen = gross − total_platform_fee.
                 </p>
                 {[
-                  { key: "charge_pct",  label: "Charge %",          unit: "%",         placeholder: "e.g. 2" },
-                  { key: "flat_charge", label: "Flat Charge per Order", unit: "₹",      placeholder: "e.g. 0 or 2" },
-                  { key: "gst_pct",     label: "GST on Platform Fee",  unit: "%",       placeholder: "e.g. 18" },
+                  { key: "charge_pct",  label: "Charge %",             unit: "%",  placeholder: "e.g. 2",  step: "0.01" },
+                  { key: "flat_charge", label: "Flat Charge per Order", unit: "₹",  placeholder: "e.g. 0",  step: "0.01" },
+                  { key: "gst_pct",     label: "GST on Platform Fee",   unit: "%",  placeholder: "e.g. 18", step: "0.01" },
                 ].map(f => (
                   <div key={f.key} style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>{f.label} ({f.unit})</label>
-                    <input type="number" min="0" step="0.01" placeholder={f.placeholder}
+                    <input type="number" min="0" step={f.step} placeholder={f.placeholder}
                       value={(feeConfig as unknown as Record<string, number>)[f.key]}
                       onChange={e => setFeeConfig(p => ({ ...p, [f.key]: Number(e.target.value) }))}
                       style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.9rem", boxSizing: "border-box" }} />
                   </div>
                 ))}
+
+                <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "0.75rem 0" }} />
+                <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.5rem" }}>Extra Bin Fee</div>
+                <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+                  Charged per additional bin beyond the first (platform revenue — same rate for all canteens).
+                </p>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.3rem" }}>Extra Bin Fee (₹)</label>
+                  <input type="number" min="0" step="1" placeholder="e.g. 2"
+                    value={Math.round(feeConfig.extra_bin_fee_paise / 100)}
+                    onChange={e => setFeeConfig(p => ({ ...p, extra_bin_fee_paise: Math.round(Number(e.target.value) * 100) }))}
+                    style={{ width: "100%", padding: "0.5rem", border: "1.5px solid var(--border)", borderRadius: 7, fontSize: "0.9rem", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.2rem" }}>Stored as {feeConfig.extra_bin_fee_paise} paise · Applies to all canteens</div>
+                </div>
 
                 <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", background: "#fff", borderRadius: 8, padding: "0.6rem 0.8rem", marginTop: "0.5rem" }}>
                   Preview on ₹100 order: platform fee = {fmtPct(feeConfig.charge_pct)} × ₹100 + ₹{feeConfig.flat_charge.toFixed(2)} = ₹{(100 * feeConfig.charge_pct / 100 + feeConfig.flat_charge).toFixed(2)}, GST = ₹{((100 * feeConfig.charge_pct / 100 + feeConfig.flat_charge) * feeConfig.gst_pct / 100).toFixed(2)}
@@ -2674,7 +2629,7 @@ interface SettlementSummaryStats {
   total_paid: number;
   total_remaining: number;
 }
-interface FeeConfig { id?: string; charge_pct: number; flat_charge: number; gst_pct: number; }
+interface FeeConfig { id?: string; charge_pct: number; flat_charge: number; gst_pct: number; extra_bin_fee_paise: number; }
 
 
 // ─── Account / Change Password ────────────────────────────────────────────────
