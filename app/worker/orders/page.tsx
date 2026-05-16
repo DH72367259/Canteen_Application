@@ -409,7 +409,20 @@ export default function WorkerOrdersPage() {
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       {/* Top bar */}
       <div style={{ background: "#1e293b", color: "#fff", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontWeight: 700, fontSize: "1rem" }}>Canteen-Application · Orders</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          {tab !== "orders" && (
+            <button
+              onClick={() => setTab("orders")}
+              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.1rem", padding: "0 0.1rem", lineHeight: 1, display: "flex", alignItems: "center" }}
+              aria-label="Back to Orders"
+            >
+              ←
+            </button>
+          )}
+          <div style={{ fontWeight: 700, fontSize: "1rem" }}>
+            {tab === "orders" ? "Orders" : tab === "prep" ? "Prep Plan" : "Late Pickup"}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", fontSize: "0.82rem" }}>
           <span style={{ color: "#94a3b8" }}>{new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
           <button

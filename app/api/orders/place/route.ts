@@ -141,7 +141,8 @@ export async function POST(req: NextRequest) {
     }
     const qty = Number(item.qty);
     verifiedItems.push({ menu_item_id: item.id, quantity: qty, unit_price: menuItem.price });
-    cartLines.push({ itemId: item.id, name: menuItem.name, quantity: qty, isMeal: !!menuItem.is_meal });
+    // null is_meal → treat as meal (1 per bin) — safer default than snack (5 per bin)
+    cartLines.push({ itemId: item.id, name: menuItem.name, quantity: qty, isMeal: menuItem.is_meal !== false });
     serverSubtotal += menuItem.price * qty;
   }
 

@@ -95,7 +95,7 @@ export async function assignDeferredBins(
 
   for (const order of readyOrders) {
     const needed = Number(order.bin_count) || 1;
-    if (pool.length < needed) break;
+    if (pool.length < needed) continue; // skip this order, try the next one
 
     const pick = pool.slice(0, needed);
     pool = pool.slice(needed);
@@ -176,7 +176,9 @@ export async function assignDeferredBins(
       itemId:   String(oi.menu_item_id),
       name:     String(oi.menu_items?.name ?? oi.menu_item_id),
       quantity: Number(oi.quantity ?? 1),
-      isMeal:   Boolean(oi.menu_items?.is_meal),
+      // null means vendor didn't tag it — default to meal (1 per bin) so workers
+      // always get a dedicated bin per item rather than 5-per-bin snack packing
+      isMeal:   oi.menu_items?.is_meal !== false,
     }));
 
     const binPlan = assignBins(cartLines);
@@ -232,7 +234,7 @@ export async function assignDeferredBins(
         itemId:   String(oi.menu_item_id),
         name:     String(oi.menu_items?.name ?? oi.menu_item_id),
         quantity: Number(oi.quantity ?? 1),
-        isMeal:   Boolean(oi.menu_items?.is_meal),
+        isMeal:   oi.menu_items?.is_meal !== false,
       }));
       const plan2 = assignBins(cartLines2);
 
