@@ -662,9 +662,10 @@ test.describe("FIX-6: Bills & Receipts tab visible in vendor dashboard", () => {
       ACCOUNTS.canteenAdmin,
     );
     expect(res.status).toBe(200);
-    const data = await res.json() as { receipts?: unknown[]; error?: string };
+    // receipts API returns { total, orders } not { receipts }
+    const data = await res.json() as { total?: number; orders?: unknown[]; error?: string };
     expect(data.error).toBeUndefined();
-    expect(Array.isArray(data.receipts)).toBe(true);
+    expect(Array.isArray(data.orders)).toBe(true);
   });
 
   test("GET /api/canteen/receipts returns 403 for student", async () => {
