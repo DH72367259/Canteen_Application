@@ -167,6 +167,7 @@ export default function WorkerOrdersPage() {
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [modalMode, setModalMode]   = useState<"otp" | "qr">("otp");
   const [qrError, setQrError]       = useState<string | null>(null);
+  const [qrRetryKey, setQrRetryKey] = useState(0);
   const qrInstanceRef               = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
 
   useEffect(() => {
@@ -255,58 +256,94 @@ export default function WorkerOrdersPage() {
     } finally { setOtpSubmitting(false); }
   }
 
-  // Start QR camera scanner inside the modal when in QR mode
+  // Start QR camera scanner inside the modal when in QR mode.
+  // qrRetryKey increments on "Try Again" to force a fresh camera start.
   useEffect(() => {
     if (!otpModal || modalMode !== "qr" || !session) return;
     let cancelled = false;
 
     async function startQr() {
+      // Stop & clear any previous instance before creating a new one
+      const prev = qrInstanceRef.current;
+      if (prev) {
+        try { await prev.stop(); prev.clear(); } catch { /* ignore */ }
+        qrInstanceRef.current = null;
+      }
+
       const { Html5Qrcode } = await import("html5-qrcode");
-      const el = document.getElementById("modal-qr-reader");
+
+      // Wait for the DOM element to appear (it may be freshly mounted after retry)
+      let el: HTMLElement | null = null;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        el = document.getElementById("modal-qr-reader");
+        if (el) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
       if (!el || cancelled) return;
+
       const qr = new Html5Qrcode("modal-qr-reader");
       qrInstanceRef.current = qr;
-      try {
-        await qr.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 200, height: 200 } },
-          async (decodedText: string) => {
-            if (cancelled) return;
-            const parts = decodedText.split("|");
-            if (parts.length !== 4 || parts[0] !== "NOQX") return; // not our QR, keep scanning
-            cancelled = true;
-            try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
-            qrInstanceRef.current = null;
-            setOtpSubmitting(true);
-            try {
-              const res = await fetch(`/api/orders/${otpModal}/verify-qr`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session!.access_token}` },
-                body: JSON.stringify({ qrPayload: decodedText }),
-              });
-              const data = await res.json() as { error?: string };
-              if (!res.ok) throw new Error(data.error ?? "QR verification failed");
-              setOrders((prev) => prev.map((o) => (o.id === otpModal ? { ...o, status: "collected" } : o)));
-              setOtpModal(null);
-              setOtpInput("");
-              setModalMode("otp");
-            } catch (e: unknown) {
-              setQrError(e instanceof Error ? e.message : "QR verification failed");
-            } finally {
-              setOtpSubmitting(false);
-            }
-          },
-          () => { /* per-frame errors are normal */ },
-        );
-      } catch {
-        setQrError("Camera access denied. Please allow camera permission.");
+
+      const onDecoded = async (decodedText: string) => {
+        if (cancelled) return;
+        const parts = decodedText.split("|");
+        if (parts.length !== 4 || parts[0] !== "NOQX") return;
+        cancelled = true;
+        try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
+        qrInstanceRef.current = null;
+        setOtpSubmitting(true);
+        try {
+          const res = await fetch(`/api/orders/${otpModal}/verify-qr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session!.access_token}` },
+            body: JSON.stringify({ qrPayload: decodedText }),
+          });
+          const data = await res.json() as { error?: string };
+          if (!res.ok) throw new Error(data.error ?? "QR verification failed");
+          setOrders((prev) => prev.map((o) => (o.id === otpModal ? { ...o, status: "collected" } : o)));
+          setOtpModal(null);
+          setOtpInput("");
+          setModalMode("otp");
+        } catch (e: unknown) {
+          setQrError(e instanceof Error ? e.message : "QR verification failed");
+        } finally {
+          setOtpSubmitting(false);
+        }
+      };
+
+      const config = { fps: 10, qrbox: { width: 200, height: 200 } };
+
+      // Try rear camera first, fall back to any camera if constraint fails
+      const cameraConstraints: MediaTrackConstraints[] = [
+        { facingMode: { ideal: "environment" } },
+        { facingMode: "user" },
+        {},
+      ];
+
+      let started = false;
+      for (const constraint of cameraConstraints) {
+        if (cancelled) break;
+        try {
+          await qr.start(constraint, config, onDecoded, () => { /* per-frame errors normal */ });
+          started = true;
+          break;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          // OverconstrainedError → try next constraint; NotAllowedError → bail
+          if (/overconstrained|not.*satisfi/i.test(msg)) continue;
+          break;
+        }
+      }
+
+      if (!started && !cancelled) {
+        setQrError("Camera access denied. Please allow camera permission in your browser settings, then tap Try Again.");
       }
     }
 
-    const t = setTimeout(startQr, 80);
+    void startQr();
+
     return () => {
       cancelled = true;
-      clearTimeout(t);
       const qr = qrInstanceRef.current;
       if (qr) {
         qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
@@ -314,7 +351,7 @@ export default function WorkerOrdersPage() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otpModal, modalMode, session]);
+  }, [otpModal, modalMode, session, qrRetryKey]);
 
   function closeModal() {
     const qr = qrInstanceRef.current;
@@ -597,33 +634,41 @@ export default function WorkerOrdersPage() {
             {/* QR scan mode */}
             {modalMode === "qr" && (
               <>
-                {qrError ? (
-                  <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
-                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", marginBottom: "1rem" }}>{qrError}</p>
+                <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
+                  {qrError ? "" : "Point camera at student's QR code"}
+                </p>
+
+                {/* Keep the div always mounted so html5-qrcode can find it on retry */}
+                <div
+                  id="modal-qr-reader"
+                  style={{
+                    width: "100%", borderRadius: 12, overflow: "hidden",
+                    border: `2px solid ${qrError ? "#fca5a5" : "#e2e8f0"}`,
+                    background: "#000", minHeight: qrError ? 0 : 220,
+                    display: qrError ? "none" : "block",
+                  }}
+                />
+
+                {qrError && (
+                  <div style={{ textAlign: "center", padding: "0.5rem 0 0.25rem" }}>
+                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+                      {qrError}
+                    </p>
                     <button
-                      onClick={() => { setQrError(null); }}
+                      onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
                       style={{ padding: "0.6rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
                     >
                       Try Again
                     </button>
                   </div>
-                ) : (
-                  <>
-                    <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
-                      Point camera at student&apos;s QR code
-                    </p>
-                    {/* html5-qrcode attaches here */}
-                    <div
-                      id="modal-qr-reader"
-                      style={{ width: "100%", borderRadius: 12, overflow: "hidden", border: "2px solid #e2e8f0", background: "#000", minHeight: 220 }}
-                    />
-                    {otpSubmitting && (
-                      <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
-                        Verifying...
-                      </p>
-                    )}
-                  </>
                 )}
+
+                {otpSubmitting && (
+                  <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
+                    Verifying...
+                  </p>
+                )}
+
                 <button
                   onClick={() => !otpSubmitting && closeModal()}
                   style={{ width: "100%", marginTop: "0.85rem", padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
