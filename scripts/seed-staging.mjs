@@ -134,7 +134,7 @@ async function createCanteen(acct) {
     evening_start:       "18:00", evening_end:   "21:30",
     extra_bin_fee_paise: 0,
     meals_per_bin:       1,
-    snacks_per_bin:      4,
+    snacks_per_bin:      3,
   }).then(({ error: e }) => {
     if (e) warn(`slot_control init failed (non-fatal): ${e.message}`);
   });
@@ -296,7 +296,26 @@ async function seed() {
     else ok(`${w.email} → role=${w.role} in user_metadata`);
   }
 
-  // 9. Summary
+  // 9. Ensure platform_charges row with correct extra_bin_fee_paise
+  log("\n9. Seeding platform_charges…");
+  const { data: existingPc } = await db.from("platform_charges").select("id").limit(1);
+  if (existingPc?.length > 0) {
+    // Ensure extra_bin_fee_paise is set to 200 (₹2) — not 0
+    const { error: pcErr } = await db
+      .from("platform_charges")
+      .update({ extra_bin_fee_paise: 200 })
+      .eq("id", existingPc[0].id);
+    if (pcErr) warn(`platform_charges update failed: ${pcErr.message}`);
+    else ok("platform_charges: extra_bin_fee_paise set to 200 paise (₹2)");
+  } else {
+    const { error: pcErr } = await db.from("platform_charges").insert({
+      charge_pct: 2, flat_charge: 0, gst_pct: 18, extra_bin_fee_paise: 200,
+    });
+    if (pcErr) warn(`platform_charges insert failed: ${pcErr.message}`);
+    else ok("platform_charges: created with extra_bin_fee_paise=200 paise (₹2)");
+  }
+
+  // 10. Summary
   log("\n" + "─".repeat(60));
   log("✅ Seed complete. Test accounts:\n");
   log("  Role          Email                    Password");

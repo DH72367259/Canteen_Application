@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   const extraFeePaise0 = pcRow?.extra_bin_fee_paise != null
     ? Number(pcRow.extra_bin_fee_paise)
-    : (sc?.extra_bin_fee_paise != null ? Number(sc.extra_bin_fee_paise) : 200);
+    : (Number(sc?.extra_bin_fee_paise) || 200);
 
   const mealsPerBin          = 1;
   const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;

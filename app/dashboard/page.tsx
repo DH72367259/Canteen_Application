@@ -605,6 +605,7 @@ export default function UserHomePage() {
                 ready_for_placement: { label: "Ready Soon",         color: "#c2410c", bg: "#ffedd5", icon: "📦" },
                 placed_in_bin:       { label: "In Your Bin!",       color: "#15803d", bg: "#dcfce7", icon: "🎉" },
                 ready_for_pickup:    { label: "Ready to Pick Up",   color: "#15803d", bg: "#dcfce7", icon: "🎉" },
+                late_pickup:         { label: "Late Pickup ⚠️",     color: "#92400e", bg: "#fef3c7", icon: "⚠️" },
               };
               const s = cfg[order.rawStatus] ?? { label: order.rawStatus, color: "#64748b", bg: "#f1f5f9", icon: "📦" };
               const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");

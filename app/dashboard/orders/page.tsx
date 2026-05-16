@@ -163,7 +163,7 @@ export default function MyOrdersPage() {
                 live ONLY there, per client spec). No OTP, no "Mark as collected"
                 button on this page — those are wrong placement. */}
             {hasActiveOrder && (
-              <Link href="/dashboard/order-status" className="card" style={{ padding: "0.85rem", display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit", border: "1.5px solid var(--orange)", background: "#fff7ed" }}>
+              <Link href={`/dashboard/order-status?id=${hasActiveOrder.id}`} className="card" style={{ padding: "0.85rem", display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit", border: "1.5px solid var(--orange)", background: "#fff7ed" }}>
                 <div>
                   <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "var(--orange)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Order in progress</div>
                   <div style={{ fontWeight: 700, fontSize: "0.92rem", marginTop: "0.15rem" }}>{hasActiveOrder.slot}</div>

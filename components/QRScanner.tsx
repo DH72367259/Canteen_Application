@@ -65,6 +65,17 @@ export default function QRScanner({ onScanned, onClose, onManualOtp, width = 280
         return;
       }
 
+      // Pre-check via Permissions API (Chrome/Android) — if already denied,
+      // skip getUserMedia entirely to avoid showing the permission dialog again
+      // on every reload. iOS Safari doesn't support this, so we try/catch.
+      try {
+        const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
+        if (perm.state === "denied") {
+          if (!destroyed) setPhase("denied");
+          return;
+        }
+      } catch { /* Permissions API not supported — proceed with getUserMedia */ }
+
       let testStream: MediaStream | null = null;
       try {
         testStream = await navigator.mediaDevices.getUserMedia({
