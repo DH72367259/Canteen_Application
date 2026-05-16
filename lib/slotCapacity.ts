@@ -138,159 +138,105 @@ export interface BinPlan {
 }
 
 /**
- * Distribute cart lines into bins using MEAL-SNACK PAIRING:
- *  - 1 meal + up to `snacksPerBin` snacks per bin (e.g., 1 meal + 3 snacks = 1 bin)
- *  - Meals-only: 1 meal per bin
- *  - Snacks-only: 5 snacks per bin
- *  - Extra snacks beyond the pairing capacity go to additional 5-per-bin snack bins
+ * Distribute cart lines into physical pickup bins.
  *
- * Example (mealsPerBin=1, snacksPerBin=3):
- *  - 2 meals + 5 snacks → Bin1: meal+3snacks, Bin2: meal+2snacks → 2 bins (no extra)
- *  - 1 meal + 5 snacks → Bin1: meal+3snacks, Bin2: 2snacks → 2 bins (1 extra)
- *  - 3 snacks only → Bin1: 3snacks → 1 bin
- *  - 6 snacks only → Bin1: 5snacks, Bin2: 1snack → 2 bins
+ * Rules (confirmed business logic):
+ *  - 1 meal per bin; paired with up to `snacksPerBin` (default 3) snacks
+ *  - Snacks-only orders: up to 5 snacks per bin
+ *  - Overflow snacks beyond the meal-pairing cap go into additional 5-per-bin bins
+ *  - Extra fee = (totalBins - 1) × extraBinFeePaise
+ *
+ * Examples (mealsPerBin=1, snacksPerBin=3, fee=₹2):
+ *  - 1 meal              → 1 bin,  ₹0 fee
+ *  - 2 meals             → 2 bins, ₹2 fee
+ *  - 5 snacks            → 1 bin,  ₹0 fee
+ *  - 6 snacks            → 2 bins (5+1), ₹2 fee
+ *  - 1 meal + 3 snacks   → 1 bin,  ₹0 fee
+ *  - 1 meal + 4 snacks   → 2 bins (meal+3snacks | 1snack), ₹2 fee
+ *  - 2 meals + 5 snacks  → 2 bins (meal+3snacks | meal+2snacks), ₹2 fee
+ *  - 2 meals + 7 snacks  → 3 bins (meal+3snacks | meal+3snacks | 1snack), ₹4 fee
+ *
+ * Algorithm: build flat unit pools so each snack unit is allocated exactly once
+ * (avoids the per-item quantity-reset bug that occurred with the previous
+ * index-based loop when multiple meal bins shared one snack item type).
  */
 export function assignBins(
   items: CartLine[],
   mealsPerBin = 1,
   snacksPerBin = 3,
-  extraBinFeePaise = 200
+  extraBinFeePaise = 200,
 ): BinPlan {
   if (mealsPerBin <= 0 || snacksPerBin <= 0) {
     throw new Error('per-bin caps must be positive');
   }
 
-  const mealItems = items.filter((i) => i.isMeal);
+  const mealItems  = items.filter((i) => i.isMeal);
   const snackItems = items.filter((i) => !i.isMeal);
-
-  const totalMeals = mealItems.reduce((s, i) => s + i.quantity, 0);
+  const totalMeals  = mealItems.reduce((s, i) => s + i.quantity, 0);
   const totalSnacks = snackItems.reduce((s, i) => s + i.quantity, 0);
 
-  // Calculate bins needed
-  let binCount = 0;
   if (totalMeals === 0 && totalSnacks === 0) {
-    binCount = 1;  // Empty order = 1 synthetic bin
-  } else if (totalMeals > 0 && totalSnacks === 0) {
-    binCount = totalMeals;  // Meals only: 1 per bin
-  } else if (totalMeals === 0 && totalSnacks > 0) {
-    binCount = Math.ceil(totalSnacks / 5);  // Snacks only: 5 per bin
+    return { bins: [{ binIndex: 1, meals: [], snacks: [] }], totalMeals, totalSnacks, extraFeePaise: 0 };
+  }
+
+  // Build flat unit pools — one entry per physical item unit.
+  // This guarantees each unit is allocated to exactly one bin regardless of
+  // how many different snack/meal types are in the cart.
+  type Unit = { itemId: string; name: string };
+  const mealPool: Unit[] = [];
+  for (const line of mealItems) {
+    for (let i = 0; i < line.quantity; i++) mealPool.push({ itemId: line.itemId, name: line.name });
+  }
+  const snackPool: Unit[] = [];
+  for (const line of snackItems) {
+    for (let i = 0; i < line.quantity; i++) snackPool.push({ itemId: line.itemId, name: line.name });
+  }
+
+  const bins: BinAssignment[] = [];
+  let snackCursor = 0;
+
+  if (totalMeals === 0) {
+    // Snacks-only: up to 5 per bin
+    for (let s = 0; s < snackPool.length; s += 5) {
+      bins.push({ binIndex: bins.length + 1, meals: [], snacks: groupUnits(snackPool.slice(s, s + 5)) });
+    }
   } else {
-    // Mixed: pair meals with snacks, remaining snacks in 5-per-bin bins
-    const snacksWithMeals = Math.min(totalSnacks, totalMeals * snacksPerBin);
-    const remainingSnacks = totalSnacks - snacksWithMeals;
-    const extraSnackBins = Math.ceil(remainingSnacks / 5);
-    binCount = totalMeals + extraSnackBins;
-  }
-
-  const bins: BinAssignment[] = Array.from({ length: binCount }, (_, i) => ({
-    binIndex: i + 1,
-    meals: [],
-    snacks: [],
-  }));
-
-  if (totalMeals === 0 && totalSnacks === 0) {
-    // Empty order
-    return { bins, totalMeals, totalSnacks, extraFeePaise: 0 };
-  }
-
-  if (totalMeals > 0 && totalSnacks === 0) {
-    // Meals only: 1 per bin
-    let binIdx = 0;
-    for (const line of mealItems) {
-      let remaining = line.quantity;
-      while (remaining > 0 && binIdx < bins.length) {
-        bins[binIdx].meals.push({ itemId: line.itemId, name: line.name, quantity: 1 });
-        remaining--;
-        binIdx++;
-      }
+    // One bin per meal unit, paired with up to snacksPerBin snacks
+    for (const meal of mealPool) {
+      const snackChunk = snackPool.slice(snackCursor, snackCursor + snacksPerBin);
+      snackCursor += snackChunk.length;
+      bins.push({
+        binIndex: bins.length + 1,
+        meals: [{ itemId: meal.itemId, name: meal.name, quantity: 1 }],
+        snacks: groupUnits(snackChunk),
+      });
     }
-    const extraFeePaise = binCount > 1 ? extraBinFeePaise * (binCount - 1) : 0;
-    return { bins, totalMeals, totalSnacks, extraFeePaise };
-  }
-
-  if (totalMeals === 0 && totalSnacks > 0) {
-    // Snacks only: 5 per bin
-    let binIdx = 0;
-    for (const line of snackItems) {
-      let remaining = line.quantity;
-      while (remaining > 0 && binIdx < bins.length) {
-        const used = bins[binIdx].snacks.reduce((s, x) => s + x.quantity, 0);
-        const room = 5 - used;
-        if (room <= 0) {
-          binIdx++;
-          continue;
-        }
-        const take = Math.min(remaining, room);
-        bins[binIdx].snacks.push({ itemId: line.itemId, name: line.name, quantity: take });
-        remaining -= take;
-        if (take === room) binIdx++;
-      }
-    }
-    const extraFeePaise = binCount > 1 ? extraBinFeePaise * (binCount - 1) : 0;
-    return { bins, totalMeals, totalSnacks, extraFeePaise };
-  }
-
-  // Mixed: meals + snacks
-  let snackIdx = 0;
-  let binIdx = 0;
-
-  // Step 1: Pair meals with snacks (up to snacksPerBin per meal)
-  for (const mealLine of mealItems) {
-    let mealsRemaining = mealLine.quantity;
-    while (mealsRemaining > 0 && binIdx < totalMeals) {
-      bins[binIdx].meals.push({ itemId: mealLine.itemId, name: mealLine.name, quantity: 1 });
-      mealsRemaining--;
-
-      // Add snacks to this bin
-      let snacksInBin = 0;
-      for (const snackLine of snackItems) {
-        if (snackIdx >= totalSnacks) break;
-
-        let snacksRemaining = snackLine.quantity;
-        while (snacksRemaining > 0 && snacksInBin < snacksPerBin) {
-          bins[binIdx].snacks.push({ itemId: snackLine.itemId, name: snackLine.name, quantity: 1 });
-          snacksRemaining--;
-          snackIdx++;
-          snacksInBin++;
-        }
-        if (snacksInBin >= snacksPerBin) break;
-      }
-
-      binIdx++;
+    // Overflow snacks: up to 5 per overflow bin
+    while (snackCursor < snackPool.length) {
+      const chunk = snackPool.slice(snackCursor, snackCursor + 5);
+      snackCursor += chunk.length;
+      bins.push({ binIndex: bins.length + 1, meals: [], snacks: groupUnits(chunk) });
     }
   }
 
-  // Step 2: Pack remaining snacks in 5-per-bin format
-  if (snackIdx < totalSnacks) {
-    for (const snackLine of snackItems) {
-      let snacksRemaining = snackLine.quantity;
-      let skipped = 0;
+  const binCount = bins.length;
+  return {
+    bins,
+    totalMeals,
+    totalSnacks,
+    extraFeePaise: binCount > 1 ? extraBinFeePaise * (binCount - 1) : 0,
+  };
+}
 
-      // Skip already-packed snacks
-      for (const bin of bins.slice(0, totalMeals)) {
-        for (const s of bin.snacks) {
-          if (s.itemId === snackLine.itemId) {
-            skipped += s.quantity;
-          }
-        }
-      }
-      snacksRemaining -= skipped;
-
-      while (snacksRemaining > 0 && binIdx < bins.length) {
-        const used = bins[binIdx].snacks.reduce((s, x) => s + x.quantity, 0);
-        const room = 5 - used;
-        if (room <= 0) {
-          binIdx++;
-          continue;
-        }
-        const take = Math.min(snacksRemaining, room);
-        bins[binIdx].snacks.push({ itemId: snackLine.itemId, name: snackLine.name, quantity: take });
-        snacksRemaining -= take;
-        if (take === room) binIdx++;
-      }
-    }
+/** Collapse a flat unit array into grouped {itemId, name, quantity} entries. */
+function groupUnits(
+  units: { itemId: string; name: string }[],
+): { itemId: string; name: string; quantity: number }[] {
+  const map = new Map<string, { itemId: string; name: string; quantity: number }>();
+  for (const u of units) {
+    const ex = map.get(u.itemId);
+    if (ex) ex.quantity++;
+    else map.set(u.itemId, { itemId: u.itemId, name: u.name, quantity: 1 });
   }
-
-  const extraFeePaise = binCount > 1 ? extraBinFeePaise * (binCount - 1) : 0;
-  return { bins, totalMeals, totalSnacks, extraFeePaise };
+  return Array.from(map.values());
 }

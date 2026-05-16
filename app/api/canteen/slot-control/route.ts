@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       evening_start: "18:00", evening_end: "21:30",
       extra_bin_fee_paise: 0,
       meals_per_bin: 1,
-      snacks_per_bin: 4,
+      snacks_per_bin: 3,
     };
     const ins = await supabase
       .from("slot_control")

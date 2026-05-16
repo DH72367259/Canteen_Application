@@ -166,8 +166,14 @@ export async function POST(request: Request) {
     }
   }
 
-  const mealsPerBin = Number(sc.meals_per_bin) || 1;
+  const mealsPerBin  = Number(sc.meals_per_bin)  || 1;
   const snacksPerBin = Number(sc.snacks_per_bin) || 3;
+
+  // Extra bin fee is a global platform setting
+  const { data: pcRow } = await supabase.from("platform_charges").select("extra_bin_fee_paise").limit(1).maybeSingle();
+  const extraBinFeePaise = pcRow?.extra_bin_fee_paise != null
+    ? Number(pcRow.extra_bin_fee_paise)
+    : (Number(sc.extra_bin_fee_paise) || 200);
 
   // 3. Find orders already placed for this slot today (bin-aware capacity check)
   // Prod schema drift: orders has `slot_label` (or legacy `pickup_slot`).
@@ -252,12 +258,7 @@ export async function POST(request: Request) {
   }
 
   // 4. Compute bin plan for the new cart
-  const binPlan = assignBins(
-    cartLines,
-    mealsPerBin,
-    snacksPerBin,
-    Number(sc.extra_bin_fee_paise) || 200
-  );
+  const binPlan = assignBins(cartLines, mealsPerBin, snacksPerBin, extraBinFeePaise);
 
   const binsNeeded = binPlan.bins.length;
   const totalBinsAfterOrder = existingBinsUsed + binsNeeded;

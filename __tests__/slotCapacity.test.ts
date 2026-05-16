@@ -72,48 +72,166 @@ describe('requiresExtraBin', () => {
 });
 
 describe('assignBins', () => {
-  it('3 meals (1+1+1) → Bin1, Bin2, Bin3 (1 meal per bin), ₹4 fee', () => {
+  // ── Meals only ────────────────────────────────────────────────────────────
+  it('1 meal → 1 bin, ₹0 fee', () => {
+    const plan = assignBins([{ itemId: 'a', name: 'Thali', quantity: 1, isMeal: true }]);
+    expect(plan.bins).toHaveLength(1);
+    expect(plan.extraFeePaise).toBe(0);
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+  });
+
+  it('2 meals → 2 bins, ₹2 fee', () => {
+    const plan = assignBins([{ itemId: 'a', name: 'Thali', quantity: 2, isMeal: true }]);
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(200);
+    // Each bin gets exactly 1 meal
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+    expect(plan.bins[1].meals[0].quantity).toBe(1);
+  });
+
+  it('3 meals (3 different items) → 3 bins, ₹4 fee', () => {
     const plan = assignBins([
       { itemId: 'a', name: 'Thali',   quantity: 1, isMeal: true },
       { itemId: 'b', name: 'Biryani', quantity: 1, isMeal: true },
       { itemId: 'c', name: 'Curry',   quantity: 1, isMeal: true },
     ]);
-    expect(plan.bins).toHaveLength(3);  // 1 meal per bin = 3 bins
+    expect(plan.bins).toHaveLength(3);
     expect(plan.totalMeals).toBe(3);
-    expect(plan.extraFeePaise).toBe(400); // 2 extra bins × ₹2
-    const bin1Meals = plan.bins[0].meals.reduce((s, m) => s + m.quantity, 0);
-    const bin2Meals = plan.bins[1].meals.reduce((s, m) => s + m.quantity, 0);
-    const bin3Meals = plan.bins[2].meals.reduce((s, m) => s + m.quantity, 0);
-    expect(bin1Meals).toBe(1);
-    expect(bin2Meals).toBe(1);
-    expect(bin3Meals).toBe(1);
+    expect(plan.extraFeePaise).toBe(400);
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+    expect(plan.bins[1].meals[0].quantity).toBe(1);
+    expect(plan.bins[2].meals[0].quantity).toBe(1);
   });
 
-  it('6 samosas (snacks) → 2 bins (5+1), ₹2 fee', () => {
-    const plan = assignBins([
-      { itemId: 's', name: 'Samosa', quantity: 6, isMeal: false },
-    ]);
-    expect(plan.bins).toHaveLength(2);  // 5 snacks per bin = 2 bins
+  // ── Snacks only ───────────────────────────────────────────────────────────
+  it('5 snacks → 1 bin, ₹0 fee', () => {
+    const plan = assignBins([{ itemId: 's', name: 'Samosa', quantity: 5, isMeal: false }]);
+    expect(plan.bins).toHaveLength(1);
+    expect(plan.extraFeePaise).toBe(0);
+    expect(plan.bins[0].snacks[0].quantity).toBe(5);
+  });
+
+  it('6 snacks → 2 bins (5+1), ₹2 fee', () => {
+    const plan = assignBins([{ itemId: 's', name: 'Samosa', quantity: 6, isMeal: false }]);
+    expect(plan.bins).toHaveLength(2);
     expect(plan.totalSnacks).toBe(6);
     expect(plan.bins[0].snacks[0].quantity).toBe(5);
     expect(plan.bins[1].snacks[0].quantity).toBe(1);
     expect(plan.extraFeePaise).toBe(200);
   });
 
-  it('2 meals + 3 snacks → 2 bins (1 meal+3snacks, 1 meal), no fee', () => {
+  it('11 snacks → 3 bins (5+5+1), ₹4 fee', () => {
+    const plan = assignBins([{ itemId: 's', name: 'Samosa', quantity: 11, isMeal: false }]);
+    expect(plan.bins).toHaveLength(3);
+    expect(plan.extraFeePaise).toBe(400);
+  });
+
+  it('snacks split across 2 item types, 6 total → 2 bins (5+1)', () => {
+    const plan = assignBins([
+      { itemId: 'a', name: 'Samosa', quantity: 3, isMeal: false },
+      { itemId: 'b', name: 'Chai',   quantity: 3, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(200);
+    const bin1Total = plan.bins[0].snacks.reduce((s, x) => s + x.quantity, 0);
+    const bin2Total = plan.bins[1].snacks.reduce((s, x) => s + x.quantity, 0);
+    expect(bin1Total).toBe(5);
+    expect(bin2Total).toBe(1);
+  });
+
+  // ── Mixed meal + snacks ───────────────────────────────────────────────────
+  it('1 meal + 3 snacks → 1 bin, ₹0 fee', () => {
+    const plan = assignBins([
+      { itemId: 'm', name: 'Thali',  quantity: 1, isMeal: true  },
+      { itemId: 's', name: 'Samosa', quantity: 3, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(1);
+    expect(plan.extraFeePaise).toBe(0);
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+    expect(plan.bins[0].snacks[0].quantity).toBe(3);
+  });
+
+  it('1 meal + 4 snacks → 2 bins (meal+3snacks | 1snack), ₹2 fee', () => {
+    const plan = assignBins([
+      { itemId: 'm', name: 'Thali',  quantity: 1, isMeal: true  },
+      { itemId: 's', name: 'Samosa', quantity: 4, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(200);
+    const bin1Snacks = plan.bins[0].snacks.reduce((s, x) => s + x.quantity, 0);
+    const bin2Snacks = plan.bins[1].snacks.reduce((s, x) => s + x.quantity, 0);
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+    expect(bin1Snacks).toBe(3);
+    expect(bin2Snacks).toBe(1);
+  });
+
+  it('2 meals + 3 snacks → 2 bins (meal+3snacks | meal+0), ₹2 fee', () => {
     const plan = assignBins([
       { itemId: 'm', name: 'Thali',  quantity: 2, isMeal: true },
       { itemId: 's', name: 'Samosa', quantity: 3, isMeal: false },
     ]);
-    expect(plan.bins).toHaveLength(2);  // meal1+3snacks, meal2
-    expect(plan.extraFeePaise).toBe(200); // 1 extra bin × ₹2
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(200);
+    expect(plan.bins[0].meals[0].quantity).toBe(1);
+    const bin1Snacks = plan.bins[0].snacks.reduce((s, x) => s + x.quantity, 0);
+    expect(bin1Snacks).toBe(3);
   });
 
-  it('empty cart → 1 empty bin, no fee', () => {
+  it('2 meals + 5 snacks → 2 bins (meal+3snacks | meal+2snacks), ₹2 fee', () => {
+    const plan = assignBins([
+      { itemId: 'm', name: 'Thali',  quantity: 2, isMeal: true  },
+      { itemId: 's', name: 'Samosa', quantity: 5, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(200);
+    const b1s = plan.bins[0].snacks.reduce((s, x) => s + x.quantity, 0);
+    const b2s = plan.bins[1].snacks.reduce((s, x) => s + x.quantity, 0);
+    expect(b1s).toBe(3);
+    expect(b2s).toBe(2);
+  });
+
+  it('2 meals + 7 snacks → 3 bins (meal+3snacks | meal+3snacks | 1snack), ₹4 fee', () => {
+    const plan = assignBins([
+      { itemId: 'm', name: 'Thali',  quantity: 2, isMeal: true  },
+      { itemId: 's', name: 'Samosa', quantity: 7, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(3);
+    expect(plan.extraFeePaise).toBe(400);
+    const b1s = plan.bins[0].snacks.reduce((s, x) => s + x.quantity, 0);
+    const b2s = plan.bins[1].snacks.reduce((s, x) => s + x.quantity, 0);
+    const b3s = plan.bins[2].snacks.reduce((s, x) => s + x.quantity, 0);
+    expect(b1s).toBe(3);
+    expect(b2s).toBe(3);
+    expect(b3s).toBe(1);
+  });
+
+  it('snacks correctly allocated across 2 item types with 2 meals (regression: no double-pack)', () => {
+    // Bug scenario: 2 meals, 4 snacks (3 Samosa + 1 Chai)
+    // Old code would duplicate Samosa into Bin2; new flat-pool prevents this
+    const plan = assignBins([
+      { itemId: 'm',  name: 'Thali',  quantity: 2, isMeal: true  },
+      { itemId: 's1', name: 'Samosa', quantity: 3, isMeal: false },
+      { itemId: 's2', name: 'Chai',   quantity: 1, isMeal: false },
+    ]);
+    expect(plan.bins).toHaveLength(2);
+    const totalSnackUnits = plan.bins.flatMap(b => b.snacks).reduce((s, x) => s + x.quantity, 0);
+    expect(totalSnackUnits).toBe(4); // exactly 4, not duplicated
+  });
+
+  it('empty cart → 1 empty bin, ₹0 fee', () => {
     const plan = assignBins([]);
     expect(plan.bins).toHaveLength(1);
     expect(plan.totalMeals).toBe(0);
     expect(plan.totalSnacks).toBe(0);
     expect(plan.extraFeePaise).toBe(0);
+  });
+
+  it('custom fee: 2 meals → 2 bins, ₹5 extra fee', () => {
+    const plan = assignBins(
+      [{ itemId: 'a', name: 'Thali', quantity: 2, isMeal: true }],
+      1, 3, 500  // ₹5 per extra bin
+    );
+    expect(plan.bins).toHaveLength(2);
+    expect(plan.extraFeePaise).toBe(500);
   });
 });
