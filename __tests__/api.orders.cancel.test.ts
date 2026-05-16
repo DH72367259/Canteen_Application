@@ -22,7 +22,7 @@ jest.mock("@/lib/authServer", () => ({
 
 interface QB {
   select: jest.Mock; update: jest.Mock; insert: jest.Mock;
-  eq: jest.Mock; single: jest.Mock; then: jest.Mock;
+  eq: jest.Mock; single: jest.Mock; maybeSingle: jest.Mock; then: jest.Mock;
 }
 
 let ordersQB: QB;
@@ -31,12 +31,13 @@ let notificationsQB: QB;
 
 function makeQB(): QB {
   const qb: Partial<QB> = {};
-  qb.select = jest.fn(() => qb as QB);
-  qb.update = jest.fn(() => qb as QB);
-  qb.insert = jest.fn(() => qb as QB);
-  qb.eq     = jest.fn(() => qb as QB);
-  qb.single = jest.fn().mockResolvedValue({ data: null, error: null });
-  qb.then   = jest.fn((onFulfilled?: (v: unknown) => unknown) => {
+  qb.select      = jest.fn(() => qb as QB);
+  qb.update      = jest.fn(() => qb as QB);
+  qb.insert      = jest.fn(() => qb as QB);
+  qb.eq          = jest.fn(() => qb as QB);
+  qb.single      = jest.fn().mockResolvedValue({ data: null, error: null });
+  qb.maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+  qb.then        = jest.fn((onFulfilled?: (v: unknown) => unknown) => {
     if (onFulfilled) onFulfilled({ data: null, error: null });
     return Promise.resolve();
   });
@@ -112,9 +113,9 @@ describe("POST /api/orders/[id]/cancel — RBAC", () => {
   ] as const) {
     it(`allows ${name} to cancel`, async () => {
       mockGetRequestContext.mockResolvedValue(ctxObj);
-      ordersQB.single = jest.fn()
-        .mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: "b-1", user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null }, error: null })
-        .mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled", cancellation_reason: "out of stock", cancelled_at: "now", refund_status: "not_required", refund_id: null }, error: null });
+      // first call = maybeSingle (order fetch), second call = single (update result)
+      ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: "b-1", user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null }, error: null });
+      ordersQB.single = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled", cancellation_reason: "out of stock", cancelled_at: "now", refund_status: "not_required", refund_id: null }, error: null });
       const { request, ctx } = req({ reason: "out of stock" });
       const res = await POST(request, ctx);
       expect(res.status).toBe(200);
@@ -128,7 +129,7 @@ describe("POST /api/orders/[id]/cancel — RBAC", () => {
 
   it("403 when canteen_admin tries to cancel another canteen's order", async () => {
     mockGetRequestContext.mockResolvedValue(CANTEEN_ADMIN_CTX);
-    ordersQB.single = jest.fn().mockResolvedValueOnce({
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({
       data: { id: "ord-1", status: "placed", canteen_id: "c-OTHER", bin_id: null, user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null },
       error: null,
     });
@@ -155,7 +156,7 @@ describe("POST /api/orders/[id]/cancel — validation", () => {
 
   it("404 when order not found", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    ordersQB.single = jest.fn().mockResolvedValueOnce({ data: null, error: { message: "no row" } });
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({ data: null, error: null });
     const { request, ctx } = req({ reason: "x" });
     const res = await POST(request, ctx);
     expect(res.status).toBe(404);
@@ -163,7 +164,7 @@ describe("POST /api/orders/[id]/cancel — validation", () => {
 
   it("400 when already cancelled", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    ordersQB.single = jest.fn().mockResolvedValueOnce({
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({
       data: { id: "ord-1", status: "cancelled", canteen_id: "c-1", bin_id: null, user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: "yesterday" },
       error: null,
     });
@@ -174,7 +175,7 @@ describe("POST /api/orders/[id]/cancel — validation", () => {
 
   it("400 when already collected/completed", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    ordersQB.single = jest.fn().mockResolvedValueOnce({
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({
       data: { id: "ord-1", status: "collected", canteen_id: "c-1", bin_id: null, user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null },
       error: null,
     });
@@ -187,9 +188,8 @@ describe("POST /api/orders/[id]/cancel — validation", () => {
 describe("POST /api/orders/[id]/cancel — side effects", () => {
   it("frees bin via bin_id, assigned_order_id, order_id and notifies student + canteen", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    ordersQB.single = jest.fn()
-      .mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: "b-9", user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null }, error: null })
-      .mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled", cancellation_reason: "x", cancelled_at: "now", refund_status: "not_required", refund_id: null }, error: null });
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: "b-9", user_id: "u-1", total_amount: 99, payment_id: null, cancelled_at: null }, error: null });
+    ordersQB.single = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled", cancellation_reason: "x", cancelled_at: "now", refund_status: "not_required", refund_id: null }, error: null });
     const { request, ctx } = req({ reason: "x" });
     const res = await POST(request, ctx);
     expect(res.status).toBe(200);
@@ -212,8 +212,8 @@ describe("POST /api/orders/[id]/cancel — side effects", () => {
 
   it("schema-drift fallback retries with slim update when cancellation columns missing", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: null, user_id: null, total_amount: 99, payment_id: null, cancelled_at: null }, error: null });
     ordersQB.single = jest.fn()
-      .mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: null, user_id: null, total_amount: 99, payment_id: null, cancelled_at: null }, error: null })
       .mockResolvedValueOnce({ data: null, error: { message: 'column "cancellation_reason" does not exist' } })
       .mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled" }, error: null });
     const { request, ctx } = req({ reason: "x" });
@@ -228,9 +228,8 @@ describe("POST /api/orders/[id]/cancel — side effects", () => {
 
   it("refund.status is 'not_required' when no payment_id", async () => {
     mockGetRequestContext.mockResolvedValue(SUPER_ADMIN_CTX);
-    ordersQB.single = jest.fn()
-      .mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: null, user_id: null, total_amount: 0, payment_id: null, cancelled_at: null }, error: null })
-      .mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled" }, error: null });
+    ordersQB.maybeSingle = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "placed", canteen_id: "c-1", bin_id: null, user_id: null, total_amount: 0, payment_id: null, cancelled_at: null }, error: null });
+    ordersQB.single = jest.fn().mockResolvedValueOnce({ data: { id: "ord-1", status: "cancelled" }, error: null });
     const { request, ctx } = req({ reason: "free order" });
     const res = await POST(request, ctx);
     const body = await res.json();
