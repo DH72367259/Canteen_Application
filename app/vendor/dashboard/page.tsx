@@ -55,6 +55,7 @@ const NAV_ITEMS = [
   { id: "bins",         icon: "📦", label: "Bin Management" },
   { id: "sales",        icon: "💰", label: "Sales" },
   { id: "analytics",   icon: "📈", label: "Analytics" },
+  { id: "bills",       icon: "🧾", label: "Bills & Receipts" },
   { id: "earnings",     icon: "💼", label: "Earnings & Payouts" },
   { id: "logs",         icon: "📝", label: "Logs" },
   { id: "settings",     icon: "⚙️", label: "Settings" },
@@ -911,9 +912,10 @@ export default function VendorDashboard() {
                       <span style={{ background: "#f1f5f9", borderRadius: 20, padding: "0.15rem 0.55rem", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
                         {slotBins.length} order{slotBins.length !== 1 ? "s" : ""}
                       </span>
+                      {/* Print All — disabled; code kept for future use */}
                       <button
                         title="Print receipts for all orders in this slot"
-                        style={{ marginLeft: "auto", fontSize: "0.72rem", padding: "0.2rem 0.55rem", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", color: "#475569" }}
+                        style={{ display: "none", marginLeft: "auto", fontSize: "0.72rem", padding: "0.2rem 0.55rem", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", color: "#475569" }}
                         onClick={async () => {
                           const binsWithOrders = slotBins.filter(b => b.rawOrderId);
                           for (const bin of binsWithOrders) await handlePrintBill(bin);
@@ -1028,6 +1030,7 @@ export default function VendorDashboard() {
         {activeNav === "slots" && <VendorSlotsView session={session} onNavigate={setActiveNav} />}
         {activeNav === "sales" && <VendorSalesView session={session} />}
         {activeNav === "analytics" && <VendorAnalyticsView session={session} />}
+        {activeNav === "bills" && <VendorBillsView session={session} />}
         {activeNav === "earnings" && <VendorEarningsView session={session} />}
         {activeNav === "bins" && <VendorBinsView session={session} canteenId={user?.canteenId ?? null} />}
         {activeNav === "logs" && <VendorLogsView session={session} />}
@@ -1060,11 +1063,11 @@ export default function VendorDashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <h3>Verify Order — Bin #{selectedBin.number}</h3>
               <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                {/* Print Bill */}
+                {/* Print Bill — disabled; code kept for future use */}
                 <button
                   onClick={() => handlePrintBill(selectedBin)}
                   title="Print Bill"
-                  style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem" }}
+                  style={{ display: "none", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem" }}
                 >
                   🖨️
                 </button>
@@ -1840,9 +1843,9 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
                         <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
                           <span>Total</span><span>₹{order.total_amount.toFixed(0)}</span>
                         </div>
-                        <button className="btn btn-ghost" style={{ marginTop: "0.6rem", fontSize: "0.78rem", width: "100%" }}
+                        {/* Print Receipt — disabled; code kept for future use */}
+                        <button className="btn btn-ghost" style={{ display: "none", marginTop: "0.6rem", fontSize: "0.78rem", width: "100%" }}
                           onClick={() => {
-                            // Open print window for this specific order receipt
                             const win = window.open("", "_blank", "width=400,height=600");
                             if (!win) return;
                             const itemRows = order.items.map(i =>
@@ -1889,6 +1892,233 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
               )}
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bills & Receipts view — comprehensive order bill viewer
+// ─────────────────────────────────────────────────────────────────────────────
+
+type BillsPeriod = "today" | "week" | "month" | "year";
+type BillsOrder = {
+  id: string;
+  student_name: string;
+  phone: string;
+  slot_label: string;
+  bin_label: string;
+  bin_color: string | null;
+  total_amount: number;
+  status: string;
+  created_at: string;
+  items: { name: string; quantity: number; unit_price: number }[];
+};
+
+function istNow(): Date { return new Date(Date.now() + 330 * 60_000); }
+function toYMD(d: Date): string { return d.toISOString().slice(0, 10); }
+
+function billsPeriodRange(period: BillsPeriod, anchor: string): { from: string; to: string } {
+  const [y, m, day] = anchor.split("-").map(Number);
+  if (period === "today") return { from: anchor, to: anchor };
+  if (period === "week") {
+    const base = new Date(Date.UTC(y, m - 1, day));
+    const dow = base.getUTCDay();
+    const mon = new Date(base.getTime() - ((dow + 6) % 7) * 86_400_000);
+    const sun = new Date(mon.getTime() + 6 * 86_400_000);
+    return { from: toYMD(mon), to: toYMD(sun) };
+  }
+  if (period === "month") {
+    const last = new Date(Date.UTC(y, m, 0));
+    return { from: `${y}-${String(m).padStart(2, "0")}-01`, to: toYMD(last) };
+  }
+  return { from: `${y}-01-01`, to: `${y}-12-31` };
+}
+
+function VendorBillsView({ session }: { session: Session | null }) {
+  const [period, setPeriod] = useState<BillsPeriod>("today");
+  const [anchor, setAnchor]   = useState(() => toYMD(istNow()));
+  const [slotFilter, setSlotFilter] = useState("");
+  const [hourFilter, setHourFilter] = useState("");
+  const [search, setSearch]   = useState("");
+  const [page, setPage]       = useState(0);
+  const [data, setData]       = useState<{ total: number; orders: BillsOrder[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const limit = 50;
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    setLoading(true);
+    setData(null);
+    const { from, to } = billsPeriodRange(period, anchor);
+    const p = new URLSearchParams({ page: String(page), limit: String(limit), from_date: from, to_date: to });
+    if (slotFilter) p.set("slot", slotFilter);
+    if (search)     p.set("search", search);
+    fetch(`/api/canteen/receipts?${p}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j) setData(j); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.access_token, period, anchor, slotFilter, search, page]);
+
+  const uniqueSlots = useMemo(() => {
+    const s = new Set<string>();
+    data?.orders.forEach(o => { if (o.slot_label) s.add(o.slot_label); });
+    return Array.from(s).sort();
+  }, [data]);
+
+  const displayed = useMemo(() => {
+    if (!data) return [];
+    if (!hourFilter) return data.orders;
+    return data.orders.filter(o => {
+      const h = new Date(new Date(o.created_at).getTime() + 330 * 60_000).getUTCHours();
+      return String(h) === hourFilter;
+    });
+  }, [data, hourFilter]);
+
+  const totalRev = displayed.reduce((s, o) => s + o.total_amount, 0);
+  const { from: rFrom, to: rTo } = billsPeriodRange(period, anchor);
+  const COLOR_DOT: Record<string, string> = {
+    red: "#ef4444", yellow: "#eab308", green: "#22c55e",
+    blue: "#3b82f6", purple: "#a855f7", orange: "#f97316",
+  };
+  const HOUR_LABELS = Array.from({ length: 24 }, (_, h) =>
+    ({ v: String(h), l: h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM` }));
+
+  const PERIOD_LABELS: Record<BillsPeriod, string> = { today: "Today", week: "This Week", month: "This Month", year: "This Year" };
+
+  return (
+    <div className="page-content">
+      <div className="page-header"><h2>Bills &amp; Receipts</h2></div>
+
+      {/* Period selector + anchor date */}
+      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.85rem", flexWrap: "wrap", alignItems: "center" }}>
+        {(["today", "week", "month", "year"] as BillsPeriod[]).map(p => (
+          <button key={p} onClick={() => { setPeriod(p); setPage(0); }}
+            className={`btn ${period === p ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontSize: "0.82rem", padding: "0.38rem 0.85rem" }}>
+            {PERIOD_LABELS[p]}
+          </button>
+        ))}
+        <input type="date" value={anchor} onChange={e => { setAnchor(e.target.value); setPage(0); }}
+          style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.38rem 0.7rem", fontSize: "0.83rem", background: "var(--surface)", color: "var(--ink-1)" }} />
+        <span style={{ fontSize: "0.75rem", color: "var(--ink-3)" }}>{rFrom === rTo ? rFrom : `${rFrom} — ${rTo}`}</span>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+        <select value={slotFilter} onChange={e => { setSlotFilter(e.target.value); setPage(0); }}
+          style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.38rem 0.65rem", fontSize: "0.82rem", background: "var(--surface)", color: "var(--ink-1)", minWidth: 190 }}>
+          <option value="">All Slots</option>
+          {uniqueSlots.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={hourFilter} onChange={e => setHourFilter(e.target.value)}
+          style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.38rem 0.65rem", fontSize: "0.82rem", background: "var(--surface)", color: "var(--ink-1)" }}>
+          <option value="">All Hours</option>
+          {HOUR_LABELS.map(h => <option key={h.v} value={h.v}>{h.l}</option>)}
+        </select>
+        <input type="text" placeholder="Search name / phone / order…" value={search}
+          onChange={e => { setSearch(e.target.value); setPage(0); }}
+          style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.38rem 0.65rem", fontSize: "0.82rem", background: "var(--surface)", color: "var(--ink-1)", flex: 1, minWidth: 170 }} />
+        {(slotFilter || hourFilter || search) && (
+          <button className="btn btn-ghost" style={{ fontSize: "0.78rem" }}
+            onClick={() => { setSlotFilter(""); setHourFilter(""); setSearch(""); setPage(0); }}>Clear</button>
+        )}
+      </div>
+
+      {/* Summary cards */}
+      {!loading && data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.65rem", marginBottom: "1.1rem" }}>
+          {[
+            { label: "Orders",      value: displayed.length.toString(),    sub: `of ${data.total} fetched` },
+            { label: "Revenue",     value: `₹${totalRev.toLocaleString("en-IN")}`,  sub: `${rFrom === rTo ? rFrom : PERIOD_LABELS[period]}` },
+            { label: "Avg. Order",  value: displayed.length ? `₹${(totalRev / displayed.length).toFixed(0)}` : "—", sub: "per order" },
+          ].map(({ label, value, sub }) => (
+            <div key={label} className="card" style={{ padding: "0.7rem 0.9rem", textAlign: "center" }}>
+              <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+              <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--ink-1)", margin: "0.12rem 0" }}>{value}</div>
+              <div style={{ fontSize: "0.67rem", color: "var(--ink-3)" }}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>Loading bills…</div>
+      ) : !data || displayed.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>
+          <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>🧾</div>
+          <p>No bills found for this period.</p>
+          {(slotFilter || hourFilter || search) && <p style={{ fontSize: "0.82rem" }}>Try clearing filters.</p>}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+          {displayed.map(order => {
+            const ist = new Date(new Date(order.created_at).getTime() + 330 * 60_000);
+            const tStr = ist.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+            const dStr = ist.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: period === "year" ? "2-digit" : undefined });
+            const dotColor = COLOR_DOT[order.bin_color ?? ""] ?? "#94a3b8";
+            return (
+              <div key={order.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <button onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.7rem 1rem", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ width: 9, height: 9, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "0.87rem", color: "var(--ink-1)" }}>
+                      {order.student_name}
+                      <span style={{ marginLeft: "0.45rem", fontSize: "0.71rem", color: "var(--ink-3)", fontWeight: 400 }}>{order.phone}</span>
+                    </div>
+                    <div style={{ fontSize: "0.74rem", color: "var(--ink-3)", marginTop: "0.08rem" }}>
+                      {order.slot_label || "—"} · Bin {order.bin_label || "—"} · {dStr} {tStr}
+                    </div>
+                    <div style={{ fontSize: "0.71rem", color: "var(--ink-3)", marginTop: "0.04rem", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {order.items.map(i => `${i.name} ×${i.quantity}`).join(" · ")}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.93rem" }}>₹{order.total_amount.toFixed(0)}</div>
+                    <div style={{ fontSize: "0.67rem", fontWeight: 600, textTransform: "capitalize", color: order.status === "collected" ? "#22c55e" : "var(--orange)" }}>{order.status}</div>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{expandedId === order.id ? "▲" : "▼"}</span>
+                </button>
+
+                {expandedId === order.id && (
+                  <div style={{ borderTop: "1px solid var(--border)", padding: "0.7rem 1rem", background: "var(--bg)" }}>
+                    <div style={{ fontSize: "0.71rem", color: "var(--ink-3)", marginBottom: "0.45rem" }}>
+                      Order #{order.id.slice(0, 8).toUpperCase()} · {order.phone}
+                    </div>
+                    {order.items.map((item, idx) => (
+                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.22rem 0", borderBottom: "1px solid var(--border)" }}>
+                        <span>{item.name} × {item.quantity}</span>
+                        <span style={{ color: "var(--ink-2)", fontWeight: 600 }}>₹{(item.quantity * item.unit_price).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "0.88rem", marginTop: "0.45rem", paddingTop: "0.35rem", borderTop: "2px solid var(--border)" }}>
+                      <span>Total</span><span>₹{order.total_amount.toFixed(0)}</span>
+                    </div>
+                    <div style={{ fontSize: "0.69rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
+                      {ist.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                    </div>
+                    {/* Print bill button — kept in code, hidden per client request */}
+                    <button style={{ display: "none" }} onClick={() => { /* print disabled */ }}>🖨️ Print Bill</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination (only when no hour filter, since hour filter is client-side) */}
+      {data && data.total > limit && !hourFilter && (
+        <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "1rem", alignItems: "center" }}>
+          <button className="btn btn-ghost" disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{ fontSize: "0.82rem" }}>← Prev</button>
+          <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Page {page + 1} of {Math.ceil(data.total / limit)}</span>
+          <button className="btn btn-ghost" disabled={(page + 1) * limit >= data.total} onClick={() => setPage(p => p + 1)} style={{ fontSize: "0.82rem" }}>Next →</button>
         </div>
       )}
     </div>

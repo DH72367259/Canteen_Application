@@ -8,6 +8,10 @@ export async function GET(request: Request) {
     if (!context) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // Students have no canteen context — block them explicitly
+    if (context.role === 'user') {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const canteenId = context.canteenId ?? '';
     const bins = canteenId ? await getBins(canteenId) : [];
@@ -24,7 +28,7 @@ export async function GET(request: Request) {
       const supabase = createAdminClient();
       const { data: rows } = await supabase
         .from('orders')
-        .select('id, profiles!orders_user_id_fkey(name)')
+        .select('id, profiles(name)')
         .in('id', orderIds)
         .returns<Array<{ id: string; profiles: { name: string | null } | null }>>();
       for (const row of rows ?? []) {

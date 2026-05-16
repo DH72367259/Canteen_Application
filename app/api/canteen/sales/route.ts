@@ -40,8 +40,8 @@ export async function GET(request: Request) {
   const { data: profile } = await supabase
     .from("profiles").select("canteen_id").eq("id", ctx.uid).single();
   const url = new URL(request.url);
-  const canteenId = ctx.role === "super_admin"
-    ? (url.searchParams.get("canteen_id") || profile?.canteen_id)
+  const canteenId = (ctx.role === "super_admin" || ctx.role === "co_admin")
+    ? (url.searchParams.get("canteen_id") || url.searchParams.get("canteenId") || profile?.canteen_id)
     : profile?.canteen_id;
   if (!canteenId) return Response.json({ error: "No canteen associated" }, { status: 404 });
 

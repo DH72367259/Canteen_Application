@@ -46,7 +46,24 @@ export async function GET(request: Request) {
     query = query.or(filters.join(","));
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  // If the target_role column doesn't exist yet in this deployment, fall back
+  // to a simpler query that only uses the recipient_type/recipient_id columns.
+  if (error && (error.message?.includes("target_role") || error.code === "PGRST200" || error.message?.includes("column"))) {
+    const fallbackFilters: string[] = [`recipient_type.eq.all`];
+    if (canteenId) fallbackFilters.push(`and(recipient_type.eq.canteen,recipient_id.eq.${canteenId})`);
+    fallbackFilters.push(`and(recipient_type.eq.user,recipient_id.eq.${auth.uid})`);
+    const fallbackQuery = supabase
+      .from("notifications")
+      .select("id, title, body, type, recipient_type, recipient_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    const isAdmin = auth.role === "super_admin" || auth.role === "co_admin";
+    const fb = await (isAdmin ? fallbackQuery : fallbackQuery.or(fallbackFilters.join(",")));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data = (fb.data ?? []) as any;
+    error = fb.error;
+  }
   if (error) return NextResponse.json({ error: `Failed to fetch notifications: ${error.message}` }, { status: 500 });
 
   // Fetch read status for this user

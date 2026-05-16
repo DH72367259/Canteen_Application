@@ -48,14 +48,23 @@ export async function GET(request: Request) {
   const slotParam = url.searchParams.get("slot");
   const search    = (url.searchParams.get("search") ?? "").trim().toLowerCase();
 
-  // Build date range filter
+  // Build date range filter — supports single ?date=, or ?from_date=&to_date= range
   let fromDate: string | null = null;
   let toDate:   string | null = null;
+  const fromDateParam = url.searchParams.get("from_date");
+  const toDateParam   = url.searchParams.get("to_date");
   if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
     const [y, m, d] = dateParam.split("-").map(Number);
     const start = new Date(Date.UTC(y, m - 1, d) - IST_OFFSET_MIN * 60_000);
     fromDate = start.toISOString();
     toDate   = new Date(start.getTime() + 86_400_000).toISOString();
+  } else if (fromDateParam && /^\d{4}-\d{2}-\d{2}$/.test(fromDateParam)) {
+    const [fy, fm, fd] = fromDateParam.split("-").map(Number);
+    fromDate = new Date(Date.UTC(fy, fm - 1, fd) - IST_OFFSET_MIN * 60_000).toISOString();
+    if (toDateParam && /^\d{4}-\d{2}-\d{2}$/.test(toDateParam)) {
+      const [ty, tm, td] = toDateParam.split("-").map(Number);
+      toDate = new Date(Date.UTC(ty, tm - 1, td + 1) - IST_OFFSET_MIN * 60_000).toISOString();
+    }
   }
 
   // Fetch orders (with user profile join for student name/phone)
@@ -69,7 +78,7 @@ export async function GET(request: Request) {
       total_amount,
       status,
       created_at,
-      profiles!orders_user_id_fkey(name, phone)
+      profiles(name, phone)
     `, { count: "exact" })
     .eq("canteen_id", canteenId)
     .neq("status", "cancelled")

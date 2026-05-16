@@ -9,8 +9,10 @@ test.describe("Canteen profile API", () => {
   test("canteen_admin can fetch their own profile", async () => {
     const res = await apiFetch("/api/canteen/profile", {}, ACCOUNTS.canteenAdmin);
     expect(res.status).toBe(200);
-    const data = await res.json() as Record<string, unknown>;
-    expect(data).toHaveProperty("name");
+    const data = await res.json() as { canteen?: Record<string, unknown>; name?: string };
+    // API returns { canteen: { name, ... }, phone } or flat { name, ... }
+    const hasName = data.canteen?.name !== undefined || data.name !== undefined;
+    expect(hasName).toBe(true);
   });
 
   test("worker cannot fetch canteen profile (403)", async () => {

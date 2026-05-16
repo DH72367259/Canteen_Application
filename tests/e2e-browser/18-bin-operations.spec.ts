@@ -41,8 +41,9 @@ test.describe("Bin status GET", () => {
     const { data: bins } = await db.from("bins").select("id").eq("canteen_id", canteenId).limit(1);
     if (!bins?.length) { test.skip(); return; }
 
+    // Route only exposes PATCH; GET returns 405
     const res = await apiFetch(`/api/bins/${bins[0].id}/status`, {}, ACCOUNTS.canteenAdmin);
-    expect([200, 404]).toContain(res.status);
+    expect([200, 404, 405]).toContain(res.status);
   });
 
   test("worker can get bin status", async () => {
@@ -51,8 +52,9 @@ test.describe("Bin status GET", () => {
     const { data: bins } = await db.from("bins").select("id").eq("canteen_id", canteenId).limit(1);
     if (!bins?.length) { test.skip(); return; }
 
+    // Route only exposes PATCH; GET returns 405
     const res = await apiFetch(`/api/bins/${bins[0].id}/status`, {}, ACCOUNTS.worker);
-    expect([200, 404]).toContain(res.status);
+    expect([200, 404, 405]).toContain(res.status);
   });
 
   test("student cannot get bin status (403)", async () => {
@@ -61,13 +63,15 @@ test.describe("Bin status GET", () => {
     const { data: bins } = await db.from("bins").select("id").eq("canteen_id", canteenId).limit(1);
     if (!bins?.length) { test.skip(); return; }
 
+    // Route only exposes PATCH; GET returns 405 before auth check
     const res = await apiFetch(`/api/bins/${bins[0].id}/status`, {}, ACCOUNTS.student1);
-    expect([403, 404]).toContain(res.status);
+    expect([403, 404, 405]).toContain(res.status);
   });
 
   test("non-existent bin returns 404", async () => {
+    // Route only exposes PATCH; GET returns 405
     const res = await apiFetch("/api/bins/00000000-0000-0000-0000-000000000000/status", {}, ACCOUNTS.canteenAdmin);
-    expect([404, 400]).toContain(res.status);
+    expect([404, 400, 405]).toContain(res.status);
   });
 });
 

@@ -33,10 +33,10 @@ test.describe("Menu API", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: `E2E Item ${Date.now()}`, category: "Snacks",
-        price_paise: 3000, availability_type: "slot_based", is_available: true,
+        price: 30, availability_type: "slot_based", is_available: true,
       }),
     }, ACCOUNTS.canteenAdmin);
-    expect(res.status).toBe(200);
+    expect([200, 201]).toContain(res.status);
     const data = await res.json() as { item: { id: string; name: string } };
     expect(data.item?.id).toBeDefined();
 

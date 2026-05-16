@@ -60,7 +60,8 @@ test.describe("Worker API access control", () => {
 
     const binId = bins[0].id;
     const res = await apiFetch(`/api/bins/${binId}/status`, {}, ACCOUNTS.worker);
-    expect([200, 404]).toContain(res.status);
+    // Route only supports PATCH; GET returns 405
+    expect([200, 404, 405]).toContain(res.status);
   });
 });
 

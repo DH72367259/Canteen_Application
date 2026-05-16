@@ -13,6 +13,11 @@ test.describe("Admin — canteen and user management", () => {
 
   test("canteen list shows seeded canteens", async ({ page }) => {
     await loginSuperAdmin(page);
+    // Click the Canteens tab if the dashboard has one
+    const canteensTab = page.getByRole("button", { name: /canteens?/i }).first();
+    if (await canteensTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await canteensTab.click();
+    }
     // At least one canteen should appear
     await expect(page.getByText(/Test Canteen/i).first()).toBeVisible({ timeout: 15_000 });
   });

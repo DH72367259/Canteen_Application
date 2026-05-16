@@ -38,7 +38,13 @@ export function adminClient(): SupabaseClient {
 }
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
+// Cache tokens for 50 s to avoid Supabase auth 429 rate-limiting during test runs.
+const _tokenCache = new Map<string, { token: string; expiry: number }>();
+
 export async function getAccessToken(email: string, password: string): Promise<string> {
+  const cached = _tokenCache.get(email);
+  if (cached && cached.expiry > Date.now()) return cached.token;
+
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON },
@@ -50,6 +56,7 @@ export async function getAccessToken(email: string, password: string): Promise<s
   }
   const data = await res.json() as { access_token?: string };
   if (!data.access_token) throw new Error(`No token returned for ${email}`);
+  _tokenCache.set(email, { token: data.access_token, expiry: Date.now() + 50_000 });
   return data.access_token;
 }
 
@@ -78,7 +85,9 @@ export async function apiFetch(
 /** Logs in via the "Canteen Login" tab (email + password). Used by all staff. */
 export async function loginStaff(page: Page, email: string, password: string, expectUrlPattern: RegExp) {
   await page.goto(`${APP_URL}/login`, { waitUntil: "domcontentloaded" });
-  await page.locator('button:has-text("Canteen Login")').first().click();
+  const canteenBtn = page.locator('button:has-text("Canteen Login")').first();
+  await canteenBtn.waitFor({ state: "visible", timeout: 20_000 });
+  await canteenBtn.click();
   await page.locator('input[type="email"]').first().fill(email);
   await page.locator('input[type="password"]').first().fill(password);
   await page.locator('button:has-text("Sign In")').first().click();

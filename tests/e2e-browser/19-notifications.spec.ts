@@ -49,7 +49,7 @@ test.describe("Notifications — structure", () => {
       body: "This is a test",
       type: "info",
       recipient_type: "all",
-      target_role: "all",
+      target_role: "all_staff",
     }).select("id").single();
 
     if (!notif) { test.skip(); return; }

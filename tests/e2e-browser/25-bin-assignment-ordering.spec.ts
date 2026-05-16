@@ -292,11 +292,11 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     // gotten the bin — not the late slot (8:30 AM) that was placed first.
     if (late?.bin_id === null && early?.bin_id !== null) {
       // Perfect: early slot won over late slot despite being created second
-      expect(early.bin_id).not.toBeNull();
+      expect(early!.bin_id).not.toBeNull();
     } else if (late?.bin_id !== null && early?.bin_id !== null) {
       // Both got bins — enough supply, ordering worked correctly regardless
-      expect(early.bin_id).not.toBeNull();
-      expect(late.bin_id).not.toBeNull();
+      expect(early!.bin_id).not.toBeNull();
+      expect(late!.bin_id).not.toBeNull();
     }
     // If neither got a bin — no free bins at all, test is inconclusive (already skipped above)
 
