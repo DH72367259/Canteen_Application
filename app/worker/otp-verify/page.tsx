@@ -16,6 +16,8 @@ export default function WorkerOtpVerifyPage() {
   const inputRef                = useRef<HTMLInputElement>(null);
   // Track the running Html5Qrcode instance so we can stop it on cleanup
   const qrInstanceRef           = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
+  const [qrError, setQrError]   = useState<string | null>(null);
+  const [qrRetryKey, setQrRetryKey] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -27,57 +29,110 @@ export default function WorkerOtpVerifyPage() {
     if (mode !== "qr" || result !== null || !session) return;
 
     let cancelled = false;
+    setQrError(null);
 
     async function startScanner() {
-      // Dynamic import — html5-qrcode uses browser APIs
+      // Stop any previous instance first
+      const prev = qrInstanceRef.current;
+      if (prev) {
+        try { await prev.stop(); prev.clear(); } catch { /* ignore */ }
+        qrInstanceRef.current = null;
+      }
+
+      // Check if permission is already denied — skip getUserMedia to avoid confusion
+      try {
+        const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
+        if (perm.state === "denied") {
+          if (!cancelled) setQrError("Camera permission blocked. Open Chrome → Site settings → Camera → Allow, then reload the page.");
+          return;
+        }
+      } catch { /* Permissions API not supported (iOS) — proceed */ }
+
       const { Html5Qrcode } = await import("html5-qrcode");
-      const el = document.getElementById("qr-reader");
+
+      // Wait for #qr-reader div to be mounted
+      let el: HTMLElement | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        el = document.getElementById("qr-reader");
+        if (el) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
       if (!el || cancelled) return;
 
       const qr = new Html5Qrcode("qr-reader");
       qrInstanceRef.current = qr;
 
-      try {
-        await qr.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 240, height: 240 } },
-          async (decodedText: string) => {
-            if (cancelled) return;
-            // Validate format: NOQX|{orderId}|{window}|{hmac}
-            const parts = decodedText.split("|");
-            if (parts.length !== 4 || parts[0] !== "NOQX") {
-              // Not our QR — keep scanning
-              return;
-            }
-            const orderId = parts[1];
-            cancelled = true; // stop further callbacks
-            try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
-            qrInstanceRef.current = null;
+      const config = { fps: 10, qrbox: { width: 240, height: 240 } };
 
-            setBusy(true);
-            setResult(null);
+      const onDecoded = async (decodedText: string) => {
+        if (cancelled) return;
+        // Validate format: NOQX|{orderId}|{window}|{hmac}
+        const parts = decodedText.split("|");
+        if (parts.length !== 4 || parts[0] !== "NOQX") return; // not our QR — keep scanning
+        const orderId = parts[1];
+        cancelled = true;
+        try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
+        qrInstanceRef.current = null;
+
+        setBusy(true);
+        setResult(null);
+        try {
+          const res = await fetch(`/api/orders/${orderId}/verify-qr`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session!.access_token}`,
+            },
+            body: JSON.stringify({ qrPayload: decodedText }),
+          });
+          const data = await res.json() as { error?: string; message?: string };
+          if (!res.ok) throw new Error(data.error ?? "Verification failed");
+          setResult({ ok: true, message: "Order collected ✅  Bin freed." });
+        } catch (e: unknown) {
+          setResult({ ok: false, message: e instanceof Error ? e.message : "Verification failed" });
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      let started = false;
+
+      // Strategy 1: enumerate real camera IDs via getCameras() — this triggers
+      // getUserMedia() which causes Chrome to show the permission dialog.
+      // Most reliable on Android (Samsung, Realme, Vivo, Redmi, etc.)
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras.length > 0 && !cancelled) {
+          // Prefer rear-facing camera
+          const sorted = [
+            ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
+            ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
+          ];
+          for (const cam of sorted) {
+            if (cancelled) break;
             try {
-              const res = await fetch(`/api/orders/${orderId}/verify-qr`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${session!.access_token}`,
-                },
-                body: JSON.stringify({ qrPayload: decodedText }),
-              });
-              const data = await res.json() as { error?: string; message?: string };
-              if (!res.ok) throw new Error(data.error ?? "Verification failed");
-              setResult({ ok: true, message: "Order collected ✅  Bin freed." });
-            } catch (e: unknown) {
-              setResult({ ok: false, message: e instanceof Error ? e.message : "Verification failed" });
-            } finally {
-              setBusy(false);
-            }
-          },
-          () => { /* per-frame decode errors are normal — suppress */ },
-        );
-      } catch {
-        setResult({ ok: false, message: "Camera access denied. Please allow camera permission and try again." });
+              await qr.start(cam.id, config, onDecoded, () => {});
+              started = true;
+              break;
+            } catch { continue; }
+          }
+        }
+      } catch { /* getCameras denied or not supported — fall through */ }
+
+      // Strategy 2: constraint-based fallback
+      if (!started && !cancelled) {
+        for (const c of [{ facingMode: { ideal: "environment" } }, {}] as MediaTrackConstraints[]) {
+          if (cancelled) break;
+          try {
+            await qr.start(c, config, onDecoded, () => {});
+            started = true;
+            break;
+          } catch { continue; }
+        }
+      }
+
+      if (!started && !cancelled) {
+        setQrError("Camera unavailable. Allow camera permission and tap Try Again. If you just granted permission in settings, use Reload Page.");
       }
     }
 
@@ -94,7 +149,7 @@ export default function WorkerOtpVerifyPage() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, result, session]);
+  }, [mode, result, session, qrRetryKey]);
 
   // Stop camera when leaving QR mode
   function switchMode(next: Mode) {
@@ -104,6 +159,7 @@ export default function WorkerOtpVerifyPage() {
       qrInstanceRef.current = null;
     }
     setResult(null);
+    setQrError(null);
     setOtp("");
     setMode(next);
   }
@@ -256,22 +312,48 @@ export default function WorkerOtpVerifyPage() {
                   Point camera at the student&apos;s QR code
                 </p>
 
-                {/* html5-qrcode mounts into this div */}
-                <div
-                  id="qr-reader"
-                  style={{
-                    width: "100%", maxWidth: 320, margin: "0 auto",
-                    borderRadius: 16, overflow: "hidden",
-                    border: "2px solid #e2e8f0",
-                    background: "#000",
-                    minHeight: 280,
-                  }}
-                />
+                {/* Camera error state */}
+                {qrError ? (
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
+                      <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📷</div>
+                      <p style={{ fontWeight: 700, color: "#dc2626", fontSize: "0.9rem", margin: "0 0 0.5rem" }}>{qrError}</p>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
+                        style={{ padding: "0.75rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                      >
+                        Try Again
+                      </button>
+                      <button
+                        onClick={() => window.location.reload()}
+                        style={{ padding: "0.75rem 1.5rem", background: "#f1f5f9", color: "#1e293b", border: "1.5px solid #cbd5e1", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                      >
+                        Reload Page
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* html5-qrcode mounts into this div */}
+                    <div
+                      id="qr-reader"
+                      style={{
+                        width: "100%", maxWidth: 320, margin: "0 auto",
+                        borderRadius: 16, overflow: "hidden",
+                        border: "2px solid #e2e8f0",
+                        background: "#000",
+                        minHeight: 280,
+                      }}
+                    />
 
-                {busy && (
-                  <p style={{ textAlign: "center", marginTop: "1rem", color: "#64748b", fontWeight: 600, fontSize: "0.9rem" }}>
-                    Verifying QR...
-                  </p>
+                    {busy && (
+                      <p style={{ textAlign: "center", marginTop: "1rem", color: "#64748b", fontWeight: 600, fontSize: "0.9rem" }}>
+                        Verifying QR...
+                      </p>
+                    )}
+                  </>
                 )}
 
                 <div style={{ marginTop: "1.5rem", background: "#f8fafc", borderRadius: 14, padding: "1rem 1.25rem", border: "1px solid var(--border)" }}>

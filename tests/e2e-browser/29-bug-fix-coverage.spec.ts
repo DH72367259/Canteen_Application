@@ -436,7 +436,7 @@ test.describe("FIX 6 — Worker Late Pickup tab shows late_pickup orders", () =>
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("app/worker/orders/page.tsx", "utf8");
     // Must include late_pickup in the constant
-    expect(src).toMatch(/ACTIVE_STATUSES\s*=\s*\[.*"late_pickup"/s);
+    expect(src).toMatch(/ACTIVE_STATUSES\s*=\s*\[[\s\S]*"late_pickup"/);
   });
 
   test("lateOrders filter uses o.status === 'late_pickup' as primary check", async () => {
@@ -579,6 +579,7 @@ test.describe("FIX 6 — Worker Late Pickup tab shows late_pickup orders", () =>
       otp:        "3344",
     });
     test.skip(!orderId, "could not seed order");
+    if (!orderId) return;
 
     try {
       await loginWorker(page);
@@ -620,6 +621,7 @@ test.describe("FIX 6 — Worker Late Pickup tab shows late_pickup orders", () =>
       otp:        OTP,
     });
     test.skip(!orderId, "could not seed order");
+    if (!orderId) return;
 
     try {
       await loginWorker(page);
