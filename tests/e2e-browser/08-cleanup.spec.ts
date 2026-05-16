@@ -50,12 +50,20 @@ test("cleanup: remove E2E-generated orders and one-shot users", async () => {
     console.log(`Cleaned up ${ephemeralIds.length} ephemeral users`);
   }
 
-  // 2. Free any bins that are occupied but have no order (ghost state)
-  await db
-    .from("bins")
-    .update({ current_order_id: null, assigned_order_id: null, is_occupied: false, status: "empty" })
-    .is("current_order_id", null)
-    .eq("is_occupied", true);
+  // 2. Free any bins that are occupied but have no order (ghost state).
+  // Use is_occupied filter only — current_order_id may not exist in all schema versions.
+  const { data: ghostBins } = await db.from("bins").select("id").eq("is_occupied", true);
+  const ghostIds = (ghostBins ?? []).map((b: { id: string }) => b.id);
+  if (ghostIds.length > 0) {
+    const upd = await db.from("bins")
+      .update({ current_order_id: null, assigned_order_id: null, is_occupied: false, status: "empty" })
+      .in("id", ghostIds);
+    if (upd.error && /column .* does not exist/i.test(upd.error.message)) {
+      await db.from("bins")
+        .update({ assigned_order_id: null, is_occupied: false, status: "empty" })
+        .in("id", ghostIds);
+    }
+  }
 
   console.log("✅ Cleanup complete — whitelist accounts and canteen structure preserved");
 });

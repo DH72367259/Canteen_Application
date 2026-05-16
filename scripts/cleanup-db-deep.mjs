@@ -62,21 +62,43 @@ async function cleanup() {
     }
 
     // ── Step 2: Free ALL bins ──────────────────────────────────────────────────
+    // Use is_occupied filter only — current_order_id may not exist in all schema versions.
     console.log('\n🔓 Freeing ALL bins...');
-    const { data: allBins } = await supabase
+    const { data: occupiedBins } = await supabase
       .from('bins')
       .select('id')
-      .or('is_occupied.eq.true,current_order_id.neq.null,assigned_order_id.neq.null');
+      .eq('is_occupied', true);
 
-    const binIds = (allBins || []).map(b => b.id);
+    const { data: assignedBins } = await supabase
+      .from('bins')
+      .select('id')
+      .not('assigned_order_id', 'is', null)
+      .then(r => r.error ? { data: [] } : r);
+
+    const binIds = [...new Set([
+      ...(occupiedBins || []).map(b => b.id),
+      ...(assignedBins || []).map(b => b.id),
+    ])];
+
     if (binIds.length > 0) {
-      await supabase.from('bins').update({
+      // Try the full update first (with current_order_id for legacy schemas)
+      const fullUpdate = await supabase.from('bins').update({
         is_occupied: false,
         current_order_id: null,
         assigned_order_id: null,
         status: 'empty',
         updated_at: new Date().toISOString(),
       }).in('id', binIds);
+
+      if (fullUpdate.error && /column .* does not exist/i.test(fullUpdate.error.message)) {
+        // Fallback: schema without current_order_id
+        await supabase.from('bins').update({
+          is_occupied: false,
+          assigned_order_id: null,
+          status: 'empty',
+          updated_at: new Date().toISOString(),
+        }).in('id', binIds);
+      }
       console.log(`   ✓ Freed ${binIds.length} bins`);
     } else {
       console.log('   ✓ All bins already empty');

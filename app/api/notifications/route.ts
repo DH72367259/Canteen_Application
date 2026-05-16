@@ -37,12 +37,14 @@ export async function GET(request: Request) {
     if (auth.role === "user") roleTargets.push("user");
 
     const filters: string[] = [];
-    // recipient-based (legacy)
-    filters.push(`recipient_type.eq.all`);
+    // recipient_type:"all" broadcasts are further gated by target_role:
+    //   if target_role is null  → visible to all
+    //   if target_role is set   → visible only to roles in roleTargets
+    // (previously `recipient_type.eq.all` alone showed these to everyone — bug)
+    const rt = roleTargets.join(",");
+    filters.push(`and(recipient_type.eq.all,or(target_role.is.null,target_role.in.(${rt})))`);
     if (canteenId) filters.push(`and(recipient_type.eq.canteen,recipient_id.eq.${canteenId})`);
     filters.push(`and(recipient_type.eq.user,recipient_id.eq.${auth.uid})`);
-    // target_role-based (Phase 1)
-    filters.push(`target_role.in.(${roleTargets.join(",")})`);
     query = query.or(filters.join(","));
   }
 
