@@ -253,8 +253,9 @@ export async function POST(req: NextRequest) {
   const binPlan = assignBins(cartLines, mealsPerBin, snacksWithMealPerBin, extraFeePaise0);
 
   const extraBinFeeRupees = Math.round(binPlan.extraFeePaise) / 100;
-  // 5% food GST (2.5% CGST + 2.5% SGST) charged to student
-  const gstAmount = Math.round(serverSubtotal * 0.05 * 100) / 100;
+  // 5% food GST (2.5% CGST + 2.5% SGST) — disabled in staging via DISABLE_GST=true
+  const gstDisabled = process.env.DISABLE_GST === "true";
+  const gstAmount = gstDisabled ? 0 : Math.round(serverSubtotal * 0.05 * 100) / 100;
   let serverTotal = serverSubtotal + gstAmount + extraBinFeeRupees;
   // Round to 2 decimal places to avoid floating-point accumulation
   serverTotal = Math.round(serverTotal * 100) / 100;

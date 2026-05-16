@@ -28,6 +28,7 @@ interface Order {
   createdAt?: string;
   total?: number;
   binCount?: number;
+  extraBinFeePaise?: number;
 }
 
 // ── Status progression ─────────────────────────────────────────────────────────
@@ -215,7 +216,35 @@ function OrderStatusContent() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
             {slot && <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>🕐 {slot}</div>}
             {order.canteenName && <div style={{ fontSize: "0.85rem", color: "var(--ink-3)" }}>📍 {order.canteenName}</div>}
-            {order.total != null && <div style={{ fontSize: "0.85rem", color: "var(--ink-3)" }}>💰 ₹{order.total}</div>}
+            {order.total != null && (() => {
+              const extraBinFeeRupees = order.extraBinFeePaise ? Math.round(order.extraBinFeePaise) / 100 : 0;
+              const subtotalWithGst = order.total - extraBinFeeRupees;
+              const subtotal = Math.round(subtotalWithGst / 1.05 * 100) / 100;
+              const gst = Math.round((subtotalWithGst - subtotal) * 100) / 100;
+              const showBreakdown = extraBinFeeRupees > 0 || gst > 0;
+              return showBreakdown ? (
+                <div style={{ marginTop: "0.25rem", borderTop: "1px solid var(--border)", paddingTop: "0.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--ink-3)", padding: "0.15rem 0" }}>
+                    <span>Items subtotal</span><span>₹{subtotal.toFixed(2)}</span>
+                  </div>
+                  {gst > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--ink-3)", padding: "0.15rem 0" }}>
+                      <span>GST (5%)</span><span>₹{gst.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {extraBinFeeRupees > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#9a3412", padding: "0.15rem 0" }}>
+                      <span>📦 Extra-bin fee</span><span>+₹{extraBinFeeRupees.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 800, color: "var(--ink)", borderTop: "1px solid var(--border)", paddingTop: "0.35rem", marginTop: "0.25rem" }}>
+                    <span>💰 Total paid</span><span>₹{order.total}</span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: "0.85rem", color: "var(--ink-3)" }}>💰 ₹{order.total}</div>
+              );
+            })()}
           </div>
         </div>
 
@@ -272,35 +301,60 @@ function OrderStatusContent() {
         )}
 
         {/* ── Bin indicator — when bin is assigned ── */}
-        {showBin && order.binLabel && (
-          <div style={{ background: "#fff", borderRadius: 16, padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "0.75rem" }}>Your Bin</div>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              <div style={{ width: 60, height: 60, borderRadius: 16, background: binColor, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.4rem", boxShadow: `0 4px 16px ${binColor}55`, flexShrink: 0 }}>
-                {order.binLabel}
+        {showBin && order.binLabel && (() => {
+          const assignments = order.binAssignments ?? [];
+          const assignedCount = assignments.length;
+          const plannedCount = order.binCount ?? 1;
+          const isMultiBin = plannedCount > 1;
+          const allAssigned = assignedCount >= plannedCount;
+          return (
+            <div style={{ background: "#fff", borderRadius: 16, padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
+                {isMultiBin ? `Your Bins (${assignedCount} of ${plannedCount} assigned)` : "Your Bin"}
               </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>Bin {order.binLabel}</div>
-                {order.binCount && order.binCount > 1 && <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>📦 {order.binCount} bins total</div>}
-              </div>
-            </div>
-            {/* Multi-bin breakdown */}
-            {order.binAssignments && order.binAssignments.length > 1 && (
-              <div style={{ marginTop: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
-                {order.binAssignments.map((b) => (
-                  <div key={b.binIndex} style={{ marginBottom: "0.5rem" }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.82rem", color: binHex(b.binColor), marginBottom: "0.2rem" }}>Bin {b.binLabel}</div>
-                    {b.items.map((it, j) => (
-                      <div key={j} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--ink-3)", paddingLeft: "0.5rem" }}>
-                        <span>{it.name}</span><span>×{it.quantity}</span>
+
+              {/* If we have full bin assignment details, show each bin */}
+              {assignedCount >= 1 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {assignments.map((b) => (
+                    <div key={b.binIndex} style={{ display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
+                      <div style={{ width: 52, height: 52, borderRadius: 14, background: binHex(b.binColor), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "0.95rem", boxShadow: `0 3px 12px ${binHex(b.binColor)}55`, flexShrink: 0 }}>
+                        {b.binLabel}
                       </div>
-                    ))}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: "0.88rem", marginBottom: "0.2rem" }}>
+                          {isMultiBin ? `Bin ${b.binIndex} of ${plannedCount}: ` : ""}#{b.binLabel}
+                        </div>
+                        {b.items.map((it, j) => (
+                          <div key={j} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--ink-3)" }}>
+                            <span>{it.name}</span><span>×{it.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Pending bins (planned but not yet assigned) */}
+                  {isMultiBin && !allAssigned && (
+                    <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", background: "#f8fafc", borderRadius: 10, padding: "0.5rem 0.75rem", border: "1px dashed #cbd5e1" }}>
+                      ⏳ {plannedCount - assignedCount} more bin{plannedCount - assignedCount > 1 ? "s" : ""} will appear here once the canteen prepares your order
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Fallback: show primary bin from order.binLabel */
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <div style={{ width: 60, height: 60, borderRadius: 16, background: binColor, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.4rem", boxShadow: `0 4px 16px ${binColor}55`, flexShrink: 0 }}>
+                    {order.binLabel}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>#{order.binLabel}</div>
+                    {isMultiBin && <div style={{ fontSize: "0.78rem", color: "var(--ink-3)" }}>📦 Bin 1 of {plannedCount}</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Items list ── */}
         {items.length > 0 && (

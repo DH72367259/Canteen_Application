@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function WorkerLoginPage() {
   const router = useRouter();
-  const { user, loading, signInWithIdentifier } = useAuth();
+  const { user, loading, logout, signInWithIdentifier } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -14,10 +14,10 @@ export default function WorkerLoginPage() {
 
   // Redirect if already logged in as worker
   useEffect(() => {
-    if (!loading && user) {
-      if (user.role === "worker") router.replace("/worker/orders");
-      else router.replace("/");
+    if (!loading && user && user.role === "worker") {
+      router.replace("/worker/orders");
     }
+    // Non-worker users shown a "switch account" prompt (see below) — no redirect
   }, [user, loading, router]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -47,6 +47,27 @@ export default function WorkerLoginPage() {
       <div className="spinner" style={{ borderTopColor: "#f97316" }} />
     </div>
   );
+
+  // Wrong role logged in — show switch-account banner instead of silently redirecting
+  if (user && user.role !== "worker") {
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #1e293b 0%, #0f172a 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+        <div style={{ background: "#fff", borderRadius: 20, padding: "2rem", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.4)", textAlign: "center" }}>
+          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⚠️</div>
+          <h2 style={{ fontSize: "1.1rem", fontWeight: 800, marginBottom: "0.5rem", color: "#1e293b" }}>Different account?</h2>
+          <p style={{ fontSize: "0.85rem", color: "#64748b", marginBottom: "1.5rem" }}>
+            You are signed in as <strong>{user.email}</strong>. This is the Worker Portal — you need a worker account to continue.
+          </p>
+          <button
+            onClick={() => logout().catch(() => {})}
+            style={{ width: "100%", background: "#f97316", color: "#fff", border: "none", borderRadius: 12, padding: "0.85rem", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}
+          >
+            Sign out &amp; switch account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

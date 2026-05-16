@@ -399,7 +399,11 @@ export default function WorkerOrdersPage() {
               return (
                 <div key={order.id} style={{ background: "#fff", borderRadius: 16, boxShadow: "0 3px 10px rgba(0,0,0,0.09)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
                   <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
-                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>Student: {order.customer_name || "Unknown"}</div>
+                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
+                      Student: {order.customer_name && !/^[0-9a-f]{8}-/i.test(order.customer_name)
+                        ? order.customer_name
+                        : `#${order.id.slice(-8).toUpperCase()}`}
+                    </div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
                       Order #{order.id.slice(-8).toUpperCase()} · Slot {order.pickup_slot ?? "—"}
                     </div>
