@@ -138,7 +138,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
         status: "placed",
         total_amount: 80,
         otp: "bug2a",
-        slot_label: "8:30 AM - 8:45 AM",  // later slot
+        slot_label: "01:30 AM - 01:45 AM",  // later slot — always in the past
       })
       .select("id").single();
 
@@ -152,7 +152,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
         status: "placed",
         total_amount: 80,
         otp: "bug2b",
-        slot_label: "8:00 AM - 8:15 AM",  // earlier slot — should be prioritised
+        slot_label: "01:00 AM - 01:15 AM",  // earlier slot — should be prioritised
       })
       .select("id").single();
 
@@ -205,11 +205,11 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     if (!freeBins || freeBins.length < 2) { test.skip(); return; }
 
     const { data: orderA } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2c", slot_label: "8:30 AM - 8:45 AM" })
+      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2c", slot_label: "01:30 AM - 01:45 AM" })
       .select("id").single();
 
     const { data: orderB } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2d", slot_label: "8:00 AM - 8:15 AM" })
+      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2d", slot_label: "01:00 AM - 01:15 AM" })
       .select("id").single();
 
     if (!orderA || !orderB) { test.skip(); return; }
@@ -270,14 +270,14 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
 
     // Create order with 8:30 AM slot first (would win old FIFO ordering)
     const { data: lateSlotOrder } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2f", slot_label: "8:30 AM - 8:45 AM" })
+      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2f", slot_label: "01:30 AM - 01:45 AM" })
       .select("id").single();
 
     await new Promise(r => setTimeout(r, 60));
 
     // Create order with 8:00 AM slot second (would LOSE old FIFO ordering, wins new sort)
     const { data: earlySlotOrder } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2g", slot_label: "8:00 AM - 8:15 AM" })
+      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2g", slot_label: "01:00 AM - 01:15 AM" })
       .select("id").single();
 
     if (!lateSlotOrder || !earlySlotOrder) { test.skip(); return; }
@@ -331,7 +331,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug3a", slot_label: "9:00 AM - 9:15 AM" })
+      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug3a", slot_label: "02:00 AM - 02:15 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -358,7 +358,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "confirmed", total_amount: 80, otp: "bug3b", slot_label: "9:15 AM - 9:30 AM" })
+      .insert({ canteen_id: canteenId, status: "confirmed", total_amount: 80, otp: "bug3b", slot_label: "02:15 AM - 02:30 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -380,7 +380,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "preparing", total_amount: 80, otp: "bug3c", slot_label: "9:30 AM - 9:45 AM" })
+      .insert({ canteen_id: canteenId, status: "preparing", total_amount: 80, otp: "bug3c", slot_label: "02:30 AM - 02:45 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
