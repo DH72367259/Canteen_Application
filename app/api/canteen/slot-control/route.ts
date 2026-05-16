@@ -113,6 +113,11 @@ export async function PATCH(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
+  // extra_bin_fee_paise is platform revenue — only super_admin/co_admin can change it
+  if ("extra_bin_fee_paise" in body && auth.role !== "super_admin" && auth.role !== "co_admin") {
+    return NextResponse.json({ error: "Only platform admins can update the extra bin fee." }, { status: 403 });
+  }
+
   // Whitelist editable fields. Generated columns are not editable.
   const allowed = [
     "max_bins", "slot_duration_mins", "grace_period_mins",

@@ -3280,7 +3280,6 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   const [duration, setDuration] = useState<string>("15");
   const [slotMode, setSlotMode] = useState<"both" | "batched_only">("both");
   const [saving, setSaving] = useState(false);
-  const [extraBinFeeInput, setExtraBinFeeInput] = useState<string>("0");
   const [morningStart, setMorningStart]     = useState("07:00");
   const [morningEnd, setMorningEnd]         = useState("11:00");
   const [afternoonStart, setAfternoonStart] = useState("11:30");
@@ -3299,7 +3298,6 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
       setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
       setDuration(String(j.slot_control.slot_duration_mins));
       setSlotMode(j.slot_control.slot_mode ?? "both");
-      setExtraBinFeeInput(String(Math.round((j.slot_control.extra_bin_fee_paise ?? 0) / 100)));
       setMorningStart(j.slot_control.morning_start.slice(0,5));
       setMorningEnd(j.slot_control.morning_end.slice(0,5));
       setAfternoonStart(j.slot_control.afternoon_start.slice(0,5));
@@ -3323,7 +3321,6 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           max_bins: Number(maxBinsInput),
           slot_duration_mins: Number(duration),
           slot_mode: slotMode,
-          extra_bin_fee_paise: Math.round(Math.max(0, Number(extraBinFeeInput) || 0) * 100),
           morning_start:   morningStart   + ":00",
           morning_end:     morningEnd     + ":00",
           afternoon_start: afternoonStart + ":00",
@@ -3384,22 +3381,6 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
             <select value={duration} onChange={e => setDuration(e.target.value)} style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8 }}>
               <option value="10">10</option><option value="15">15</option><option value="20">20</option>
             </select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-            <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>Extra bin fee (₹)</span>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-              <span style={{ fontWeight: 700, color: "#64748b" }}>₹</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={extraBinFeeInput}
-                onChange={e => setExtraBinFeeInput(e.target.value)}
-                placeholder="0"
-                style={{ padding: "0.55rem 0.6rem", border: "1px solid #cbd5e1", borderRadius: 8, width: 90, fontSize: "0.9rem" }}
-              />
-            </div>
-            <span style={{ fontSize: "0.7rem", color: "#64748b" }}>Charged per extra bin beyond first</span>
           </label>
           <button onClick={save} disabled={saving} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "0.6rem 1.2rem", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>
             {saving ? "Saving…" : "Save"}
