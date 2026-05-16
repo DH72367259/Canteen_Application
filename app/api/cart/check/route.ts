@@ -169,9 +169,10 @@ export async function POST(request: Request) {
   const mealsPerBin  = Number(sc.meals_per_bin)  || 1;
   const snacksPerBin = Number(sc.snacks_per_bin) || 3;
 
-  // Extra bin fee is a global platform setting
+  // Extra bin fee: slot_control is the admin-configurable setting; platform_charges
+  // is a global override but only when explicitly set to > 0 (0 means "not configured").
   const { data: pcRow } = await supabase.from("platform_charges").select("extra_bin_fee_paise").limit(1).maybeSingle();
-  const extraBinFeePaise = pcRow?.extra_bin_fee_paise != null
+  const extraBinFeePaise = (pcRow?.extra_bin_fee_paise != null && Number(pcRow.extra_bin_fee_paise) > 0)
     ? Number(pcRow.extra_bin_fee_paise)
     : (Number(sc.extra_bin_fee_paise) || 200);
 

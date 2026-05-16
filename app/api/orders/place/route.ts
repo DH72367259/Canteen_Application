@@ -255,13 +255,16 @@ export async function POST(req: NextRequest) {
 
   // ── Compute bin plan + extra-bin fee ────────────────────────────────────
   // Extra bin fee is a global platform setting (platform_charges table).
-  // Fall back to slot_control.extra_bin_fee_paise for legacy rows, then 200 paise.
+  // Extra bin fee: slot_control is the admin-configurable per-canteen setting.
+  // platform_charges is a global override — only takes effect when set to > 0.
+  // A 0 in platform_charges means "not configured globally", so fall back to
+  // slot_control (which is what the canteen admin sets in the vendor dashboard).
   const { data: pcRow } = await supabase
     .from("platform_charges")
     .select("extra_bin_fee_paise")
     .limit(1)
     .maybeSingle();
-  const extraFeePaise0 = pcRow?.extra_bin_fee_paise != null
+  const extraFeePaise0 = (pcRow?.extra_bin_fee_paise != null && Number(pcRow.extra_bin_fee_paise) > 0)
     ? Number(pcRow.extra_bin_fee_paise)
     : (Number(sc?.extra_bin_fee_paise) || 200);
 
