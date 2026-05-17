@@ -190,7 +190,7 @@ export async function POST(request: Request) {
       .eq("canteen_id", canteen_id)
       .eq(col, slot)
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled","refunded")');
+      .not("status", "in", '("cancelled")');
     if (!error) { existingOrders = (data ?? []) as Array<{ id: string }>; lastErr = null; break; }
     lastErr = error.message;
     if (!/column .* does not exist|undefined column/i.test(error.message)) break;

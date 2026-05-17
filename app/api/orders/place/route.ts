@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
       .eq("canteen_id", canteenId)
       .eq("slot_label", String(slotLabel))
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled","failed","refunded")');
+      .not("status", "in", '("cancelled")');
     if ((slotCount ?? 0) >= maxOrdersPerSlot) {
       return Response.json(
         { error: "This time slot is full. Please select a different slot.", slot_full: true },
@@ -341,7 +341,7 @@ export async function POST(req: NextRequest) {
       .eq("canteen_id", canteenId)
       .eq("slot_label", String(slotLabel))
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled","failed","refunded")');
+      .not("status", "in", '("cancelled")');
 
     if ((slotCountAfter ?? 0) > maxOrdersPerSlot) {
       await supabase.from("orders").delete().eq("id", order.id);
