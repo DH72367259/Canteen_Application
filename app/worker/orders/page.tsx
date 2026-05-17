@@ -176,12 +176,78 @@ export default function WorkerOrdersPage() {
   const [qrError, setQrError]       = useState<string | null>(null);
   const [qrRetryKey, setQrRetryKey] = useState(0);
   const qrInstanceRef               = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
+  // Late-pickup auto-switch: tracks whether the current late-tab session was
+  // triggered by the banner (vs a manual tab click). The 45s auto-return only
+  // runs for banner-triggered switches.
+  const [autoReturnSecsLeft, setAutoReturnSecsLeft] = useState<number | null>(null);
+  const autoReturnTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isAutoSwitchedRef   = useRef(false);
+  const prevLateCountRef    = useRef(0);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
     // Only redirect if role is fully resolved — prevents flicker during auth
     if (!loading && user && user.role && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
+
+  // ── Late-pickup auto-switch helpers ──────────────────────────────────────
+  function clearAutoReturn() {
+    if (autoReturnTimerRef.current) {
+      clearInterval(autoReturnTimerRef.current);
+      autoReturnTimerRef.current = null;
+    }
+    setAutoReturnSecsLeft(null);
+    isAutoSwitchedRef.current = false;
+  }
+
+  function startAutoReturn(secs = 45) {
+    clearAutoReturn();
+    isAutoSwitchedRef.current = true;
+    setAutoReturnSecsLeft(secs);
+    let remaining = secs;
+    autoReturnTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      setAutoReturnSecsLeft(remaining);
+      if (remaining <= 0) {
+        clearAutoReturn();
+        setTab("orders");
+      }
+    }, 1000);
+  }
+
+  function switchToLateBanner() {
+    setTab("late");
+    startAutoReturn(45);
+  }
+
+  function switchBackManually() {
+    clearAutoReturn();
+    setTab("orders");
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => clearAutoReturn(), []);
+
+  // Auto-switch: watch the orders state directly (can't reference computed `lateOrders`
+  // because it's declared after the early-return guard which must follow all hooks).
+  // When late orders first appear while on the orders tab, auto-switch + start countdown.
+  useEffect(() => {
+    const count = orders.filter(
+      (o) => o.status === "late_pickup" ||
+             (isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
+    ).length;
+    const prev = prevLateCountRef.current;
+    prevLateCountRef.current = count;
+
+    if (count > 0 && prev === 0 && tab === "orders") {
+      // Late orders just appeared — auto-switch and start the 45s countdown
+      switchToLateBanner();
+    } else if (count === 0) {
+      // All resolved — cancel any running countdown so it doesn't fire later
+      clearAutoReturn();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, tab]);
 
   useEffect(() => {
     if (!session || !user?.role) return;
@@ -424,7 +490,7 @@ export default function WorkerOrdersPage() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           {tab !== "orders" && (
             <button
-              onClick={() => setTab("orders")}
+              onClick={switchBackManually}
               style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.1rem", padding: "0 0.1rem", lineHeight: 1, display: "flex", alignItems: "center" }}
               aria-label="Back to Orders"
             >
@@ -434,6 +500,11 @@ export default function WorkerOrdersPage() {
           <div style={{ fontWeight: 700, fontSize: "1rem" }}>
             {tab === "orders" ? "Orders" : tab === "prep" ? "Prep Plan" : "Late Pickup"}
           </div>
+          {tab === "late" && autoReturnSecsLeft !== null && (
+            <span style={{ fontSize: "0.7rem", color: "#94a3b8", marginLeft: "0.25rem" }}>
+              (back in {autoReturnSecsLeft}s)
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", fontSize: "0.82rem" }}>
           <span style={{ color: "#94a3b8" }}>{new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
@@ -465,6 +536,25 @@ export default function WorkerOrdersPage() {
             <span style={{ fontSize: "0.74rem", color: "#94a3b8", whiteSpace: "nowrap" }}>{orders.length - relevantOrders.length} hidden (future)</span>
           )}
         </div>
+      )}
+
+      {/* Late-pickup alert banner — shown on the orders tab when late orders exist.
+          Tapping it manually switches to the Late Pickup tab and starts the 45s countdown. */}
+      {tab === "orders" && lateOrders.length > 0 && (
+        <button
+          onClick={switchToLateBanner}
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: "0.6rem",
+            background: "#fef2f2", borderTop: "1.5px solid #fca5a5", borderBottom: "1.5px solid #fca5a5",
+            border: "none", padding: "0.65rem 1rem", cursor: "pointer", textAlign: "left",
+          }}
+        >
+          <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+          <span style={{ flex: 1, fontWeight: 800, fontSize: "0.88rem", color: "#b91c1c" }}>
+            {lateOrders.length} order{lateOrders.length !== 1 ? "s" : ""} past pickup time — tap to view
+          </span>
+          <span style={{ fontSize: "0.75rem", color: "#dc2626", fontWeight: 700 }}>→</span>
+        </button>
       )}
 
       {/* Content */}
@@ -654,7 +744,7 @@ export default function WorkerOrdersPage() {
 
                       <div style={{ padding: "0 0.75rem 0.75rem" }}>
                         <button
-                          onClick={() => { setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
+                          onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
                           style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                         >
                           🔐 Verify OTP / Scan QR to Complete
@@ -676,7 +766,7 @@ export default function WorkerOrdersPage() {
           { key: "prep",   label: "Prep Plan",   icon: "📊" },
           { key: "late",   label: "Late Pickup", icon: "⚠️" },
         ] as { key: "orders"|"prep"|"late"; label: string; icon: string }[]).map(({ key, label, icon }) => (
-          <button key={key} onClick={() => setTab(key)}
+          <button key={key} onClick={() => { if (key !== "late") clearAutoReturn(); setTab(key); }}
             style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem",
               padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer",
