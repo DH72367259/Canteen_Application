@@ -129,7 +129,7 @@ export default function WorkerApp() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100vh", overflow: "hidden", background: "#f1f5f9", display: "flex", flexDirection: "column" }}>
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
