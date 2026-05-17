@@ -123,13 +123,18 @@ export default function UserHomePage() {
   useEffect(() => {
     const savedLoc = localStorage.getItem("canteen_student_location");
     const savedCoords = localStorage.getItem("canteen_student_coords");
+    // Tracks whether we've already prompted the user — even if they dismissed
+    // the picker without selecting a location, we don't auto-show it again on
+    // tab navigations. They can still open it manually via the location button.
+    const promptedBefore = localStorage.getItem("canteen_location_prompted");
     if (savedCoords) {
       try { setUserCoords(JSON.parse(savedCoords)); } catch { /* ignore */ }
     }
     if (savedLoc) {
       setSelectedLocation(savedLoc);
-    } else {
+    } else if (!promptedBefore) {
       setShowLocationPicker(true);
+      localStorage.setItem("canteen_location_prompted", "true");
     }
   }, [user?.uid]);
 
@@ -702,7 +707,7 @@ export default function UserHomePage() {
 
       {/* ── NoQx Pro soft-awareness banner — tap to view full Pro details (PDF requirement) ── */}
       <Link href="/dashboard/pro" style={{ textDecoration: "none" }}>
-        <div style={{ margin: "0.5rem 1rem", marginBottom: activeOrders.length > 0 ? "6.5rem" : "1rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", cursor: "pointer" }}>
+        <div style={{ margin: "0.5rem 1rem", marginBottom: activeOrders.length > 0 ? "10rem" : "5rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", cursor: "pointer" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "0.1rem" }}>⚡ Skip queues every day</div>
             <div style={{ fontSize: "0.72rem", color: "#b45309", marginBottom: "0.15rem" }}>With 0/- convenience fee</div>
