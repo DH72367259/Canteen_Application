@@ -141,28 +141,8 @@ export default function CanteenMenuPage() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
-  const currentMeal = getCurrentMealPeriod(now, mealWindows);
-  // User can manually switch meal period; default to the active window or "all"
-  const [activeMealTab, setActiveMealTab] = useState<MealPeriod | "all">("all");
-  // Sync default to the current meal once mealWindows + items load
-  useEffect(() => {
-    if (currentMeal) setActiveMealTab(currentMeal);
-  }, [currentMeal]);
-
-  const MEAL_TABS: Array<{ key: MealPeriod | "all"; label: string; icon: string }> = [
-    { key: "all",       label: "All",      icon: "🍽️" },
-    { key: "breakfast", label: "Morning",  icon: "🌅" },
-    { key: "lunch",     label: "Afternoon",icon: "☀️" },
-    { key: "snacks",    label: "Snacks",   icon: "🥡" },
-    { key: "dinner",    label: "Dinner",   icon: "🌙" },
-  ];
-
-  const mealFilteredItems = activeMealTab === "all"
-    ? visibleItems
-    : visibleItems.filter(i => {
-        const m = categoryToMealPeriod(i.category);
-        return m === null || m === activeMealTab || m === "snacks";
-      });
+  // Category sub-tabs handle filtering — meal-period tabs removed (redundant)
+  const mealFilteredItems = visibleItems;
 
   // ── Active orders for this canteen ────────────────────────────────
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
@@ -299,40 +279,6 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-      {/* Meal-period tabs */}
-      <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid var(--border)", background: "var(--surface)", scrollbarWidth: "none" }}>
-        {MEAL_TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveMealTab(t.key)}
-            style={{
-              flex: "0 0 auto",
-              padding: "0.65rem 0.9rem",
-              fontSize: "0.8rem",
-              fontWeight: activeMealTab === t.key ? 700 : 500,
-              color: activeMealTab === t.key ? "var(--orange)" : "var(--ink-3)",
-              borderBottom: `2px solid ${activeMealTab === t.key ? "var(--orange)" : "transparent"}`,
-              background: "none",
-              border: "none",
-              borderBottomStyle: "solid",
-              borderBottomWidth: 2,
-              borderBottomColor: activeMealTab === t.key ? "var(--orange)" : "transparent",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.3rem",
-            }}
-          >
-            <span>{t.icon}</span>
-            <span>{t.label}</span>
-            {t.key === currentMeal && t.key !== activeMealTab && (
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--orange)", display: "inline-block", marginLeft: 2 }} />
-            )}
-          </button>
-        ))}
-      </div>
-
       {/* Category sub-tabs (driven by live menu) */}
       {categories.length > 1 && (
         <div style={{ display: "flex", overflowX: "auto", gap: "0.4rem", padding: "0.5rem 1rem", scrollbarWidth: "none" }}>
@@ -370,9 +316,7 @@ export default function CanteenMenuPage() {
         {!menuLoading && !menuError && mealFilteredItems.length === 0 && (
           <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2.5rem 0", fontSize: "0.9rem" }}>
             <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🍽️</div>
-            {currentMeal && visibleItems.length > 0
-              ? `No ${currentMeal} items available right now.`
-              : "No items available right now."}
+            {"No items available right now."}
           </div>
         )}
         {mealFilteredItems.map(item => {

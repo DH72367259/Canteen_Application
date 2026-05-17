@@ -611,13 +611,13 @@ function CartContent() {
             </div>
           </div>
         )}
-        {cartCheck?.requires_extra_bin && !cartCheck.slot_full && (
+        {cartCheck && !cartCheck.slot_full && extraBinFee > 0 && (
           <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #f97316", background: "#fff7ed" }}>
             <div style={{ fontWeight: 700, color: "#9a3412", marginBottom: "0.25rem" }}>
-              📦 Your order needs {cartCheck.bin_plan.bins.length} pickup bins
+              📦 {cartCheck.bin_plan.bins.length} bin{cartCheck.bin_plan.bins.length > 1 ? "s" : ""} reserved for your order
             </div>
             <div style={{ fontSize: "0.82rem", color: "#7c2d12" }}>
-              An extra-bin fee of <strong>₹{extraBinFee}</strong> will be added at checkout.
+              A bin fee of <strong>₹{extraBinFee}</strong> will be added at checkout.
             </div>
           </div>
         )}
@@ -707,7 +707,7 @@ function CartContent() {
           </div>
           {extraBinFee > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#9a3412" }}>
-              <span>Extra-bin fee</span><span>+₹{extraBinFee}</span>
+              <span>Bin fee</span><span>+₹{extraBinFee}</span>
             </div>
           )}
           <div style={{ marginBottom: "0.4rem" }}>

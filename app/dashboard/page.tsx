@@ -718,17 +718,6 @@ export default function UserHomePage() {
           left: "50%", transform: "translateX(-50%)",
           width: "100%", maxWidth: 430, zIndex: 29, pointerEvents: "none",
         }}>
-          {/* Label row */}
-          <div style={{ padding: "0 0.75rem 0.3rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", pointerEvents: "auto" }}>
-              🔄 Active Orders
-            </span>
-            {activeOrders.length > 1 && (
-              <span style={{ fontSize: "0.62rem", color: "var(--ink-3)", pointerEvents: "auto" }}>
-                swipe →
-              </span>
-            )}
-          </div>
           {/* Swipeable horizontal strip */}
           <div style={{
             display: "flex", gap: "0.55rem", overflowX: "auto", padding: "0 0.75rem 0.55rem",
