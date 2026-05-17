@@ -38,13 +38,13 @@ if (!SUPABASE_URL || !SUPABASE_SVC) {
 const db = createClient(SUPABASE_URL, SUPABASE_SVC, { auth: { persistSession: false } });
 
 // ── Whitelist accounts ────────────────────────────────────────────────────────
-const SUPER_ADMIN = { email: "admin@noqx.test",    password: "Admin@12345"   };
-const CO_ADMIN    = { email: "coadmin@noqx.test",  password: "Coadmin@12345", name: "Co Admin",      phone: "+919000000010", role: "co_admin"      };
-const CANTEEN1    = { email: "canteen1@noqx.test", password: "Canteen@12345", name: "Test Canteen 1 Manager", phone: "+919000000001", canteenName: "Test Canteen 1", college: "Test College", city: "Mumbai", address: "Test Address 1" };
-const CANTEEN2    = { email: "canteen2@noqx.test", password: "Canteen@12345", name: "Test Canteen 2 Manager", phone: "+919000000002", canteenName: "Test Canteen 2", college: "Test College", city: "Pune",   address: "Test Address 2" };
-const WORKER1     = { email: "worker1@noqx.test",  password: "Worker@12345",  name: "Test Worker 1",  phone: "+919000000003", role: "worker"        };
-const STUDENT1    = { email: "student1@noqx.test", password: "Student@12345", name: "Test Student 1", phone: "+919000000004", role: "user"          };
-const STUDENT2    = { email: "student2@noqx.test", password: "Student@12345", name: "Test Student 2", phone: "+919000000005", role: "user"          };
+const SUPER_ADMIN = { email: "admin@noqx.test",    password: "Admin@12345",   username: "superadmin" };
+const CO_ADMIN    = { email: "coadmin@noqx.test",  password: "Coadmin@12345", username: "coadmin",   name: "Co Admin",               phone: "+919000000010", role: "co_admin"      };
+const CANTEEN1    = { email: "canteen1@noqx.test", password: "Canteen@12345", username: "canteen1",  name: "Test Canteen 1 Manager", phone: "+919000000001", canteenName: "Test Canteen 1", college: "Test College", city: "Mumbai", address: "Test Address 1" };
+const CANTEEN2    = { email: "canteen2@noqx.test", password: "Canteen@12345", username: "canteen2",  name: "Test Canteen 2 Manager", phone: "+919000000002", canteenName: "Test Canteen 2", college: "Test College", city: "Pune",   address: "Test Address 2" };
+const WORKER1     = { email: "worker1@noqx.test",  password: "Worker@12345",  username: "worker1",   name: "Test Worker 1",          phone: "+919000000003", role: "worker"        };
+const STUDENT1    = { email: "student1@noqx.test", password: "Student@12345", username: "student1",  name: "Test Student 1",         phone: "+919000000004", role: "user"          };
+const STUDENT2    = { email: "student2@noqx.test", password: "Student@12345", username: "student2",  name: "Test Student 2",         phone: "+919000000005", role: "user"          };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function log(msg)  { console.log(msg); }
@@ -137,6 +137,7 @@ async function createCanteen(acct) {
     phone:      acct.phone,
     role:       "canteen_admin",
     canteen_id: canteen.id,
+    username:   acct.username ?? null,
   });
   if (profileErr) {
     warn(`Profile create failed (${acct.email}): ${profileErr.message}`);
@@ -205,6 +206,7 @@ async function createUser(acct, canteenId) {
     phone:      acct.phone,
     role:       acct.role,
     canteen_id: canteenId ?? null,
+    username:   acct.username ?? null,
   });
   if (profileErr) {
     warn(`Profile create failed (${acct.email}): ${profileErr.message}`);
@@ -232,6 +234,12 @@ async function seed() {
     process.exit(1);
   }
   ok(`Super admin exists: ${SUPER_ADMIN.email}`);
+
+  // Ensure super admin profile has username set
+  await db.from("profiles").update({ username: SUPER_ADMIN.username }).eq("id", adminId).then(({ error: e }) => {
+    if (e && !e.message?.includes("unique")) warn(`Super admin username set failed: ${e.message}`);
+    else ok(`Super admin username: ${SUPER_ADMIN.username}`);
+  });
 
   // 2. Create canteens
   log("\n2. Creating canteens…");
