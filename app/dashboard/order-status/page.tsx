@@ -164,7 +164,7 @@ function OrderStatusContent() {
     <div className="app-shell" style={{ flexDirection: "column", minHeight: "100dvh", background: "#f8fafc" }}>
       {/* Top bar */}
       <div style={{ position: "sticky", top: 0, zIndex: 40, background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.75rem 1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <Link href="/dashboard" style={{ color: "var(--ink-3)", textDecoration: "none", fontSize: "1.1rem", lineHeight: 1 }}>←</Link>
+        <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "var(--ink-3)", fontSize: "1.1rem", lineHeight: 1, cursor: "pointer", padding: "0.25rem 0.1rem" }}>←</button>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", fontWeight: 500 }}>Order #{order.id.slice(-8).toUpperCase()}</div>
           <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>{order.canteenName ?? "Tracking your order"}</div>
