@@ -3,38 +3,66 @@
 /**
  * QRCameraScanner — native camera QR scanner.
  *
- * How it works:
- *   1. Caller calls getUserMedia() SYNCHRONOUSLY inside a button onClick
- *      (keeps Chrome Android gesture context → permission dialog appears).
- *   2. Caller passes the resulting Promise<MediaStream> as `streamPromise`.
- *   3. This component attaches the stream to a <video> element and polls
- *      frames with the native BarcodeDetector API (Android Chrome 83+).
- *   4. On unmount the stream tracks are always stopped.
+ * Self-sufficient: if no `streamPromise` is passed, shows a "Tap to start camera"
+ * button that calls getUserMedia() inside the click handler. This is the ONLY
+ * reliable way to trigger the Android Chrome permission dialog (it must run in
+ * a user-gesture context).
  *
- * No html5-qrcode or any other library — eliminates the gesture-context
- * problem that prevented the camera permission dialog from appearing.
+ * The parent can also pass a streamPromise directly when the camera was already
+ * requested from another click handler (e.g. when the user taps the "Scan QR"
+ * tab — the getUserMedia call must happen in that same click handler too).
+ *
+ * Retry never reloads the page (that would lose the auth session and bounce
+ * the user to /login). Instead it re-runs getUserMedia in-place.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 interface Props {
   streamPromise: Promise<MediaStream> | null;
   onScanned: (text: string) => void;
+  /** Optional callback when user gives up and wants to switch to OTP entry. */
+  onManualOtp?: () => void;
 }
 
-export default function QRCameraScanner({ streamPromise, onScanned }: Props) {
+export default function QRCameraScanner({ streamPromise: externalPromise, onScanned, onManualOtp }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [ready, setReady]   = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Internal stream promise — used when the user taps "Start camera" inside this
+  // component. Takes precedence over externalPromise (which may have been
+  // consumed/rejected on a prior render).
+  const [internalPromise, setInternalPromise] = useState<Promise<MediaStream> | null>(null);
+  // Bumped to force the streamPromise effect to re-run on retry without reloading.
+  const [attemptKey, setAttemptKey] = useState(0);
+
+  const activePromise = internalPromise ?? externalPromise;
+
+  const startCamera = useCallback(() => {
+    setError(null);
+    setReady(false);
+    try {
+      // MUST be called synchronously inside the click handler — otherwise
+      // Chrome Android won't show the permission dialog.
+      const p = navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+      setInternalPromise(p);
+      setAttemptKey((k) => k + 1);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "unknown";
+      setError(`Cannot access camera: ${msg}. Use OTP instead.`);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!streamPromise) return;
+    if (!activePromise) return;
 
     let alive = true;
     let stream: MediaStream | null = null;
     let rafId: number | null = null;
 
-    streamPromise
+    activePromise
       .then((s) => {
         if (!alive) { s.getTracks().forEach((t) => t.stop()); return; }
         stream = s;
@@ -79,7 +107,7 @@ export default function QRCameraScanner({ streamPromise, onScanned }: Props) {
         const msg  = e instanceof Error ? e.message : String(e);
         if (name === "NotAllowedError" || /denied|not allowed|permission/i.test(msg)) {
           setError(
-            "Camera access was blocked. In Chrome tap ⋮ → Site settings → Camera → set to Allow, then tap Try Again.",
+            "Camera access was blocked. Tap the lock icon in the address bar → Permissions → Camera → Allow, then tap Try Again below.",
           );
         } else if (name === "NotFoundError") {
           setError("No camera found on this device. Use OTP instead.");
@@ -93,15 +121,108 @@ export default function QRCameraScanner({ streamPromise, onScanned }: Props) {
       if (rafId !== null) cancelAnimationFrame(rafId);
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, [streamPromise, onScanned]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePromise, attemptKey]);
 
+  // ── No active stream yet → show a Tap-to-Start button ────────────────────
+  // This is the entry point after a page reload or first mount. The button
+  // click provides the user-gesture context needed by getUserMedia on Android.
+  if (!activePromise && !error) {
+    return (
+      <div style={{
+        padding: "1.5rem 1.1rem",
+        background: "#1e293b",
+        borderRadius: 12,
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>📷</div>
+        <p style={{ color: "#cbd5e1", fontSize: "0.86rem", margin: "0 0 1rem", lineHeight: 1.5 }}>
+          Tap the button below to start the camera.
+          <br />
+          Allow camera permission when your browser asks.
+        </p>
+        <button
+          onClick={startCamera}
+          style={{
+            padding: "0.75rem 1.5rem",
+            background: "#f97316",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontWeight: 800,
+            fontSize: "0.95rem",
+            cursor: "pointer",
+            width: "100%",
+          }}
+        >
+          📷 Start Camera
+        </button>
+        {onManualOtp && (
+          <button
+            onClick={onManualOtp}
+            style={{
+              marginTop: "0.6rem",
+              padding: "0.6rem 1.2rem",
+              background: "transparent",
+              color: "#cbd5e1",
+              border: "1.5px solid #475569",
+              borderRadius: 10,
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              width: "100%",
+            }}
+          >
+            Use OTP Instead
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── Error state ─────────────────────────────────────────────────────────
+  // Retry re-runs getUserMedia in-place (no page reload, no logout risk).
   if (error) {
     return (
       <div style={{ padding: "1.1rem", background: "#fef2f2", borderRadius: 12, border: "1.5px solid #fca5a5", textAlign: "center" }}>
         <div style={{ fontSize: "1.75rem", marginBottom: "0.4rem" }}>📷</div>
-        <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.83rem", margin: 0, lineHeight: 1.55 }}>
+        <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.83rem", margin: "0 0 0.9rem", lineHeight: 1.55 }}>
           {error}
         </p>
+        <div style={{ display: "flex", gap: "0.5rem", flexDirection: "column" }}>
+          <button
+            onClick={startCamera}
+            style={{
+              padding: "0.65rem 1rem",
+              background: "#1e293b",
+              color: "#fff",
+              border: "none",
+              borderRadius: 10,
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: "0.85rem",
+            }}
+          >
+            🔄 Try Again
+          </button>
+          {onManualOtp && (
+            <button
+              onClick={onManualOtp}
+              style={{
+                padding: "0.6rem 1rem",
+                background: "transparent",
+                color: "#dc2626",
+                border: "1.5px solid #fca5a5",
+                borderRadius: 10,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: "0.82rem",
+              }}
+            >
+              Use OTP Instead
+            </button>
+          )}
+        </div>
       </div>
     );
   }

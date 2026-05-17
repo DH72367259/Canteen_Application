@@ -753,9 +753,13 @@ export default function WorkerOrdersPage() {
                       // Start getUserMedia synchronously in the click handler —
                       // Chrome Android requires this to show the permission dialog.
                       // Store the Promise so QRCameraScanner can use the stream directly.
-                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "environment" },
-                      });
+                      try {
+                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({
+                          video: { facingMode: "environment" },
+                        }) ?? null;
+                      } catch {
+                        streamPromiseRef.current = null;
+                      }
                       setQrRetryKey(k => k + 1);
                     }
                     setModalMode(m);
@@ -827,7 +831,11 @@ export default function WorkerOrdersPage() {
                       <button
                         onClick={() => {
                           setQrVerifyError(null);
-                          streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                          try {
+                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                          } catch {
+                            streamPromiseRef.current = null;
+                          }
                           setQrRetryKey(k => k + 1);
                         }}
                         style={{ flex: 1, padding: "0.65rem", border: "none", background: "#1e293b", color: "#fff", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
@@ -863,7 +871,11 @@ export default function WorkerOrdersPage() {
                     <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
                       <button
                         onClick={() => {
-                          streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                          try {
+                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                          } catch {
+                            streamPromiseRef.current = null;
+                          }
                           setQrRetryKey(k => k + 1);
                         }}
                         disabled={otpSubmitting}
