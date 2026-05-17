@@ -490,12 +490,20 @@ function CartContent() {
   }
 
   if (cart.length === 0) {
+    // If the user emptied the cart from a specific canteen's flow, send them
+    // back to that canteen's menu so they can re-add items — not to the
+    // generic canteen list. Falls back to /dashboard when canteenId is absent.
+    const backTo = canteenId ? `/dashboard/menu/${canteenId}` : "/dashboard";
+    const backLabel = canteenId ? `Back to ${canteenName}` : "Browse Canteens";
+    const helpText = canteenId
+      ? "Add items from the menu to continue your order."
+      : "Browse a canteen and add items to get started.";
     return (
       <div className="app-shell" style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: "3rem 1rem" }}>
         <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>🛒</div>
         <h2 style={{ fontWeight: 800, marginBottom: "0.5rem" }}>Your cart is empty</h2>
-        <p style={{ color: "var(--ink-3)", marginBottom: "1.5rem", fontSize: "0.9rem" }}>Browse a canteen and add items to get started.</p>
-        <button className="btn btn-primary" onClick={() => router.push("/dashboard")}>Browse Canteens</button>
+        <p style={{ color: "var(--ink-3)", marginBottom: "1.5rem", fontSize: "0.9rem" }}>{helpText}</p>
+        <button className="btn btn-primary" onClick={() => router.push(backTo)}>{backLabel}</button>
       </div>
     );
   }
