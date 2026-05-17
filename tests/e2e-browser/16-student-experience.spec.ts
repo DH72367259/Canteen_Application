@@ -156,7 +156,7 @@ test.describe("Student login page UI", () => {
     await usernameInput.fill("nonexistentuser_xyz_123@invalid.test");
     const pwInput = page.locator('input[type="password"]').first();
     await pwInput.fill("wrongpassword999");
-    await page.locator('button[type="submit"]').first().click();
+    await page.locator('button:has-text("Sign In"), button:has-text("Sign in")').first().click();
     // Wrong credentials should not grant access to protected pages
     await page.waitForTimeout(3_000);
     const finalUrl = page.url();
