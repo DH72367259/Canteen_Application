@@ -630,10 +630,10 @@ export default function WorkerOrdersPage() {
                     )}
                     {order.status === "placed_in_bin" && (
                       <button
-                        onClick={() => { setOtpModal(order.id); setOtpInput(""); }}
+                        onClick={() => { setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
                         style={{ background: "#dcfce7", color: "#166534", border: "1.5px solid #86efac", borderRadius: 10, padding: "0.6rem 0.75rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
                       >
-                        🔐 Enter OTP to Complete
+                        🔐 Verify OTP / Scan QR to Complete
                       </button>
                     )}
                     {order.status === "ready_for_pickup" && (
