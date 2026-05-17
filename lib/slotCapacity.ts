@@ -97,8 +97,9 @@ export interface ExtraBinResult {
 }
 
 /**
- * Decide whether an order needs an extra pickup bin based on meal count.
- * Default: 2 meals per bin → a 3rd meal triggers a 2nd bin and ₹2 fee.
+ * Decide how many pickup bins an order needs and compute the bin usage fee.
+ * Fee applies to all bins (including the first) so every order with items
+ * incurs the bin reservation charge.
  */
 export function requiresExtraBin(
   mealsCount: number,
@@ -109,11 +110,11 @@ export function requiresExtraBin(
     return { required: false, binCount: 0, extraFeePaise: 0 };
   }
   const binCount = Math.ceil(mealsCount / mealsPerBin);
-  const required = binCount > 1;
+  const required = binCount >= 1;
   return {
     required,
     binCount,
-    extraFeePaise: required ? extraBinFeePaise * (binCount - 1) : 0,
+    extraFeePaise: binCount > 0 ? extraBinFeePaise * binCount : 0,
   };
 }
 
@@ -224,7 +225,7 @@ export function assignBins(
     bins,
     totalMeals,
     totalSnacks,
-    extraFeePaise: binCount > 1 ? extraBinFeePaise * (binCount - 1) : 0,
+    extraFeePaise: binCount > 0 ? extraBinFeePaise * binCount : 0,
   };
 }
 
