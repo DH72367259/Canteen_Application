@@ -54,6 +54,7 @@ type ActiveOrder = {
   status: string;
   slot_label: string | null;
   bin_id: string | null;
+  user_id: string | null;
 };
 
 /**
@@ -66,7 +67,7 @@ export async function releaseExpiredSlotBins(
 ): Promise<{ released: number }> {
   const { data: activeOrders, error } = await supabase
     .from("orders")
-    .select("id, status, slot_label, bin_id")
+    .select("id, status, slot_label, bin_id, user_id")
     .eq("canteen_id", canteenId)
     .in("status", [
       "placed", "confirmed", "preparing",
@@ -114,6 +115,25 @@ export async function releaseExpiredSlotBins(
         updated_at: nowIso,
       })
       .in("id", binIds);
+  }
+
+  // Notify each student that their slot has ended and food is at the late pickup counter
+  const userIds = [...new Set(
+    expiredOrders
+      .map(o => (o as ActiveOrder).user_id)
+      .filter((uid): uid is string => !!uid)
+  )];
+  if (userIds.length > 0) {
+    const notifRows = userIds.map(uid => ({
+      title: "⚠️ Slot ended — food at late pickup counter",
+      body: "Your pickup slot has passed. Your food is being held at the late pickup counter. Please collect it as soon as possible.",
+      type: "late_pickup",
+      recipient_type: "user",
+      recipient_id: uid,
+      target_role: "user",
+      created_by: null as string | null,
+    }));
+    await supabase.from("notifications").insert(notifRows).then(() => {}, () => {});
   }
 
   return { released: expiredOrders.length };

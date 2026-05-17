@@ -30,9 +30,9 @@ export async function POST(
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, status, canteen_id, bin_id")
+    .select("id, status, canteen_id, bin_id, user_id")
     .eq("id", orderId)
-    .single<{ id: string; status: string; canteen_id: string | null; bin_id: string | null }>();
+    .single<{ id: string; status: string; canteen_id: string | null; bin_id: string | null; user_id: string | null }>();
 
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   if (auth.canteenId && order.canteen_id && auth.canteenId !== order.canteen_id) {
@@ -91,6 +91,19 @@ export async function POST(
   }
   await supabase.from("bins").update(freeBin).eq("order_id", orderId);
   await supabase.from("bins").update(freeBin).eq("assigned_order_id", orderId);
+
+  // Notify the student their food has moved to the late pickup counter
+  if (order.user_id) {
+    await supabase.from("notifications").insert({
+      title: "⚠️ Food moved to late pickup counter",
+      body: `Your order was not collected during your slot. Your food is now at the late pickup counter — please collect it as soon as possible.`,
+      type: "late_pickup",
+      recipient_type: "user",
+      recipient_id: order.user_id,
+      target_role: "user",
+      created_by: auth.uid,
+    }).then(() => {}, () => {});
+  }
 
   return NextResponse.json({ success: true, orderId, binLabel, binColor });
 }
