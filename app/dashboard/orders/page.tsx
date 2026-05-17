@@ -211,11 +211,11 @@ export default function MyOrdersPage() {
       {/* ── Bottom nav ── */}
       <nav className="bottom-nav">
         {[
-          { tab: "home",    icon: "🏠", label: "Home",      href: "/dashboard" },
-          { tab: "orders",  icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { tab: "profile", icon: "👤", label: "Profile",   href: "/dashboard/profile" },
+          { tab: "home",    icon: "🏠", label: "Home",    href: "/dashboard" },
+          { tab: "orders",  icon: "📊", label: "Stats",   href: "/dashboard/orders/stats" },
+          { tab: "profile", icon: "👤", label: "Profile", href: "/dashboard/profile" },
         ].map(item => (
-          <Link key={item.tab} href={item.href} className={`bottom-nav-item ${item.tab === "orders" ? "active" : ""}`}>
+          <Link key={item.tab} href={item.href} className={`bottom-nav-item ${item.tab === "home" ? "active" : ""}`}>
             <span className="nav-icon">{item.icon}</span>
             <span>{item.label}</span>
           </Link>

@@ -309,9 +309,9 @@ export default function ProfilePage() {
       {/* Bottom navigation */}
       <nav className="bottom-nav">
         {(["home", "orders", "profile"] as const).map(tab => {
-          const icons: Record<string, string>  = { home: "🏠", orders: "📦", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", profile: "Profile" };
-          const hrefs: Record<string, string>  = { home: "/dashboard", orders: "/dashboard/orders", profile: "/dashboard/profile" };
+          const icons: Record<string, string>  = { home: "🏠", orders: "📊", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "Stats", profile: "Profile" };
+          const hrefs: Record<string, string>  = { home: "/dashboard", orders: "/dashboard/orders/stats", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}

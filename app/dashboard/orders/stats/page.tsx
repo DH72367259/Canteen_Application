@@ -88,8 +88,7 @@ export default function OrderStatsPage() {
     <div className="app-shell" style={{ flexDirection: "column" }}>
       {/* Top bar */}
       <div className="app-topbar">
-        <button onClick={() => router.push("/dashboard")} aria-label="Back" style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)" }}>←</button>
-        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>📊 My Order Stats</h1>
+        <h1 style={{ fontSize: "1.05rem", fontWeight: 700 }}>📊 Order Stats</h1>
         <Link href="/dashboard" style={{ fontSize: "0.8rem", color: "var(--orange)", textDecoration: "none", fontWeight: 700 }}>Order food →</Link>
       </div>
 
@@ -182,9 +181,9 @@ export default function OrderStatsPage() {
       {/* Bottom nav */}
       <nav className="bottom-nav">
         {[
-          { tab: "home",    icon: "🏠", label: "Home",      href: "/dashboard" },
-          { tab: "orders",  icon: "📦", label: "My Orders", href: "/dashboard/orders" },
-          { tab: "profile", icon: "👤", label: "Profile",   href: "/dashboard/profile" },
+          { tab: "home",    icon: "🏠", label: "Home",    href: "/dashboard" },
+          { tab: "orders",  icon: "📊", label: "Stats",   href: "/dashboard/orders/stats" },
+          { tab: "profile", icon: "👤", label: "Profile", href: "/dashboard/profile" },
         ].map(item => (
           <Link key={item.tab} href={item.href} className={`bottom-nav-item ${item.tab === "orders" ? "active" : ""}`}>
             <span className="nav-icon">{item.icon}</span>

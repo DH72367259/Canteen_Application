@@ -532,13 +532,6 @@ export default function UserHomePage() {
           </button>
           <Link href="/dashboard/support" onClick={e => e.stopPropagation()} title="Help & Support"
             style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}>🎧</Link>
-          <Link
-            href="/dashboard/orders/stats"
-            onClick={e => e.stopPropagation()}
-            title="My order stats"
-            aria-label="My order stats"
-            style={{ fontSize: "1.15rem", textDecoration: "none", padding: "0.2rem" }}
-          >📊</Link>
           <div style={{ textAlign: "right", lineHeight: 1.15, marginLeft: "0.4rem" }}>
             <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", fontWeight: 500 }}>{greeting} 👋</div>
             <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--ink)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -793,9 +786,9 @@ export default function UserHomePage() {
       {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">
         {(["home", "orders", "profile"] as const).map(tab => {
-          const icons: Record<string, string> = { home: "🏠", orders: "📦", profile: "👤" };
-          const labels: Record<string, string> = { home: "Home", orders: "My Orders", profile: "Profile" };
-          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders", profile: "/dashboard/profile" };
+          const icons: Record<string, string> = { home: "🏠", orders: "📊", profile: "👤" };
+          const labels: Record<string, string> = { home: "Home", orders: "Stats", profile: "Profile" };
+          const links: Record<string, string> = { home: "/dashboard", orders: "/dashboard/orders/stats", profile: "/dashboard/profile" };
           return (
             <Link
               key={tab}
