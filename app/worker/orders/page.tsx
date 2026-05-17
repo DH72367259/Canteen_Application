@@ -815,7 +815,19 @@ export default function WorkerOrdersPage() {
               {(["otp", "qr"] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={() => { setModalMode(m); setQrError(null); setOtpInput(""); }}
+                  onClick={async () => {
+                    setQrError(null); setOtpInput("");
+                    if (m === "qr") {
+                      // Request camera IMMEDIATELY inside the gesture context so
+                      // Chrome shows the permission dialog. The stream is stopped
+                      // right after — html5-qrcode will reopen it in the effect.
+                      try {
+                        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                        s.getTracks().forEach(t => t.stop());
+                      } catch { /* permission denied — useEffect will show the error */ }
+                    }
+                    setModalMode(m);
+                  }}
                   disabled={otpSubmitting}
                   style={{
                     flex: 1, padding: "0.5rem 0", border: "none", borderRadius: 8, cursor: "pointer",
@@ -887,13 +899,20 @@ export default function WorkerOrdersPage() {
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
+                        onClick={async () => {
+                          try {
+                            const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                            s.getTracks().forEach(t => t.stop());
+                          } catch { /* will surface as error in effect */ }
+                          setQrError(null);
+                          setQrRetryKey(k => k + 1);
+                        }}
                         style={{ padding: "0.6rem 1.2rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
                       >
                         Try Again
                       </button>
                       <button
-                        onClick={() => window.location.reload()}
+                        onClick={() => router.replace("/worker/orders")}
                         style={{ padding: "0.6rem 1.2rem", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
                       >
                         Reload Page

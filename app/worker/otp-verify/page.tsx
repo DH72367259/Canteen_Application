@@ -325,13 +325,20 @@ export default function WorkerOtpVerifyPage() {
                     </div>
                     <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={() => { setQrError(null); setQrRetryKey(k => k + 1); }}
+                        onClick={async () => {
+                          try {
+                            const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                            s.getTracks().forEach(t => t.stop());
+                          } catch { /* will surface as error in effect */ }
+                          setQrError(null);
+                          setQrRetryKey(k => k + 1);
+                        }}
                         style={{ padding: "0.75rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
                         Try Again
                       </button>
                       <button
-                        onClick={() => window.location.reload()}
+                        onClick={() => router.replace("/worker/otp-verify")}
                         style={{ padding: "0.75rem 1.5rem", background: "#f1f5f9", color: "#1e293b", border: "1.5px solid #cbd5e1", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
                         Reload Page
