@@ -39,15 +39,6 @@ export default function WorkerOtpVerifyPage() {
         qrInstanceRef.current = null;
       }
 
-      // Check if permission is already denied — skip getUserMedia to avoid confusion
-      try {
-        const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
-        if (perm.state === "denied") {
-          if (!cancelled) setQrError("Camera permission blocked. Open Chrome → Site settings → Camera → Allow, then reload the page.");
-          return;
-        }
-      } catch { /* Permissions API not supported (iOS) — proceed */ }
-
       const { Html5Qrcode } = await import("html5-qrcode");
 
       // Wait for #qr-reader div to be mounted
@@ -95,15 +86,18 @@ export default function WorkerOtpVerifyPage() {
         }
       };
 
+      const isPermDenied = (e: unknown) =>
+        e instanceof Error && (e.name === "NotAllowedError" || /permission|denied|not allowed/i.test(e.message));
+
       let started = false;
 
-      // Strategy 1: enumerate real camera IDs via getCameras() — this triggers
-      // getUserMedia() which causes Chrome to show the permission dialog.
-      // Most reliable on Android (Samsung, Realme, Vivo, Redmi, etc.)
+      // Strategy 1: enumerate real camera IDs via getCameras() — triggers
+      // getUserMedia() so Chrome shows the permission dialog on first visit.
+      // Do NOT pre-check navigator.permissions: on Android Chrome it returns
+      // "denied" for sites never visited even when permission can still be granted.
       try {
         const cameras = await Html5Qrcode.getCameras();
         if (cameras.length > 0 && !cancelled) {
-          // Prefer rear-facing camera
           const sorted = [
             ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
             ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
@@ -117,7 +111,12 @@ export default function WorkerOtpVerifyPage() {
             } catch { continue; }
           }
         }
-      } catch { /* getCameras denied or not supported — fall through */ }
+      } catch (e) {
+        if (isPermDenied(e) && !cancelled) {
+          setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
+          return;
+        }
+      }
 
       // Strategy 2: constraint-based fallback
       if (!started && !cancelled) {
@@ -127,12 +126,17 @@ export default function WorkerOtpVerifyPage() {
             await qr.start(c, config, onDecoded, () => {});
             started = true;
             break;
-          } catch { continue; }
+          } catch (e) {
+            if (isPermDenied(e) && !cancelled) {
+              setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
+              return;
+            }
+          }
         }
       }
 
       if (!started && !cancelled) {
-        setQrError("Camera unavailable. Allow camera permission and tap Try Again. If you just granted permission in settings, use Reload Page.");
+        setQrError("Camera unavailable. Allow camera access and tap Try Again.");
       }
     }
 
