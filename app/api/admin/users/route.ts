@@ -40,12 +40,20 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { email, password, name, role, canteen_id, phone } = body as Record<string, string>;
+  const { email, password, name, role, canteen_id, phone, username } = body as Record<string, string>;
   if (!email?.trim())    return NextResponse.json({ error: "Email is required." }, { status: 400 });
   if (!password?.trim()) return NextResponse.json({ error: "Password is required." }, { status: 400 });
   if ((password as string).length < 8) return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   if (!name?.trim())     return NextResponse.json({ error: "Name is required." }, { status: 400 });
   if (!phone?.trim())    return NextResponse.json({ error: "Phone number is required." }, { status: 400 });
+
+  let usernameClean: string | null = null;
+  if (username?.trim()) {
+    usernameClean = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(usernameClean)) {
+      return NextResponse.json({ error: "Username must be 3–20 characters: letters, numbers, or underscore only." }, { status: 400 });
+    }
+  }
 
   // Normalise phone to E.164 (assumes Indian numbers if no country code present).
   // Accept inputs like "9876543210", "+919876543210", "+1 555 010 1234" and reject
@@ -76,7 +84,11 @@ export async function POST(request: Request) {
     email: email.trim().toLowerCase(),
     password,
     email_confirm: true,
-    user_metadata: { has_password: true, password_changed_at: new Date().toISOString() },
+    user_metadata: {
+      has_password: true,
+      password_changed_at: new Date().toISOString(),
+      ...(usernameClean ? { username: usernameClean } : {}),
+    },
   });
   if (authError) {
     // Surface the real Supabase reason — this endpoint is super_admin only.
@@ -98,14 +110,17 @@ export async function POST(request: Request) {
   }
 
   const userId = authData.user.id;
-  const { error: profileError } = await supabase.from("profiles").upsert({
+  const profilePayload: Record<string, string | null> = {
     id: userId,
     email: email.trim().toLowerCase(),
     name: name.trim(),
     phone: phoneNormalised,
     role,
     canteen_id: canteen_id || null,
-  });
+  };
+  if (usernameClean) profilePayload.username = usernameClean;
+
+  const { error: profileError } = await supabase.from("profiles").upsert(profilePayload);
 
   if (profileError) {
     await supabase.auth.admin.deleteUser(userId);
@@ -117,7 +132,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create user profile." }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, uid: userId, email: email.trim().toLowerCase(), name: name.trim(), phone: phoneNormalised, role });
+  return NextResponse.json({ success: true, uid: userId, email: email.trim().toLowerCase(), name: name.trim(), phone: phoneNormalised, role, username: usernameClean });
 }
 
 // ── PATCH /api/admin/users — update user or reset password (super_admin only) ─
@@ -130,7 +145,7 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
 
-  const { uid, name, role, canteen_id, new_password, phone } = body as Record<string, string>;
+  const { uid, name, role, canteen_id, new_password, phone, username } = body as Record<string, string>;
   if (!uid) return NextResponse.json({ error: "uid is required." }, { status: 400 });
 
   const supabase = createAdminClient();
@@ -172,6 +187,13 @@ export async function PATCH(request: Request) {
   if (role)  update.role = role;
   if (canteen_id !== undefined) update.canteen_id = canteen_id || null;
   if (phoneNormalised) update.phone = phoneNormalised;
+  if (username !== undefined) {
+    const usernameClean = username?.trim().toLowerCase() || null;
+    if (usernameClean && !/^[a-z0-9_]{3,20}$/.test(usernameClean)) {
+      return NextResponse.json({ error: "Username must be 3–20 characters: letters, numbers, or underscore only." }, { status: 400 });
+    }
+    update.username = usernameClean;
+  }
 
   if (Object.keys(update).length > 0) {
     const { error: profileErr } = await supabase.from("profiles").update(update).eq("id", uid);
