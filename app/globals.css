@@ -1019,9 +1019,10 @@ body {
 
 @media (min-width: 769px) {
   .bottom-nav { display: none; }
+  /* app-shell stays flex-direction:column on desktop — student/worker pages
+     are mobile-first UIs; the web-shell handles vendor/admin desktop layout */
   .app-shell {
-    max-width: 100%;
-    flex-direction: row;
+    max-width: 540px;
   }
 }
 
