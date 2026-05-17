@@ -22,6 +22,7 @@ const config: Config = {
     "!**/node_modules/**",
   ],
   coverageDirectory: "coverage",
+  setupFiles: ["./jest.setup.env.ts"],
   testTimeout: 30000,
   forceExit: true,
 };

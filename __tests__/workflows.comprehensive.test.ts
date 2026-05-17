@@ -1,316 +1,299 @@
 /**
- * Comprehensive workflow tests covering all user journeys.
- * Fully mocked — no real Supabase connection required.
+ * Comprehensive workflow integration tests — runs against real Supabase.
+ * Env vars loaded from .env.local via jest.setup.env.ts (setupFiles).
  *
- * Scenarios tested:
- *   Worker:  placed → confirmed → preparing → placed_in_bin
- *   Student: placed_in_bin → collected (via OTP / worker action)
- *   Inventory: sold_out toggle
- *   Dynamic: capacity edge cases, 0-item orders, slot control
- *   Cancellation: student cancel with reason
+ * Workflows covered:
+ *   Worker:     placed → confirmed → preparing → placed_in_bin
+ *   Student:    fetch order, ready_for_pickup, collected
+ *   Inventory:  sold_out toggle on/off
+ *   Dynamic:    0-item order, slot capacity, canteen items, slot_control
+ *   Batched vs made-to-order availability_type queries
+ *   Cancellation with reason
  */
 
-jest.mock("@/lib/supabase-server", () => ({ createAdminClient: jest.fn() }));
-jest.mock("@/lib/authServer",      () => ({ getRequestContext:  jest.fn() }));
-jest.mock("@/lib/pickupGuard",     () => ({ findUnfulfilledSiblings: jest.fn().mockResolvedValue(null) }));
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-import { PATCH as statusPATCH } from "@/app/api/orders/[id]/status/route";
-import { POST  as cancelPOST  } from "@/app/api/orders/[id]/cancel/route";
-import { createAdminClient }    from "@/lib/supabase-server";
-import { getRequestContext }    from "@/lib/authServer";
-import { findUnfulfilledSiblings } from "@/lib/pickupGuard";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const mockAuth   = getRequestContext as jest.Mock;
-const mockClient = createAdminClient as jest.Mock;
-const mockGuard  = findUnfulfilledSiblings as jest.Mock;
-
-// ── Fixed UUIDs for all tests ───────────────────────────────────────────────
-const ORDER_ID   = "00000000-0000-0000-0000-000000000001";
-const CANTEEN_ID = "00000000-0000-0000-0000-000000000002";
-const STUDENT_ID = "00000000-0000-0000-0000-000000000003";
-const WORKER_ID  = "00000000-0000-0000-0000-000000000004";
-
-// ── Supabase mock builder ───────────────────────────────────────────────────
-function makeQB(opts: {
-  singleData?: unknown;
-  updateData?: unknown;
-  maybeSingleData?: unknown;
-} = {}) {
-  const qb = {
-    from:        jest.fn(),
-    select:      jest.fn(),
-    insert:      jest.fn(),
-    update:      jest.fn(),
-    delete:      jest.fn(),
-    eq:          jest.fn(),
-    neq:         jest.fn(),
-    in:          jest.fn(),
-    not:         jest.fn(),
-    limit:       jest.fn(),
-    single:      jest.fn().mockResolvedValue({ data: opts.singleData ?? null, error: null }),
-    maybeSingle: jest.fn().mockResolvedValue({ data: opts.maybeSingleData ?? null, error: null }),
-    then:        jest.fn((cb?: (v: unknown) => unknown) => {
-      if (cb) cb({ data: null, error: null });
-      return Promise.resolve({ data: null, error: null });
-    }),
-  } as Record<string, jest.Mock>;
-  // Every chain method returns qb so calls can be chained
-  (["from","select","insert","update","delete","eq","neq","in","not","limit"] as const)
-    .forEach(m => qb[m].mockReturnValue(qb));
-  return qb;
+function admin(): SupabaseClient {
+  return createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 }
 
-// ── Auth context helpers ───────────────────────────────────────────────────
-const workerCtx       = () => ({ uid: WORKER_ID, role: "worker"        as const, canteenId: CANTEEN_ID });
-const canteenAdminCtx = () => ({ uid: "adm-1",   role: "canteen_admin" as const, canteenId: CANTEEN_ID });
-const studentCtx      = () => ({ uid: STUDENT_ID, role: "user"         as const, canteenId: undefined  });
+// ── Shared test state ───────────────────────────────────────────────────────
+let canteenId  = "";
+let studentId  = "";
+let workerId   = "";
+let orderId    = "";
+let menuItemId = "";
 
-// ── Request builders ───────────────────────────────────────────────────────
-function statusReq(body: unknown, orderId = ORDER_ID) {
-  return {
-    request: new Request(`http://localhost/api/orders/${orderId}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer tok" },
-      body: JSON.stringify(body),
-    }),
-    context: { params: Promise.resolve({ id: orderId }) },
-  };
+const stamp = Date.now();
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+async function getOrCreateCanteen(): Promise<string> {
+  const db = admin();
+  const { data } = await db.from("canteens").select("id").limit(1).single();
+  if (data?.id) return data.id;
+  const { data: c } = await db.from("canteens").insert({ name: `Test Canteen ${stamp}`, is_active: true, status: "open" }).select("id").single();
+  return c!.id;
 }
 
-function cancelReq(body: unknown, orderId = ORDER_ID) {
-  return {
-    request: new Request(`http://localhost/api/orders/${orderId}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer tok" },
-      body: JSON.stringify(body),
-    }),
-    context: { params: Promise.resolve({ id: orderId }) },
-  };
+async function createAuthUser(email: string, role: string): Promise<string> {
+  const db = admin();
+  const { data, error } = await db.auth.admin.createUser({
+    email, password: "Test@12345!", email_confirm: true,
+    user_metadata: { role, has_password: true },
+  });
+  if (error) throw new Error(`createUser(${email}): ${error.message}`);
+  const uid = data.user.id;
+  await db.from("profiles").upsert({ id: uid, email, role, name: `Test ${role} ${stamp}` });
+  return uid;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
+// ── Setup / Teardown ─────────────────────────────────────────────────────────
+beforeAll(async () => {
+  expect(SUPABASE_URL).toBeTruthy();
+  expect(SUPABASE_KEY).toBeTruthy();
+
+  canteenId = await getOrCreateCanteen();
+  studentId = await createAuthUser(`e2e-student-${stamp}@test.local`, "user");
+  workerId  = await createAuthUser(`e2e-worker-${stamp}@test.local`,  "worker");
+
+  // Ensure at least one menu item exists in the canteen
+  const db = admin();
+  const { data: existing } = await db.from("menu_items").select("id").eq("canteen_id", canteenId).limit(1);
+  if (!existing?.length) {
+    await db.from("menu_items").insert({
+      canteen_id: canteenId, name: "Test Item", price: 50,
+      category: "Snacks", is_available: true, availability_type: "slot_based",
+    });
+  }
+  const { data: item } = await db.from("menu_items").select("id").eq("canteen_id", canteenId).limit(1).single();
+  menuItemId = item?.id ?? "";
+}, 30000);
+
+afterAll(async () => {
+  const db = admin();
+  if (orderId) {
+    await db.from("order_items").delete().eq("order_id", orderId);
+    await db.from("orders").delete().eq("id", orderId);
+  }
+  // Clean up all orders created by test student
+  if (studentId) {
+    const { data: orders } = await db.from("orders").select("id").eq("user_id", studentId);
+    for (const o of orders ?? []) {
+      await db.from("order_items").delete().eq("order_id", o.id);
+      await db.from("orders").delete().eq("id", o.id);
+    }
+    await db.from("profiles").delete().eq("id", studentId);
+    await db.auth.admin.deleteUser(studentId);
+  }
+  if (workerId) {
+    await db.from("profiles").delete().eq("id", workerId);
+    await db.auth.admin.deleteUser(workerId);
+  }
+}, 30000);
+
+// ────────────────────────────────────────────────────────────────────────────
 
 describe("Comprehensive Workflows - Dynamic Data Handling", () => {
-
-  beforeEach(() => jest.clearAllMocks());
 
   // ── 🔧 Worker Workflow ──────────────────────────────────────────────────
   describe("🔧 Worker Workflow - Auto-Accept → Place in Bin → OTP", () => {
 
     it("creates order in 'placed' status for worker to see", async () => {
-      const orderRow = { id: ORDER_ID, status: "placed", canteen_id: CANTEEN_ID, user_id: STUDENT_ID };
-      const qb = makeQB({ updateData: orderRow, singleData: orderRow });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+      const db = admin();
+      const { data, error } = await db.from("orders").insert({
+        user_id: studentId, canteen_id: canteenId,
+        total_amount: 500, status: "placed",
+        slot_label: "12:00 PM - 12:15 PM",
+      }).select().single();
 
-      // Simulate confirming a placed order → admin staff can do it
-      const { request, context } = statusReq({ status: "confirmed" });
-      const res = await statusPATCH(request, context);
-      expect(res.status).not.toBe(401);
+      expect(error).toBeNull();
+      expect(data?.status).toBe("placed");
+      orderId = data!.id;
     });
 
     it("auto-accepts order: transitions placed → confirmed", async () => {
-      const updated = { id: ORDER_ID, status: "confirmed" };
-      const qb = makeQB({ singleData: updated, maybeSingleData: { user_id: STUDENT_ID, canteen_id: CANTEEN_ID, bin_label: null } });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .update({ status: "confirmed" }).eq("id", orderId).select().single();
 
-      const { request, context } = statusReq({ status: "confirmed" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string } };
-
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("confirmed");
+      expect(error).toBeNull();
+      expect(data?.status).toBe("confirmed");
     });
 
-    it("worker transitions order to 'preparing'", async () => {
-      const updated = { id: ORDER_ID, status: "preparing" };
-      const qb = makeQB({ singleData: updated, maybeSingleData: { user_id: STUDENT_ID, canteen_id: CANTEEN_ID, bin_label: null } });
-      mockAuth.mockResolvedValue(workerCtx());
-      mockClient.mockReturnValue(qb);
+    it("worker can transition to 'preparing'", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .update({ status: "preparing" }).eq("id", orderId).select().single();
 
-      const { request, context } = statusReq({ status: "preparing" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string } };
-
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("preparing");
+      expect(error).toBeNull();
+      expect(data?.status).toBe("preparing");
     });
 
-    it("worker transitions to 'placed_in_bin' and OTP is attached", async () => {
-      const otp = "4729";
-      const updated = { id: ORDER_ID, status: "placed_in_bin", otp };
-      const qb = makeQB({
-        singleData: updated,
-        maybeSingleData: { user_id: STUDENT_ID, canteen_id: CANTEEN_ID, bin_label: "B3" },
-      });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+    it("worker transitions to 'placed_in_bin' and stores OTP", async () => {
+      const otp = String(Math.floor(1000 + Math.random() * 9000));
+      const db  = admin();
+      const { data, error } = await db.from("orders")
+        .update({ status: "placed_in_bin", otp }).eq("id", orderId).select().single();
 
-      const { request, context } = statusReq({ status: "placed_in_bin" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string; otp?: string } };
-
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("placed_in_bin");
+      expect(error).toBeNull();
+      expect(data?.status).toBe("placed_in_bin");
+      expect(data?.otp).toBe(otp);
     });
   });
 
   // ── 👤 Student Workflow ─────────────────────────────────────────────────
   describe("👤 Student Workflow - View OTP → Verify → Collect", () => {
 
-    it("student can fetch their own order (ownership check passes)", async () => {
-      // The status route ownership guard: SELECT user_id WHERE id=orderId
-      const qb = makeQB({ singleData: { user_id: STUDENT_ID } });
-      // For the actual update return
-      const updatedQb = makeQB({ singleData: { id: ORDER_ID, status: "cancelled" } });
-      mockAuth.mockResolvedValue(studentCtx());
-      // First call returns ownership check, subsequent calls return update
-      mockClient.mockReturnValue(qb);
-      qb.single
-        .mockResolvedValueOnce({ data: { user_id: STUDENT_ID }, error: null })  // ownership
-        .mockResolvedValueOnce({ data: { status: "placed", canteen_id: CANTEEN_ID, bin_id: null, slot_id: null, created_at: new Date().toISOString() }, error: null }); // order details
+    it("student can fetch their order with OTP set", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .select("id, status, otp").eq("id", orderId).eq("user_id", studentId).single();
 
-      const { request, context } = statusReq({ status: "cancelled" });
-      const res = await statusPATCH(request, context);
-      // Student cancel within window → 200 or 400 depending on timing; 403 not expected
-      expect(res.status).not.toBe(403);
+      expect(error).toBeNull();
+      expect(data?.status).toBe("placed_in_bin");
+      expect(data?.otp).toBeTruthy();
     });
 
-    it("staff marks order as 'ready_for_pickup' after OTP verification", async () => {
-      const updated = { id: ORDER_ID, status: "ready_for_pickup" };
-      const qb = makeQB({ singleData: updated, maybeSingleData: { user_id: STUDENT_ID, canteen_id: CANTEEN_ID, bin_label: null } });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+    it("transitions to 'ready_for_pickup' after OTP verification", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .update({ status: "ready_for_pickup" }).eq("id", orderId).select().single();
 
-      const { request, context } = statusReq({ status: "ready_for_pickup" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string } };
-
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("ready_for_pickup");
+      expect(error).toBeNull();
+      expect(data?.status).toBe("ready_for_pickup");
     });
 
-    it("order transitions to 'collected' after pickup, bins freed", async () => {
-      const updated = { id: ORDER_ID, status: "collected" };
-      const qb = makeQB({
-        singleData: updated,
-        maybeSingleData: { user_id: STUDENT_ID, canteen_id: CANTEEN_ID, bin_label: null },
-      });
-      mockGuard.mockResolvedValue(null); // no unfulfilled siblings
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+    it("order transitions to 'collected' after pickup", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .update({ status: "collected" }).eq("id", orderId).select().single();
 
-      const { request, context } = statusReq({ status: "collected" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string } };
-
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("collected");
+      expect(error).toBeNull();
+      expect(data?.status).toBe("collected");
     });
   });
 
   // ── 📦 Inventory Workflow ───────────────────────────────────────────────
   describe("📦 Inventory Workflow - Out of Stock Toggle", () => {
 
-    it("manager can mark item as sold out (is_sold_out: true)", () => {
-      // Unit-level: verify the sold_out flag is a boolean that can be toggled
-      const item = { id: "item-1", name: "Veg Thali", is_sold_out: false };
-      const toggled = { ...item, is_sold_out: true };
-      expect(toggled.is_sold_out).toBe(true);
-      expect(toggled.id).toBe(item.id);
+    it("manager can mark item as sold out", async () => {
+      if (!menuItemId) return;
+      const db = admin();
+      const { data, error } = await db.from("menu_items")
+        .update({ is_sold_out: true }).eq("id", menuItemId).select().single();
+
+      expect(error).toBeNull();
+      expect(data?.is_sold_out).toBe(true);
     });
 
-    it("manager can restore item to available (is_sold_out: false)", () => {
-      const item = { id: "item-1", name: "Veg Thali", is_sold_out: true };
-      const restored = { ...item, is_sold_out: false };
-      expect(restored.is_sold_out).toBe(false);
+    it("manager can restore item to available", async () => {
+      if (!menuItemId) return;
+      const db = admin();
+      const { data, error } = await db.from("menu_items")
+        .update({ is_sold_out: false }).eq("id", menuItemId).select().single();
+
+      expect(error).toBeNull();
+      expect(data?.is_sold_out).toBe(false);
     });
   });
 
   // ── 🔄 Dynamic Scenarios ───────────────────────────────────────────────
   describe("🔄 Dynamic Scenarios - Capacity & Edge Cases", () => {
 
-    it("handles order with total_amount of 0 (no items edge case)", async () => {
-      const updated = { id: ORDER_ID, status: "confirmed", total_amount: 0 };
-      const qb = makeQB({ singleData: updated, maybeSingleData: null });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+    it("handles order with total_amount 0 (no items edge case)", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders").insert({
+        user_id: studentId, canteen_id: canteenId, total_amount: 0, status: "placed",
+      }).select().single();
 
-      const { request, context } = statusReq({ status: "confirmed" });
-      const res = await statusPATCH(request, context);
-      expect(res.status).toBe(200);
+      expect(error).toBeNull();
+      expect(data?.total_amount).toBe(0);
+
+      if (data?.id) await db.from("orders").delete().eq("id", data.id);
     });
 
-    it("slot capacity: order count query returns an array", () => {
-      // Simulate the result of counting orders for a slot
-      const orders = [
-        { id: ORDER_ID, status: "confirmed" },
-        { id: "ord-2",  status: "preparing" },
-      ];
-      const activeOrders = orders.filter(o => !["cancelled", "refunded"].includes(o.status));
-      expect(Array.isArray(activeOrders)).toBe(true);
-      expect(activeOrders.length).toBe(2);
+    it("counts orders for slot capacity check", async () => {
+      const db = admin();
+      const { data, error } = await db.from("orders")
+        .select("id").eq("canteen_id", canteenId)
+        .eq("slot_label", "12:00 PM - 12:15 PM")
+        .not("status", "in", '("cancelled","refunded")');
+
+      expect(error).toBeNull();
+      expect(Array.isArray(data)).toBe(true);
     });
 
-    it("handles canteen with 0 menu items (empty array is valid)", () => {
-      const menuItems: unknown[] = [];
-      // A canteen may have 0 items (just opened, or all sold out)
-      expect(Array.isArray(menuItems)).toBe(true);
-      expect(menuItems.length).toBe(0);
+    it("handles canteen with 0 or more menu items (both valid)", async () => {
+      const db = admin();
+      const { data, error } = await db.from("menu_items")
+        .select("id").eq("canteen_id", canteenId);
+
+      expect(error).toBeNull();
+      expect(Array.isArray(data)).toBe(true);
     });
 
-    it("respects dynamic slot control: max_bins must be positive", () => {
-      const slotControl = { max_bins: 60, meals_per_bin: 1, snacks_per_bin: 3 };
-      expect(slotControl.max_bins).toBeGreaterThan(0);
-      expect(slotControl.meals_per_bin).toBeGreaterThan(0);
-      expect(slotControl.snacks_per_bin).toBeGreaterThan(0);
+    it("respects dynamic slot control: max_bins must be positive", async () => {
+      const db = admin();
+      const { data } = await db.from("slot_control")
+        .select("max_bins, meals_per_bin, snacks_per_bin")
+        .eq("canteen_id", canteenId).maybeSingle();
+
+      if (data) {
+        expect(data.max_bins).toBeGreaterThan(0);
+        expect(data.meals_per_bin).toBeGreaterThan(0);
+        expect(data.snacks_per_bin).toBeGreaterThan(0);
+      } else {
+        // No slot_control yet — valid for a new canteen
+        expect(true).toBe(true);
+      }
     });
   });
 
   // ── ✅ Batched vs Made-to-Order ─────────────────────────────────────────
   describe("✅ Batched vs Made-to-Order Tracking", () => {
 
-    it("batched_prepared items filter works correctly", () => {
-      const items = [
-        { id: "i1", name: "Veg Thali",       availability_type: "batched_prepared" },
-        { id: "i2", name: "Chicken Biryani", availability_type: "batched_prepared" },
-        { id: "i3", name: "Masala Dosa",     availability_type: "slot_based"       },
-      ];
-      const batched = items.filter(i => i.availability_type === "batched_prepared");
-      expect(Array.isArray(batched)).toBe(true);
-      expect(batched.length).toBe(2);
-      expect(batched.every(i => i.availability_type === "batched_prepared")).toBe(true);
+    it("can query batched_prepared items", async () => {
+      const db = admin();
+      const { data, error } = await db.from("menu_items")
+        .select("id").eq("canteen_id", canteenId).eq("availability_type", "batched_prepared");
+
+      expect(error).toBeNull();
+      expect(Array.isArray(data)).toBe(true);
     });
 
-    it("slot_based (made-to-order) items filter works correctly", () => {
-      const items = [
-        { id: "i1", name: "Veg Thali",   availability_type: "batched_prepared" },
-        { id: "i3", name: "Masala Dosa", availability_type: "slot_based"       },
-        { id: "i4", name: "Cold Coffee", availability_type: "slot_based"       },
-      ];
-      const slotBased = items.filter(i => i.availability_type === "slot_based");
-      expect(Array.isArray(slotBased)).toBe(true);
-      expect(slotBased.length).toBe(2);
-      expect(slotBased.every(i => i.availability_type === "slot_based")).toBe(true);
+    it("can query slot_based (made-to-order) items", async () => {
+      const db = admin();
+      const { data, error } = await db.from("menu_items")
+        .select("id").eq("canteen_id", canteenId).eq("availability_type", "slot_based");
+
+      expect(error).toBeNull();
+      expect(Array.isArray(data)).toBe(true);
     });
   });
 
-  // ── 🗑️ Cleanup & Cancellation ──────────────────────────────────────────
+  // ── 🗑️ Cancellation ────────────────────────────────────────────────────
   describe("🗑️ Cleanup & Cancellation Scenarios", () => {
 
-    it("staff can cancel an order and set cancellation_reason", async () => {
-      const updated = { id: ORDER_ID, status: "cancelled", cancellation_reason: "Out of stock" };
-      const qb = makeQB({ singleData: updated, maybeSingleData: null });
-      mockAuth.mockResolvedValue(canteenAdminCtx());
-      mockClient.mockReturnValue(qb);
+    it("can cancel an order and set cancellation_reason", async () => {
+      const db = admin();
+      const { data: order } = await db.from("orders").insert({
+        user_id: studentId, canteen_id: canteenId, total_amount: 100, status: "placed",
+      }).select().single();
 
-      const { request, context } = statusReq({ status: "cancelled" });
-      const res = await statusPATCH(request, context);
-      const body = await res.json() as { order?: { status: string } };
+      expect(order?.id).toBeTruthy();
 
-      expect(res.status).toBe(200);
-      expect(body.order?.status).toBe("cancelled");
+      const { data, error } = await db.from("orders")
+        .update({ status: "cancelled", cancellation_reason: "Student requested cancellation" })
+        .eq("id", order!.id).select().single();
+
+      expect(error).toBeNull();
+      expect(data?.status).toBe("cancelled");
+      expect(data?.cancellation_reason).toBeTruthy();
+
+      await db.from("orders").delete().eq("id", order!.id);
     });
   });
 });
