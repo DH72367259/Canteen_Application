@@ -19,8 +19,17 @@ export default function WorkerOtpVerifyPage() {
   const [qrRetryKey, setQrRetryKey] = useState(0);
 
   useEffect(() => {
-    if (!loading && !user) router.push("/login");
-    if (!loading && user && user.role !== "worker") router.push("/worker/login");
+    if (loading) return;
+    // Give Supabase a tick to restore the session before redirecting.
+    // Without this, a transient race during reload would bounce the worker
+    // to /login — making it look like "retry logged me out".
+    if (!user) {
+      const timer = setTimeout(() => {
+        if (!loading && !user) router.push("/worker/login");
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+    if (user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
   // Called by QRCameraScanner when a NOQX QR payload is detected.
@@ -52,10 +61,16 @@ export default function WorkerOtpVerifyPage() {
   function switchMode(next: Mode) {
     if (next === "qr") {
       // Start getUserMedia synchronously in the click handler — Chrome Android
-      // requires this to show the permission dialog.
-      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
+      // requires this to show the permission dialog. If mediaDevices is
+      // unavailable (HTTP context, iframe), QRCameraScanner falls back to its
+      // own "Start Camera" button instead of crashing the page.
+      try {
+        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({
+          video: { facingMode: "environment" },
+        }) ?? null;
+      } catch {
+        streamPromiseRef.current = null;
+      }
       setQrRetryKey(k => k + 1);
     } else {
       streamPromiseRef.current = null;
@@ -228,7 +243,11 @@ export default function WorkerOtpVerifyPage() {
                 <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
                   <button
                     onClick={() => {
-                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                      try {
+                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                      } catch {
+                        streamPromiseRef.current = null;
+                      }
                       setQrRetryKey(k => k + 1);
                     }}
                     style={{ flex: 1, padding: "0.75rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}

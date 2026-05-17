@@ -225,8 +225,8 @@ export default function QRScanner({ onScanned, onClose, onManualOtp, width = 280
             </ol>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "center" }}>
-            <button onClick={() => window.location.reload()} style={btnOrange}>
-              Reload Page
+            <button onClick={() => setRetryKey((k) => k + 1)} style={btnOrange}>
+              Try Again
             </button>
             {manualOtpBtn}
           </div>
@@ -265,9 +265,6 @@ export default function QRScanner({ onScanned, onClose, onManualOtp, width = 280
           <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
             <button onClick={() => setRetryKey((k) => k + 1)} style={btnDark}>
               Try Again
-            </button>
-            <button onClick={() => window.location.reload()} style={btnOrange}>
-              Reload Page
             </button>
             {manualOtpBtn}
           </div>
