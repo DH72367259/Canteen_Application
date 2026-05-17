@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getCurrentMealPeriod, categoryToMealPeriod, mealLabel, DEFAULT_WINDOWS, type MealWindows } from "@/lib/mealPeriod";
+import { getCurrentMealPeriod, categoryToMealPeriod, DEFAULT_WINDOWS, type MealWindows, type MealPeriod } from "@/lib/mealPeriod";
 import { useAuth } from "@/lib/auth-context";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
@@ -135,32 +135,34 @@ export default function CanteenMenuPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [canteenId]);
 
-  // ── Meal-period gating (client request 2026-04-30) ────────────────────
-  // Only show items whose vendor-assigned category matches the current meal
-  // window. Items the vendor never tagged (no recognisable category) stay
-  // visible so legacy menus aren't accidentally hidden. We re-derive the
-  // window every minute so it ticks over without a reload.
+  // ── Meal-period tabs ──────────────────────────────────────────────────
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
   const currentMeal = getCurrentMealPeriod(now, mealWindows);
-  const mealFilteredItems = currentMeal
-    ? visibleItems.filter(i => {
+  // User can manually switch meal period; default to the active window or "all"
+  const [activeMealTab, setActiveMealTab] = useState<MealPeriod | "all">("all");
+  // Sync default to the current meal once mealWindows + items load
+  useEffect(() => {
+    if (currentMeal) setActiveMealTab(currentMeal);
+  }, [currentMeal]);
+
+  const MEAL_TABS: Array<{ key: MealPeriod | "all"; label: string; icon: string }> = [
+    { key: "all",       label: "All",      icon: "🍽️" },
+    { key: "breakfast", label: "Morning",  icon: "🌅" },
+    { key: "lunch",     label: "Afternoon",icon: "☀️" },
+    { key: "snacks",    label: "Snacks",   icon: "🥡" },
+    { key: "dinner",    label: "Dinner",   icon: "🌙" },
+  ];
+
+  const mealFilteredItems = activeMealTab === "all"
+    ? visibleItems
+    : visibleItems.filter(i => {
         const m = categoryToMealPeriod(i.category);
-        // Snacks are always visible regardless of the current meal window —
-        // students can add snacks to any order at any time of day.
-        return m === null || m === "snacks" || m === currentMeal;
-      })
-    : visibleItems;
-  // Don't count snack items as "hidden" — they are always shown.
-  const hiddenByMeal = currentMeal
-    ? visibleItems.filter(i => {
-        const m = categoryToMealPeriod(i.category);
-        return m !== null && m !== "snacks" && m !== currentMeal;
-      }).length
-    : 0;
+        return m === null || m === activeMealTab || m === "snacks";
+      });
 
   // ── Active orders for this canteen ────────────────────────────────
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
@@ -227,7 +229,7 @@ export default function CanteenMenuPage() {
   const statusLabel = info.status === "open" ? "Open" : info.status === "busy" ? "Busy" : "Closed";
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={{ flexDirection: "column" }}>
       {/* Top bar */}
       <div className="topbar">
         <button onClick={() => router.back()} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "var(--ink-3)" }}>←</button>
@@ -297,14 +299,59 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-      {/* Category tabs (driven by live menu) */}
+      {/* Meal-period tabs */}
+      <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid var(--border)", background: "var(--surface)", scrollbarWidth: "none" }}>
+        {MEAL_TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveMealTab(t.key)}
+            style={{
+              flex: "0 0 auto",
+              padding: "0.65rem 0.9rem",
+              fontSize: "0.8rem",
+              fontWeight: activeMealTab === t.key ? 700 : 500,
+              color: activeMealTab === t.key ? "var(--orange)" : "var(--ink-3)",
+              borderBottom: `2px solid ${activeMealTab === t.key ? "var(--orange)" : "transparent"}`,
+              background: "none",
+              border: "none",
+              borderBottomStyle: "solid",
+              borderBottomWidth: 2,
+              borderBottomColor: activeMealTab === t.key ? "var(--orange)" : "transparent",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.3rem",
+            }}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+            {t.key === currentMeal && t.key !== activeMealTab && (
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--orange)", display: "inline-block", marginLeft: 2 }} />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Category sub-tabs (driven by live menu) */}
       {categories.length > 1 && (
-        <div className="meal-tabs" style={{ overflowX: "auto", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", overflowX: "auto", gap: "0.4rem", padding: "0.5rem 1rem", scrollbarWidth: "none" }}>
           {categories.map(cat => (
             <button
               key={cat}
-              className={`meal-tab ${activeCategory === cat ? "active" : ""}`}
               onClick={() => setActiveCategory(cat)}
+              style={{
+                flex: "0 0 auto",
+                padding: "0.3rem 0.75rem",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                borderRadius: 999,
+                border: `1.5px solid ${activeCategory === cat ? "var(--orange)" : "var(--border)"}`,
+                background: activeCategory === cat ? "var(--orange-light)" : "#f9fafb",
+                color: activeCategory === cat ? "var(--orange-dark)" : "var(--ink-3)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
             >
               {cat}
             </button>
@@ -312,15 +359,8 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-
       {/* Menu items */}
       <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem", paddingBottom: cartCount > 0 ? "8rem" : "5rem" }}>
-        {currentMeal && (
-          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "0.55rem 0.85rem", fontSize: "0.78rem", color: "#9a3412", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <span style={{ fontSize: "1rem" }}>⏰</span>
-            <span>Showing <strong>{mealLabel(currentMeal, mealWindows[currentMeal])}</strong> menu + snacks{hiddenByMeal > 0 ? ` · ${hiddenByMeal} item${hiddenByMeal === 1 ? "" : "s"} hidden until their meal window` : ""}.</span>
-          </div>
-        )}
         {menuLoading && (
           <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "2rem 0", fontSize: "0.85rem" }}>Loading menu…</div>
         )}
