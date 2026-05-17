@@ -270,8 +270,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  // Notify the student when their food is placed in the bin so they know to come pick up.
-  if (status === "placed_in_bin") {
+  // Notify students on all key status transitions.
+  if (["confirmed", "preparing", "placed_in_bin", "collected"].includes(status)) {
     const { data: orderRow } = await supabase
       .from("orders")
       .select("user_id, canteen_id, bin_label")
@@ -279,11 +279,27 @@ export async function PATCH(
       .maybeSingle<{ user_id: string | null; canteen_id: string | null; bin_label: string | null }>();
 
     if (orderRow?.user_id) {
-      const binText = orderRow.bin_label ? ` — Bin ${orderRow.bin_label}` : "";
+      let title = "";
+      let body = "";
+      let type = status;
+
+      if (status === "confirmed") {
+        title = "✅ Order Confirmed!";
+        body = "Your order has been accepted by the canteen. We'll notify you when it starts being prepared.";
+      } else if (status === "preparing") {
+        title = "👨‍🍳 Your food is being prepared!";
+        body = "The canteen has started preparing your order. It'll be ready for pickup soon.";
+      } else if (status === "placed_in_bin") {
+        const binText = orderRow.bin_label ? ` — Bin ${orderRow.bin_label}` : "";
+        title = "🎉 Your food is ready!";
+        body = `Your order is in the bin and ready for pickup${binText}. Show your QR code or OTP to collect it.`;
+      } else if (status === "collected") {
+        title = "✅ Order Collected!";
+        body = "Your order has been collected. Enjoy your meal!";
+      }
+
       await supabase.from("notifications").insert({
-        title: "🎉 Your food is ready!",
-        body: `Your order is in the bin and ready for pickup${binText}. Show your QR code or OTP to collect it.`,
-        type: "placed_in_bin",
+        title, body, type,
         recipient_type: "user",
         recipient_id: orderRow.user_id,
         target_role: "user",

@@ -695,7 +695,7 @@ export default function WorkerOrdersPage() {
       </div>
 
       {/* Bottom nav — inline styles so desktop media-query doesn't hide it */}
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)" }}>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)", pointerEvents: "none" }}>
         {([
           { key: "orders", label: "Orders",      icon: "📦" },
           { key: "prep",   label: "Prep Plan",   icon: "📊" },
@@ -705,7 +705,7 @@ export default function WorkerOrdersPage() {
             style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem",
               padding: "0.5rem 0", background: "none", border: "none", cursor: "pointer",
-              fontSize: "0.65rem", fontWeight: 600,
+              fontSize: "0.65rem", fontWeight: 600, pointerEvents: "auto",
               color: tab === key
                 ? (key === "late" ? "#dc2626" : "var(--orange,#f97316)")
                 : "var(--ink-3,#64748b)",

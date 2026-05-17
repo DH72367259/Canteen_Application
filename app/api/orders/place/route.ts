@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
     ? Number(pcRow.extra_bin_fee_paise)
     : (Number(sc?.extra_bin_fee_paise) || 200);
 
-  const mealsPerBin          = 1;
+  const mealsPerBin          = Number(sc?.meals_per_bin) || 1;
   const snacksWithMealPerBin = Number(sc?.snacks_per_bin) || 3;
   const binPlan = assignBins(cartLines, mealsPerBin, snacksWithMealPerBin, extraFeePaise0);
 

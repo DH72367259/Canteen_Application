@@ -320,6 +320,8 @@ function CartContent() {
     });
     localStorage.setItem("canteen_transactions", JSON.stringify(txns.slice(0, 100)));
 
+    // Clear the persisted cart for this canteen now that the order is placed
+    try { localStorage.removeItem(`menu_cart_${canteenId}`); } catch { /* ignore */ }
     setBusy(false);
     router.replace(`/dashboard/order-status?id=${orderId}`);
   }
@@ -749,9 +751,9 @@ function CartContent() {
         {error && <p className="error-msg">{error}</p>}
       </div>
 
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35 }}>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35, pointerEvents: "none" }}>
         <button className="btn btn-primary btn-full" disabled={busy || cart.length === 0} onClick={handleCheckout}
-          style={{ padding: "0.9rem", fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+          style={{ pointerEvents: "auto", padding: "0.9rem", fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
           {busy ? "Processing…" : (!isPro && proChoice === "go_pro") ? "Get Pro & Save →" : payable === 0 ? "Place Order (Wallet)" : `Pay ₹${payable} via Razorpay →`}
         </button>
       </div>

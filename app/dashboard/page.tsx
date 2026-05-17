@@ -83,6 +83,8 @@ export default function UserHomePage() {
   const [notifs, setNotifs] = useState<Array<{ id: string; title: string; body: string; created_at: string; is_read: boolean }>>([]);
   // Inline canteen-name search (PDF requirement: search bar after greeting)
   const [searchQuery, setSearchQuery] = useState("");
+  // Map of canteenId → matching item names (for food-item search; null when inactive)
+  const [itemMatchMap, setItemMatchMap] = useState<Map<string, string[]> | null>(null);
 
   // Live wall-clock in toolbar (PDF requirement: digital time on tool bar)
   const [now, setNow] = useState<Date>(() => new Date());
@@ -206,6 +208,23 @@ export default function UserHomePage() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [session?.access_token]);
 
+  // ── Food-item search: debounced fetch from /api/canteens/search ────────
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) { setItemMatchMap(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/canteens/search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return;
+        const json = await res.json() as { results?: Array<{ canteenId: string; items: string[] }> };
+        const m = new Map<string, string[]>();
+        for (const r of json.results ?? []) m.set(r.canteenId, r.items);
+        setItemMatchMap(m);
+      } catch { /* ignore, keep showing name-match results */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // ── Fetch canteens whenever coords/college change ───────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -306,15 +325,15 @@ export default function UserHomePage() {
 
   const visibleCanteens = (() => {
     let pool = inRadius;
-    // Apply free-text search across canteen name, description, and location.
-    // Matched as substring (case-insensitive) so users can find "Christ" via
-    // "kengeri", a canteen via its address fragment, etc.
+    // Apply free-text search across canteen name, description, and location,
+    // AND across food items returned by /api/canteens/search (itemMatchIds).
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       pool = pool.filter(c =>
         c.name.toLowerCase().includes(q) ||
         c.desc.toLowerCase().includes(q) ||
-        c.location.toLowerCase().includes(q)
+        c.location.toLowerCase().includes(q) ||
+        (itemMatchMap?.has(c.id) ?? false)
       );
     }
     if (showAll || !selectedLocation || selectedLocation === "All") {
@@ -590,57 +609,7 @@ export default function UserHomePage() {
         </div>
       )}
 
-      {/* ── Active Orders — Swiggy-style tracking cards ── */}
-      {activeOrders.length > 0 && (
-        <div style={{ padding: "0.75rem 1rem 0" }}>
-          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>
-            🔄 Active Orders
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
-            {activeOrders.map(order => {
-              const cfg: Record<string, { label: string; color: string; bg: string; icon: string }> = {
-                placed:              { label: "Order Placed",       color: "#b45309", bg: "#fef3c7", icon: "⏳" },
-                confirmed:           { label: "Confirmed",          color: "#1d4ed8", bg: "#dbeafe", icon: "✅" },
-                preparing:           { label: "Preparing",          color: "#c2410c", bg: "#ffedd5", icon: "👨‍🍳" },
-                ready_for_placement: { label: "Ready Soon",         color: "#c2410c", bg: "#ffedd5", icon: "📦" },
-                placed_in_bin:       { label: "In Your Bin!",       color: "#15803d", bg: "#dcfce7", icon: "🎉" },
-                ready_for_pickup:    { label: "Ready to Pick Up",   color: "#15803d", bg: "#dcfce7", icon: "🎉" },
-                late_pickup:         { label: "Late Pickup ⚠️",     color: "#92400e", bg: "#fef3c7", icon: "⚠️" },
-              };
-              const s = cfg[order.rawStatus] ?? { label: order.rawStatus, color: "#64748b", bg: "#f1f5f9", icon: "📦" };
-              const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");
-              const extra = order.items.length > 2 ? ` +${order.items.length - 2}` : "";
-              return (
-                <Link
-                  key={order.id}
-                  href={`/dashboard/order-status?id=${order.id}`}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1.5px solid var(--border)", borderRadius: 14, padding: "0.7rem 0.9rem", textDecoration: "none", color: "inherit", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", gap: "0.6rem" }}
-                >
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.25rem", flexShrink: 0 }}>
-                    {s.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.12rem", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.68rem", fontWeight: 700, color: s.color, background: s.bg, padding: "0.08rem 0.38rem", borderRadius: 999, whiteSpace: "nowrap" }}>{s.label}</span>
-                      {order.canteenName && <span style={{ fontSize: "0.65rem", color: "var(--ink-3)" }}>{order.canteenName}</span>}
-                    </div>
-                    <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {preview}{extra}
-                    </div>
-                    {order.slotLabel && (
-                      <div style={{ fontSize: "0.68rem", color: "var(--ink-3)", marginTop: "0.08rem" }}>🕐 {order.slotLabel}</div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.15rem", flexShrink: 0 }}>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--ink-2)" }}>₹{order.total}</span>
-                    <span style={{ fontSize: "0.7rem", color: "var(--orange)", fontWeight: 700 }}>Track →</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Active orders floating carousel is rendered at bottom (fixed, above bottom-nav) */}
 
       {/* ── Canteen list ── */}
       <div id="canteens">
@@ -710,6 +679,11 @@ export default function UserHomePage() {
               <div className="canteen-info">
                 <h4>{c.name}</h4>
                 <p>{c.desc}</p>
+                {itemMatchMap?.has(c.id) && (
+                  <p style={{ fontSize: "0.72rem", color: "var(--orange-dark)", fontWeight: 600, margin: "0.2rem 0 0" }}>
+                    🔍 {itemMatchMap.get(c.id)!.join(", ")}
+                  </p>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.35rem", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>⭐ {c.rating}</span>
                   <span style={{ color: "var(--border)" }}>·</span>
@@ -735,7 +709,7 @@ export default function UserHomePage() {
 
       {/* ── NoQx Pro soft-awareness banner — tap to view full Pro details (PDF requirement) ── */}
       <Link href="/dashboard/pro" style={{ textDecoration: "none" }}>
-        <div style={{ margin: "0.5rem 1rem 1rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", cursor: "pointer" }}>
+        <div style={{ margin: "0.5rem 1rem", marginBottom: activeOrders.length > 0 ? "6.5rem" : "1rem", background: "linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)", border: "1.5px solid #fed7aa", borderRadius: 16, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", cursor: "pointer" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "0.1rem" }}>⚡ Skip queues every day</div>
             <div style={{ fontSize: "0.72rem", color: "#b45309", marginBottom: "0.15rem" }}>With 0/- convenience fee</div>
@@ -743,6 +717,78 @@ export default function UserHomePage() {
           </div>
         </div>
       </Link>
+
+      {/* ── Active Orders — floating horizontal swipeable carousel above bottom nav ── */}
+      {activeOrders.length > 0 && (
+        <div style={{
+          position: "fixed", bottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
+          left: "50%", transform: "translateX(-50%)",
+          width: "100%", maxWidth: 430, zIndex: 29, pointerEvents: "none",
+        }}>
+          {/* Label row */}
+          <div style={{ padding: "0 0.75rem 0.3rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", pointerEvents: "auto" }}>
+              🔄 Active Orders
+            </span>
+            {activeOrders.length > 1 && (
+              <span style={{ fontSize: "0.62rem", color: "var(--ink-3)", pointerEvents: "auto" }}>
+                swipe →
+              </span>
+            )}
+          </div>
+          {/* Swipeable horizontal strip */}
+          <div style={{
+            display: "flex", gap: "0.55rem", overflowX: "auto", padding: "0 0.75rem 0.55rem",
+            scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch",
+            scrollbarWidth: "none", msOverflowStyle: "none",
+            pointerEvents: "auto",
+          }}>
+            {activeOrders.map(order => {
+              const cfg: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+                placed:              { label: "Order Placed",     color: "#b45309", bg: "#fef3c7", icon: "⏳" },
+                confirmed:           { label: "Confirmed",        color: "#1d4ed8", bg: "#dbeafe", icon: "✅" },
+                preparing:           { label: "Preparing",        color: "#c2410c", bg: "#ffedd5", icon: "👨‍🍳" },
+                ready_for_placement: { label: "Ready Soon",       color: "#c2410c", bg: "#ffedd5", icon: "📦" },
+                placed_in_bin:       { label: "In Your Bin! 🎉",  color: "#15803d", bg: "#dcfce7", icon: "🎉" },
+                ready_for_pickup:    { label: "Ready ✅",         color: "#15803d", bg: "#dcfce7", icon: "🎉" },
+                late_pickup:         { label: "Late Pickup ⚠️",   color: "#92400e", bg: "#fef3c7", icon: "⚠️" },
+              };
+              const s = cfg[order.rawStatus] ?? { label: order.rawStatus, color: "#64748b", bg: "#f1f5f9", icon: "📦" };
+              const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");
+              const extra = order.items.length > 2 ? ` +${order.items.length - 2}` : "";
+              return (
+                <Link
+                  key={order.id}
+                  href={`/dashboard/order-status?id=${order.id}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0,
+                    width: activeOrders.length === 1 ? "calc(100% - 1.5rem)" : "calc(82% - 0.75rem)",
+                    background: "#fff", border: "1.5px solid var(--border)", borderRadius: 14,
+                    padding: "0.6rem 0.75rem", textDecoration: "none", color: "inherit",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)", scrollSnapAlign: "start",
+                  }}
+                >
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", flexShrink: 0 }}>
+                    {s.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.67rem", fontWeight: 700, color: s.color, marginBottom: "0.08rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {s.label}{order.canteenName ? ` · ${order.canteenName}` : ""}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {preview}{extra}
+                    </div>
+                    {order.slotLabel && (
+                      <div style={{ fontSize: "0.62rem", color: "var(--ink-3)" }}>🕐 {order.slotLabel}</div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--orange)", flexShrink: 0 }}>Track →</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Bottom navigation ── */}
       <nav className="bottom-nav">

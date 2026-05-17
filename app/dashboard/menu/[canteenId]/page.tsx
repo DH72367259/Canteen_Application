@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getCurrentMealPeriod, categoryToMealPeriod, mealLabel, DEFAULT_WINDOWS, type MealWindows } from "@/lib/mealPeriod";
+import { useAuth } from "@/lib/auth-context";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
 const CANTEEN_INFO: Record<string, { name: string; emoji: string; desc: string; status: "open" | "busy" | "closed" }> = {};
@@ -31,9 +32,24 @@ interface LiveCanteenInfo {
   desc: string;
 }
 
+interface ActiveOrder {
+  id: string;
+  rawStatus: string;
+  slotLabel?: string;
+  canteenId?: string;
+  items: Array<{ name: string; quantity: number }>;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  placed: "Order Placed", confirmed: "Confirmed", preparing: "Preparing",
+  ready_for_placement: "Ready Soon", placed_in_bin: "In Your Bin! 🎉",
+  ready_for_pickup: "Ready to Pick Up", late_pickup: "Late Pickup ⚠️",
+};
+
 export default function CanteenMenuPage() {
   const params = useParams();
   const router = useRouter();
+  const { session } = useAuth();
   const canteenId = (params.canteenId as string) || "c1";
 
   // ── Live canteen info (server truth) ──────────────────────────────
@@ -146,7 +162,41 @@ export default function CanteenMenuPage() {
       }).length
     : 0;
 
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // ── Active orders for this canteen ────────────────────────────────
+  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let cancelled = false;
+    fetch("/api/orders", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(r => r.ok ? r.json() : { orders: [] })
+      .then((d: { orders?: ActiveOrder[] }) => {
+        if (cancelled) return;
+        const active = (d.orders ?? []).filter(
+          o => !["collected", "cancelled"].includes(o.rawStatus) && o.canteenId === canteenId
+        );
+        setActiveOrders(active);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [session?.access_token, canteenId]);
+
+  const CART_KEY = `menu_cart_${canteenId}`;
+
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(CART_KEY);
+      return saved ? (JSON.parse(saved) as CartItem[]) : [];
+    } catch { return []; }
+  });
+
+  // Persist cart to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (cart.length > 0) localStorage.setItem(CART_KEY, JSON.stringify(cart));
+      else localStorage.removeItem(CART_KEY);
+    } catch { /* ignore */ }
+  }, [cart, CART_KEY]);
 
   const addItem = (item: { id: string; name: string; price: number }) => {
     if (isClosed) return;
@@ -203,6 +253,47 @@ export default function CanteenMenuPage() {
       {liveError && !live && (
         <div style={{ margin: "0.75rem 1rem 0", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "0.6rem 0.85rem", fontSize: "0.78rem", color: "#92400e" }}>
           ⚠️ {liveError} Showing limited info.
+        </div>
+      )}
+
+      {/* Active orders for this canteen */}
+      {activeOrders.length > 0 && (
+        <div style={{ padding: "0.75rem 1rem 0", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+          <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            🔄 Your Active Orders Here
+          </div>
+          {activeOrders.map(order => {
+            const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");
+            const extra = order.items.length > 2 ? ` +${order.items.length - 2}` : "";
+            const isReady = ["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(order.rawStatus);
+            return (
+              <Link
+                key={order.id}
+                href={`/dashboard/order-status?id=${order.id}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.6rem",
+                  background: isReady ? "#f0fdf4" : "#fff",
+                  border: `1.5px solid ${isReady ? "#86efac" : "var(--border)"}`,
+                  borderRadius: 12, padding: "0.6rem 0.75rem",
+                  textDecoration: "none", color: "inherit",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: isReady ? "#15803d" : "var(--orange)", marginBottom: "0.1rem" }}>
+                    {STATUS_LABELS[order.rawStatus] ?? order.rawStatus}
+                    {order.slotLabel ? ` · ${order.slotLabel}` : ""}
+                  </div>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {preview}{extra}
+                  </div>
+                </div>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: isReady ? "#15803d" : "var(--orange)", flexShrink: 0 }}>
+                  Track →
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
 
@@ -317,9 +408,9 @@ export default function CanteenMenuPage() {
 
       {/* Cart bar */}
       {cartCount > 0 && !isClosed && (
-        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35 }}>
-          <Link href={cartHref} style={{ textDecoration: "none" }}>
-            <button className="btn btn-primary btn-full" style={{ padding: "0.85rem", fontSize: "0.95rem", display: "flex", justifyContent: "space-between" }}>
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35, pointerEvents: "none" }}>
+          <Link href={cartHref} style={{ textDecoration: "none", pointerEvents: "auto" }}>
+            <button className="btn btn-primary btn-full" style={{ padding: "0.85rem", fontSize: "0.95rem", display: "flex", justifyContent: "space-between", pointerEvents: "auto" }}>
               <span>🛒 {cartCount} item{cartCount > 1 ? "s" : ""} in cart</span>
               <span>₹{cartTotal} →</span>
             </button>
