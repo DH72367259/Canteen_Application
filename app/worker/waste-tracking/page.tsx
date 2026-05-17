@@ -43,7 +43,7 @@ export default function WorkerDashboard() {
   // Redirect non-workers
   useEffect(() => {
     if (!roleLoading && role && role !== 'worker') {
-      router.push('/');
+      router.push('/worker/login');
     }
   }, [role, roleLoading, router]);
 

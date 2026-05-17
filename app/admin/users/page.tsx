@@ -45,7 +45,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     if (!loading && !user) { router.push("/login"); return; }
-    if (!loading && user && user.role !== "super_admin") { router.push("/"); return; }
+    if (!loading && user && user.role !== "super_admin") { router.push("/login"); return; }
     if (!loading && user && session) fetchUsers();
   }, [user, loading, session, router, fetchUsers]);
 

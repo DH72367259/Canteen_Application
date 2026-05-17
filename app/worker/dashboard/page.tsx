@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import dynamic from "next/dynamic";
@@ -98,6 +98,7 @@ export default function WorkerApp() {
   const { user, session, loading, logout } = useAuth();
   const [tab, setTab] = useState<"orders" | "bins" | "prep">("orders");
 
+  const wrongRoleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (loading) return;
     if (!user) {
@@ -105,10 +106,22 @@ export default function WorkerApp() {
         const stored = localStorage.getItem("canteen_auth_v2");
         if (stored && stored.length > 20) return;
       }
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
       router.replace("/worker/login");
       return;
     }
-    if (user.role !== "worker") router.replace("/worker/login");
+    if (user.role === "worker") {
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
+      return;
+    }
+    if (wrongRoleTimerRef.current) return;
+    wrongRoleTimerRef.current = setTimeout(() => {
+      wrongRoleTimerRef.current = null;
+      const role = user.role;
+      if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
+      else if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
+      else router.replace("/worker/login");
+    }, 400);
   }, [user, loading, router]);
 
   if (loading || !user || user.role !== "worker") {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import CancelOrderModal from "@/components/CancelOrderModal";
@@ -36,6 +36,7 @@ export default function SuperAdminDashboard() {
   // then keep them alive to avoid re-fetching data on tab switches.
   const [visited, setVisited] = useState<Set<AdminSection>>(new Set(["overview"]));
   const isSuperAdmin = user?.role === "super_admin";
+  const wrongRoleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goSection = (s: AdminSection) => {
     setSection(s);
@@ -51,10 +52,23 @@ export default function SuperAdminDashboard() {
         const stored = localStorage.getItem("canteen_auth_v2");
         if (stored && stored.length > 20) return;
       }
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
       router.replace("/login");
       return;
     }
-    if (user.role !== "super_admin" && user.role !== "co_admin") router.replace("/login");
+    if (user.role === "super_admin" || user.role === "co_admin") {
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
+      return;
+    }
+    // Role mismatch — debounce 400 ms before redirecting to avoid TOKEN_REFRESHED flicker
+    if (wrongRoleTimerRef.current) return;
+    wrongRoleTimerRef.current = setTimeout(() => {
+      wrongRoleTimerRef.current = null;
+      const role = user.role;
+      if (role === "vendor" || role === "canteen_admin") router.replace("/vendor/dashboard");
+      else if (role === "worker") router.replace("/worker/orders");
+      else router.replace("/login");
+    }, 400);
   }, [user, loading, router]);
 
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };

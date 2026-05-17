@@ -202,6 +202,11 @@ export default function VendorDashboard() {
   // Redirect if not vendor/canteen_admin
   // The double-check against a stored Supabase session prevents the
   // login-flicker bug: when a vendor first logs in, useAuth briefly returns
+  // Debounce ref: don't redirect on the first render of a wrong role — the role can
+  // flicker transiently during TOKEN_REFRESHED. Only redirect after 400 ms of a
+  // sustained mismatch so single-frame role glitches never bounce the vendor out.
+  const wrongRoleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // user=null between the explicit signIn() resolving and the profile being
   // hydrated. Without this guard the dashboard bounced to /login and the login
   // page bounced back — a visible double-flash. If the supabase session
@@ -212,18 +217,30 @@ export default function VendorDashboard() {
       // If a Supabase session exists in storage we are mid-hydration — wait,
       // don't bounce. The auth-context will deliver the user shortly.
       if (typeof window !== "undefined") {
-        // Our supabase client uses storageKey: 'canteen_auth_v2' (see lib/supabase-client.ts).
-        // The historical 'sb-*-auth-token' check never matched, so this guard always failed,
-        // bouncing vendors to /login on every refresh and producing a student-login flicker.
         const stored = localStorage.getItem("canteen_auth_v2");
         if (stored && stored.length > 20) return;
       }
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
       router.replace("/login");
       return;
     }
-    if (user.role !== "vendor" && user.role !== "canteen_admin") {
-      router.replace("/login");
+    if (user.role === "vendor" || user.role === "canteen_admin") {
+      // Role is correct — cancel any pending wrong-role redirect
+      if (wrongRoleTimerRef.current) { clearTimeout(wrongRoleTimerRef.current); wrongRoleTimerRef.current = null; }
+      return;
     }
+    // Role mismatch — wait 400 ms before redirecting so a transient TOKEN_REFRESHED
+    // flicker doesn't bounce the vendor to the wrong dashboard.
+    if (wrongRoleTimerRef.current) return; // timer already running
+    wrongRoleTimerRef.current = setTimeout(() => {
+      wrongRoleTimerRef.current = null;
+      // Route directly to the correct dashboard for the current role instead of going
+      // through /login, which prevents /login from re-routing to a wrong place.
+      const role = user.role;
+      if (role === "super_admin" || role === "co_admin") router.replace("/admin/dashboard");
+      else if (role === "worker") router.replace("/worker/orders");
+      else router.replace("/login");
+    }, 400);
   }, [user, loading, router]);
 
   const handleToggleCanteen = async () => {
