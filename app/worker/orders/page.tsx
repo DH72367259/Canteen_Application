@@ -747,7 +747,20 @@ export default function WorkerOrdersPage() {
                         })}
                       </div>
 
-                      <div style={{ padding: "0 0.75rem 0.75rem" }}>
+                      <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {/* For orders not yet physically in a bin, worker must place it first */}
+                        {["confirmed", "preparing"].includes(order.status) && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Place food in bin and mark as ready?\n\nBin: ${order.bin_label || "Assigned bin"}\nOrder: #${order.id.slice(-8).toUpperCase()}`)) {
+                                updateStatus(order.id, "placed_in_bin");
+                              }
+                            }}
+                            style={{ width: "100%", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, padding: "0.65rem", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}
+                          >
+                            📦 Mark as Placed in Bin
+                          </button>
+                        )}
                         <button
                           onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
                           style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
