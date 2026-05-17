@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import QRCameraScanner from "@/components/QRCameraScanner";
 
 interface WorkerOrder {
   id: string;
@@ -173,9 +174,8 @@ export default function WorkerOrdersPage() {
   const [otpInput, setOtpInput]     = useState("");
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [modalMode, setModalMode]   = useState<"otp" | "qr">("otp");
-  const [qrError, setQrError]       = useState<string | null>(null);
   const [qrRetryKey, setQrRetryKey] = useState(0);
-  const qrInstanceRef               = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
+  const streamPromiseRef            = useRef<Promise<MediaStream> | null>(null);
   // Late-pickup auto-switch: tracks whether the current late-tab session was
   // triggered by the banner (vs a manual tab click). The 45s auto-return only
   // runs for banner-triggered switches.
@@ -330,141 +330,38 @@ export default function WorkerOrdersPage() {
     } finally { setOtpSubmitting(false); }
   }
 
-  // Start QR camera scanner inside the modal when in QR mode.
-  // qrRetryKey increments on "Try Again" to force a fresh camera start.
-  useEffect(() => {
-    if (!otpModal || modalMode !== "qr" || !session) return;
-    let cancelled = false;
-
-    async function startQr() {
-      // Stop & clear any previous instance before creating a new one
-      const prev = qrInstanceRef.current;
-      if (prev) {
-        try { await prev.stop(); prev.clear(); } catch { /* ignore */ }
-        qrInstanceRef.current = null;
-      }
-
-      // Do NOT pre-check navigator.permissions — on Android Chrome it returns
-      // "denied" for sites never visited, even when permission can still be granted.
-      // Instead detect denial from the actual getUserMedia error below.
-      const { Html5Qrcode } = await import("html5-qrcode");
-
-      // Wait for the DOM element to appear (it may be freshly mounted after retry)
-      let el: HTMLElement | null = null;
-      for (let attempt = 0; attempt < 15; attempt++) {
-        el = document.getElementById("modal-qr-reader");
-        if (el) break;
-        await new Promise(r => setTimeout(r, 50));
-      }
-      if (!el || cancelled) return;
-
-      const qr = new Html5Qrcode("modal-qr-reader");
-      qrInstanceRef.current = qr;
-
-      const onDecoded = async (decodedText: string) => {
-        if (cancelled) return;
-        const parts = decodedText.split("|");
-        if (parts.length !== 4 || parts[0] !== "NOQX") return;
-        cancelled = true;
-        try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
-        qrInstanceRef.current = null;
-        setOtpSubmitting(true);
-        try {
-          const res = await fetch(`/api/orders/${otpModal}/verify-qr`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session!.access_token}` },
-            body: JSON.stringify({ qrPayload: decodedText }),
-          });
-          const data = await res.json() as { error?: string };
-          if (!res.ok) throw new Error(data.error ?? "QR verification failed");
-          setOrders((prev) => prev.map((o) => (o.id === otpModal ? { ...o, status: "collected" } : o)));
-          setOtpModal(null);
-          setOtpInput("");
-          setModalMode("otp");
-        } catch (e: unknown) {
-          setQrError(e instanceof Error ? e.message : "QR verification failed");
-        } finally {
-          setOtpSubmitting(false);
-        }
-      };
-
-      const config = { fps: 10, qrbox: { width: 200, height: 200 } };
-
-      let started = false;
-
-      const isPermDenied = (e: unknown) =>
-        e instanceof Error && (e.name === "NotAllowedError" || /permission|denied|not allowed/i.test(e.message));
-
-      // Strategy 1: enumerate real hardware camera IDs — triggers getUserMedia so
-      // Chrome shows the permission dialog on first visit on any Android device.
-      try {
-        const cameras = await Html5Qrcode.getCameras();
-        if (cameras.length > 0 && !cancelled) {
-          const sorted = [
-            ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
-            ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
-          ];
-          for (const cam of sorted) {
-            if (cancelled) break;
-            try {
-              await qr.start(cam.id, config, onDecoded, () => {});
-              started = true;
-              break;
-            } catch { continue; }
-          }
-        }
-      } catch (e) {
-        if (isPermDenied(e) && !cancelled) {
-          setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
-          return;
-        }
-      }
-
-      // Strategy 2: constraint-based fallback
-      if (!started && !cancelled) {
-        for (const c of [{ facingMode: { ideal: "environment" } }, {}] as MediaTrackConstraints[]) {
-          if (cancelled) break;
-          try {
-            await qr.start(c, config, onDecoded, () => {});
-            started = true;
-            break;
-          } catch (e) {
-            if (isPermDenied(e) && !cancelled) {
-              setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
-              return;
-            }
-          }
-        }
-      }
-
-      if (!started && !cancelled) {
-        setQrError("Camera unavailable. Allow camera access and tap Try Again.");
-      }
+  // Called by QRCameraScanner when a valid NOQX QR payload is detected.
+  const handleQrScanned = useCallback(async (decodedText: string) => {
+    const parts = decodedText.split("|");
+    if (parts.length !== 4 || parts[0] !== "NOQX") return; // not our QR
+    if (!otpModal || !session) return;
+    setOtpSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${otpModal}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ qrPayload: decodedText }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "QR verification failed");
+      setOrders((prev) => prev.map((o) => (o.id === otpModal ? { ...o, status: "collected" } : o)));
+      setOtpModal(null);
+      setOtpInput("");
+      setModalMode("otp");
+      streamPromiseRef.current = null;
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "QR verification failed");
+    } finally {
+      setOtpSubmitting(false);
     }
-
-    void startQr();
-
-    return () => {
-      cancelled = true;
-      const qr = qrInstanceRef.current;
-      if (qr) {
-        qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
-        qrInstanceRef.current = null;
-      }
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otpModal, modalMode, session, qrRetryKey]);
+  }, [otpModal, session]);
 
   function closeModal() {
-    const qr = qrInstanceRef.current;
-    if (qr) {
-      qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
-      qrInstanceRef.current = null;
-    }
+    streamPromiseRef.current = null;
     setOtpModal(null);
     setOtpInput("");
     setModalMode("otp");
-    setQrError(null);
   }
 
   // Orders tab: current slot + 60-min upcoming (never late_pickup — those go to Late tab)
@@ -842,14 +739,15 @@ export default function WorkerOrdersPage() {
                 <button
                   key={m}
                   onClick={() => {
-                    setQrError(null); setOtpInput("");
+                    setOtpInput("");
                     if (m === "qr") {
-                      // getUserMedia MUST be called synchronously in the click handler —
-                      // no await before it — so Chrome on Android keeps the user-gesture
-                      // context and shows the permission dialog on first use.
-                      navigator.mediaDevices?.getUserMedia({ video: true })
-                        .then(s => s.getTracks().forEach(t => t.stop()))
-                        .catch(() => {});
+                      // Start getUserMedia synchronously in the click handler —
+                      // Chrome Android requires this to show the permission dialog.
+                      // Store the Promise so QRCameraScanner can use the stream directly.
+                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "environment" },
+                      });
+                      setQrRetryKey(k => k + 1);
                     }
                     setModalMode(m);
                   }}
@@ -903,48 +801,14 @@ export default function WorkerOrdersPage() {
             {modalMode === "qr" && (
               <>
                 <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
-                  {qrError ? "" : "Point camera at student's QR code"}
+                  Point camera at student&apos;s QR code
                 </p>
 
-                {/* Keep the div always mounted so html5-qrcode can find it on retry */}
-                <div
-                  id="modal-qr-reader"
-                  style={{
-                    width: "100%", borderRadius: 12, overflow: "hidden",
-                    border: `2px solid ${qrError ? "#fca5a5" : "#e2e8f0"}`,
-                    background: "#000", minHeight: qrError ? 0 : 220,
-                    display: qrError ? "none" : "block",
-                  }}
+                <QRCameraScanner
+                  key={qrRetryKey}
+                  streamPromise={streamPromiseRef.current}
+                  onScanned={handleQrScanned}
                 />
-
-                {qrError && (
-                  <div style={{ textAlign: "center", padding: "0.5rem 0 0.25rem" }}>
-                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.85rem", marginBottom: "1rem", lineHeight: 1.5 }}>
-                      {qrError}
-                    </p>
-                    <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => {
-                          // Synchronous getUserMedia call to re-trigger permission dialog
-                          navigator.mediaDevices?.getUserMedia({ video: true })
-                            .then(s => s.getTracks().forEach(t => t.stop()))
-                            .catch(() => {});
-                          setQrError(null);
-                          setQrRetryKey(k => k + 1);
-                        }}
-                        style={{ padding: "0.6rem 1.2rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
-                      >
-                        Try Again
-                      </button>
-                      <button
-                        onClick={() => { setModalMode("otp"); setQrError(null); }}
-                        style={{ padding: "0.6rem 1.2rem", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
-                      >
-                        Use OTP Instead
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 {otpSubmitting && (
                   <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
@@ -952,12 +816,24 @@ export default function WorkerOrdersPage() {
                   </p>
                 )}
 
-                <button
-                  onClick={() => !otpSubmitting && closeModal()}
-                  style={{ width: "100%", marginTop: "0.85rem", padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.88rem" }}
-                >
-                  Cancel
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+                  <button
+                    onClick={() => {
+                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                      setQrRetryKey(k => k + 1);
+                    }}
+                    disabled={otpSubmitting}
+                    style={{ flex: 1, padding: "0.65rem", border: "none", background: "#1e293b", color: "#fff", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={() => !otpSubmitting && closeModal()}
+                    style={{ flex: 1, padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </>
             )}
           </div>

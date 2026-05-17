@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import QRCameraScanner from "@/components/QRCameraScanner";
 
 type Mode = "otp" | "qr";
 
@@ -14,9 +15,7 @@ export default function WorkerOtpVerifyPage() {
   const [busy, setBusy]         = useState(false);
   const [result, setResult]     = useState<{ ok: boolean; message: string } | null>(null);
   const inputRef                = useRef<HTMLInputElement>(null);
-  // Track the running Html5Qrcode instance so we can stop it on cleanup
-  const qrInstanceRef           = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null);
-  const [qrError, setQrError]   = useState<string | null>(null);
+  const streamPromiseRef        = useRef<Promise<MediaStream> | null>(null);
   const [qrRetryKey, setQrRetryKey] = useState(0);
 
   useEffect(() => {
@@ -24,153 +23,44 @@ export default function WorkerOtpVerifyPage() {
     if (!loading && user && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
-  // Start camera scanner when in QR mode and no result shown yet
-  useEffect(() => {
-    if (mode !== "qr" || result !== null || !session) return;
-
-    let cancelled = false;
-    setQrError(null);
-
-    async function startScanner() {
-      // Stop any previous instance first
-      const prev = qrInstanceRef.current;
-      if (prev) {
-        try { await prev.stop(); prev.clear(); } catch { /* ignore */ }
-        qrInstanceRef.current = null;
-      }
-
-      const { Html5Qrcode } = await import("html5-qrcode");
-
-      // Wait for #qr-reader div to be mounted
-      let el: HTMLElement | null = null;
-      for (let attempt = 0; attempt < 20; attempt++) {
-        el = document.getElementById("qr-reader");
-        if (el) break;
-        await new Promise(r => setTimeout(r, 50));
-      }
-      if (!el || cancelled) return;
-
-      const qr = new Html5Qrcode("qr-reader");
-      qrInstanceRef.current = qr;
-
-      const config = { fps: 10, qrbox: { width: 240, height: 240 } };
-
-      const onDecoded = async (decodedText: string) => {
-        if (cancelled) return;
-        // Validate format: NOQX|{orderId}|{window}|{hmac}
-        const parts = decodedText.split("|");
-        if (parts.length !== 4 || parts[0] !== "NOQX") return; // not our QR — keep scanning
-        const orderId = parts[1];
-        cancelled = true;
-        try { await qr.stop(); qr.clear(); } catch { /* ignore */ }
-        qrInstanceRef.current = null;
-
-        setBusy(true);
-        setResult(null);
-        try {
-          const res = await fetch(`/api/orders/${orderId}/verify-qr`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session!.access_token}`,
-            },
-            body: JSON.stringify({ qrPayload: decodedText }),
-          });
-          const data = await res.json() as { error?: string; message?: string };
-          if (!res.ok) throw new Error(data.error ?? "Verification failed");
-          setResult({ ok: true, message: "Order collected ✅  Bin freed." });
-        } catch (e: unknown) {
-          setResult({ ok: false, message: e instanceof Error ? e.message : "Verification failed" });
-        } finally {
-          setBusy(false);
-        }
-      };
-
-      const isPermDenied = (e: unknown) =>
-        e instanceof Error && (e.name === "NotAllowedError" || /permission|denied|not allowed/i.test(e.message));
-
-      let started = false;
-
-      // Strategy 1: enumerate real camera IDs via getCameras() — triggers
-      // getUserMedia() so Chrome shows the permission dialog on first visit.
-      // Do NOT pre-check navigator.permissions: on Android Chrome it returns
-      // "denied" for sites never visited even when permission can still be granted.
-      try {
-        const cameras = await Html5Qrcode.getCameras();
-        if (cameras.length > 0 && !cancelled) {
-          const sorted = [
-            ...cameras.filter(c => /back|rear|environment/i.test(c.label)),
-            ...cameras.filter(c => !/back|rear|environment/i.test(c.label)),
-          ];
-          for (const cam of sorted) {
-            if (cancelled) break;
-            try {
-              await qr.start(cam.id, config, onDecoded, () => {});
-              started = true;
-              break;
-            } catch { continue; }
-          }
-        }
-      } catch (e) {
-        if (isPermDenied(e) && !cancelled) {
-          setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
-          return;
-        }
-      }
-
-      // Strategy 2: constraint-based fallback
-      if (!started && !cancelled) {
-        for (const c of [{ facingMode: { ideal: "environment" } }, {}] as MediaTrackConstraints[]) {
-          if (cancelled) break;
-          try {
-            await qr.start(c, config, onDecoded, () => {});
-            started = true;
-            break;
-          } catch (e) {
-            if (isPermDenied(e) && !cancelled) {
-              setQrError("Camera permission blocked. In Chrome tap ⋮ → Site settings → Camera → Allow, then tap Try Again.");
-              return;
-            }
-          }
-        }
-      }
-
-      if (!started && !cancelled) {
-        setQrError("Camera unavailable. Allow camera access and tap Try Again.");
-      }
+  // Called by QRCameraScanner when a NOQX QR payload is detected.
+  const handleQrScanned = useCallback(async (decodedText: string) => {
+    const parts = decodedText.split("|");
+    if (parts.length !== 4 || parts[0] !== "NOQX") return;
+    const orderId = parts[1];
+    if (!session) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ qrPayload: decodedText }),
+      });
+      const data = await res.json() as { error?: string; message?: string };
+      if (!res.ok) throw new Error(data.error ?? "Verification failed");
+      setResult({ ok: true, message: "Order collected ✅  Bin freed." });
+      streamPromiseRef.current = null;
+    } catch (e: unknown) {
+      setResult({ ok: false, message: e instanceof Error ? e.message : "Verification failed" });
+    } finally {
+      setBusy(false);
     }
-
-    // Small delay ensures the #qr-reader div is mounted in DOM
-    const t = setTimeout(startScanner, 80);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-      const qr = qrInstanceRef.current;
-      if (qr) {
-        qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
-        qrInstanceRef.current = null;
-      }
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, result, session, qrRetryKey]);
+  }, [session]);
 
-  // Stop camera when leaving QR mode
   function switchMode(next: Mode) {
-    const qr = qrInstanceRef.current;
-    if (qr) {
-      qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
-      qrInstanceRef.current = null;
-    }
     if (next === "qr") {
-      // Call getUserMedia synchronously inside the click/gesture context so
-      // Chrome on Android shows the permission dialog on first use.
-      navigator.mediaDevices?.getUserMedia({ video: true })
-        .then(s => s.getTracks().forEach(t => t.stop()))
-        .catch(() => {});
+      // Start getUserMedia synchronously in the click handler — Chrome Android
+      // requires this to show the permission dialog.
+      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      setQrRetryKey(k => k + 1);
+    } else {
+      streamPromiseRef.current = null;
     }
     setResult(null);
-    setQrError(null);
     setOtp("");
     setMode(next);
   }
@@ -323,55 +213,35 @@ export default function WorkerOtpVerifyPage() {
                   Point camera at the student&apos;s QR code
                 </p>
 
-                {/* Camera error state */}
-                {qrError ? (
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
-                      <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📷</div>
-                      <p style={{ fontWeight: 700, color: "#dc2626", fontSize: "0.9rem", margin: "0 0 0.5rem" }}>{qrError}</p>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => {
-                          navigator.mediaDevices?.getUserMedia({ video: true })
-                            .then(s => s.getTracks().forEach(t => t.stop()))
-                            .catch(() => {});
-                          setQrError(null);
-                          setQrRetryKey(k => k + 1);
-                        }}
-                        style={{ padding: "0.75rem 1.5rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                      >
-                        Try Again
-                      </button>
-                      <button
-                        onClick={() => switchMode("otp")}
-                        style={{ padding: "0.75rem 1.5rem", background: "#f1f5f9", color: "#1e293b", border: "1.5px solid #cbd5e1", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                      >
-                        Use OTP Instead
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* html5-qrcode mounts into this div */}
-                    <div
-                      id="qr-reader"
-                      style={{
-                        width: "100%", maxWidth: 320, margin: "0 auto",
-                        borderRadius: 16, overflow: "hidden",
-                        border: "2px solid #e2e8f0",
-                        background: "#000",
-                        minHeight: 280,
-                      }}
-                    />
+                <QRCameraScanner
+                  key={qrRetryKey}
+                  streamPromise={streamPromiseRef.current}
+                  onScanned={handleQrScanned}
+                />
 
-                    {busy && (
-                      <p style={{ textAlign: "center", marginTop: "1rem", color: "#64748b", fontWeight: 600, fontSize: "0.9rem" }}>
-                        Verifying QR...
-                      </p>
-                    )}
-                  </>
+                {busy && (
+                  <p style={{ textAlign: "center", marginTop: "1rem", color: "#64748b", fontWeight: 600, fontSize: "0.9rem" }}>
+                    Verifying QR...
+                  </p>
                 )}
+
+                <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+                  <button
+                    onClick={() => {
+                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                      setQrRetryKey(k => k + 1);
+                    }}
+                    style={{ flex: 1, padding: "0.75rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={() => switchMode("otp")}
+                    style={{ flex: 1, padding: "0.75rem", background: "#f1f5f9", color: "#1e293b", border: "1.5px solid #cbd5e1", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}
+                  >
+                    Use OTP Instead
+                  </button>
+                </div>
 
                 <div style={{ marginTop: "1.5rem", background: "#f8fafc", borderRadius: 14, padding: "1rem 1.25rem", border: "1px solid var(--border)" }}>
                   <p style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--ink-3)", marginBottom: "0.5rem" }}>HOW TO USE</p>
