@@ -180,7 +180,7 @@ export default function WorkerOrdersPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/login");
     // Only redirect if role is fully resolved — prevents flicker during auth
-    if (!loading && user && user.role && user.role !== "worker") router.push("/");
+    if (!loading && user && user.role && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
   useEffect(() => {

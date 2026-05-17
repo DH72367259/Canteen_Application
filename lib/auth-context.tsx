@@ -261,6 +261,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Tracks the last successfully resolved role so TOKEN_REFRESHED can't downgrade a
   // privileged user when fetchProfile fails or times out during a background token renewal.
   const roleRef = useRef<UserRole>(null)
+  // Mirror of the user state kept in a ref so onAuthStateChange closures can read
+  // the current role without stale-closure issues (avoids adding `user` to the dep array).
+  const userRef = useRef<AuthUser | null>(null)
 
   // Declared before useEffect to satisfy React Compiler linting (hoisted at runtime)
   async function registerSession(token: string) {
@@ -442,7 +445,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // On SIGNED_IN, clear old role from previous user session to prevent confusion
         // when switching between accounts (e.g., student → admin → student).
         // The old roleRef should not influence the new login's role detection.
-        const existingRole = event === 'SIGNED_IN' ? null : roleRef.current
+        // For TOKEN_REFRESHED: prefer roleRef (synchronously updated), then userRef
+        // (set after React renders) as a fallback for the startup race where roleRef
+        // is still null when a token refresh fires alongside INITIAL_SESSION.
+        const existingRole = event === 'SIGNED_IN' ? null : (roleRef.current ?? userRef.current?.role ?? null)
         const meta = session.user.user_metadata ?? {}
         const hasPassword = meta.has_password === true
         const pwChangedAt: string | undefined = meta.password_changed_at
@@ -495,6 +501,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (profile._resolved === false) {
           const metaRole = (session.user.user_metadata?.role as UserRole) ?? null
           const fallbackRole = existingRole ?? metaRole ?? 'user'
+          // Safety: for background token refreshes, if we can't confirm ANY role
+          // (no prior role, no JWT metadata), don't downgrade the current user state
+          // to 'user' — that flashes the student UI for workers/admins whose JWT
+          // doesn't carry a role claim (e.g., workers created directly in the DB).
+          if (fallbackRole === 'user' && event === 'TOKEN_REFRESHED') {
+            setLoading(false)
+            return
+          }
           resolvedProfile = { ...profile, role: fallbackRole }
         }
         if (profile._resolved !== false) setCachedProfile(session.user.id, resolvedProfile)
@@ -524,6 +538,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Keep userRef in sync so the onAuthStateChange closure can read the current role
+  // without stale-closure issues, even when roleRef.current is momentarily null.
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
 
   // Session heartbeat — keep active_sessions table up to date every 5 minutes
   useEffect(() => {

@@ -31,7 +31,7 @@ export default function WorkerBinsPage() {
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
-    if (!loading && user && user.role !== "worker") router.push("/");
+    if (!loading && user && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
   useEffect(() => {

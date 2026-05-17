@@ -21,7 +21,7 @@ export default function WorkerOtpVerifyPage() {
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
-    if (!loading && user && user.role !== "worker") router.push("/");
+    if (!loading && user && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
   // Start camera scanner when in QR mode and no result shown yet

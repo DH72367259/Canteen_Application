@@ -108,7 +108,7 @@ export default function WorkerApp() {
       router.replace("/worker/login");
       return;
     }
-    if (user.role !== "worker") router.replace("/");
+    if (user.role !== "worker") router.replace("/worker/login");
   }, [user, loading, router]);
 
   if (loading || !user || user.role !== "worker") {
