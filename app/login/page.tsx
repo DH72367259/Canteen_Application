@@ -202,7 +202,7 @@ function LoginContent() {
   // ── Student sign-in — username or phone + password ─────────────────────
   async function handleSignIn() {
     const id = identifier.trim().replace(/^@/, "");
-    if (!id) { setError("Enter your username or 10-digit mobile number."); return; }
+    if (!id) { setError("Enter your username or email address."); return; }
     if (!password) { setError("Enter your password."); return; }
     setBusy(true); setError(null);
     try {
@@ -218,7 +218,7 @@ function LoginContent() {
           : msg.toLowerCase().includes("timed out")
           ? "Connection timed out. Check your internet and try again."
           : msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("no account")
-          ? "No account found with that username. Try your phone number instead, or register."
+          ? "No account found with that username. Try your email address instead, or register."
           : msg.toLowerCase().includes("database error") || msg.toLowerCase().includes("querying schema")
           ? "Login service temporarily unavailable. Please try again in a moment."
           : msg
@@ -643,11 +643,11 @@ function LoginContent() {
         {tab === "student" && !showSetup && !registerMode && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div className="form-group">
-              <label className="form-label">Username or Mobile Number</label>
+              <label className="form-label">Username or Email</label>
               <input
                 className="form-input"
                 type="text"
-                placeholder="@username  or  10-digit number"
+                placeholder="@username  or  email address"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value.replace(/\s/g, ""))}
                 onKeyDown={e => e.key === "Enter" && handleSignIn()}
