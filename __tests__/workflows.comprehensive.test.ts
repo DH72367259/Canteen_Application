@@ -220,7 +220,7 @@ describe("Comprehensive Workflows - Dynamic Data Handling", () => {
       const { data, error } = await db.from("orders")
         .select("id").eq("canteen_id", canteenId)
         .eq("slot_label", "12:00 PM - 12:15 PM")
-        .not("status", "in", '("cancelled","refunded")');
+        .not("status", "in", '("cancelled")');
 
       expect(error).toBeNull();
       expect(Array.isArray(data)).toBe(true);
