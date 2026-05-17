@@ -175,6 +175,8 @@ export default function WorkerOrdersPage() {
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [modalMode, setModalMode]   = useState<"otp" | "qr">("otp");
   const [qrRetryKey, setQrRetryKey] = useState(0);
+  const [qrVerifyError, setQrVerifyError] = useState<string | null>(null);
+  const [otpError, setOtpError]           = useState<string | null>(null);
   const streamPromiseRef            = useRef<Promise<MediaStream> | null>(null);
   // Late-pickup auto-switch: tracks whether the current late-tab session was
   // triggered by the banner (vs a manual tab click). The 45s auto-return only
@@ -325,8 +327,9 @@ export default function WorkerOrdersPage() {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "collected" } : o)));
       setOtpModal(null);
       setOtpInput("");
+      setOtpError(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Error verifying OTP");
+      setOtpError(e instanceof Error ? e.message : "Error verifying OTP");
     } finally { setOtpSubmitting(false); }
   }
 
@@ -348,9 +351,11 @@ export default function WorkerOrdersPage() {
       setOtpModal(null);
       setOtpInput("");
       setModalMode("otp");
+      setQrVerifyError(null);
       streamPromiseRef.current = null;
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "QR verification failed");
+      const msg = e instanceof Error ? e.message : "QR verification failed";
+      setQrVerifyError(msg);
     } finally {
       setOtpSubmitting(false);
     }
@@ -362,6 +367,8 @@ export default function WorkerOrdersPage() {
     setOtpModal(null);
     setOtpInput("");
     setModalMode("otp");
+    setQrVerifyError(null);
+    setOtpError(null);
   }
 
   // Orders tab: current slot + 60-min upcoming (never late_pickup — those go to Late tab)
@@ -740,6 +747,8 @@ export default function WorkerOrdersPage() {
                   key={m}
                   onClick={() => {
                     setOtpInput("");
+                    setQrVerifyError(null);
+                    setOtpError(null);
                     if (m === "qr") {
                       // Start getUserMedia synchronously in the click handler —
                       // Chrome Android requires this to show the permission dialog.
@@ -772,12 +781,17 @@ export default function WorkerOrdersPage() {
                   inputMode="numeric"
                   maxLength={6}
                   value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) => { setOtpInput(e.target.value.replace(/\D/g, "")); setOtpError(null); }}
                   placeholder="0 0 0 0"
                   autoFocus
                   disabled={otpSubmitting}
-                  style={{ display: "block", width: "100%", padding: "0.9rem", fontSize: "2rem", letterSpacing: "0.35rem", textAlign: "center", border: "2px solid var(--border)", borderRadius: 12, marginBottom: "1rem", fontWeight: 700, boxSizing: "border-box" }}
+                  style={{ display: "block", width: "100%", padding: "0.9rem", fontSize: "2rem", letterSpacing: "0.35rem", textAlign: "center", border: `2px solid ${otpError ? "#fca5a5" : "var(--border)"}`, borderRadius: 12, marginBottom: otpError ? "0.5rem" : "1rem", fontWeight: 700, boxSizing: "border-box" }}
                 />
+                {otpError && (
+                  <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "0.6rem 0.75rem", marginBottom: "0.85rem", textAlign: "center" }}>
+                    <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>❌ {otpError}</p>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button
                     onClick={() => !otpSubmitting && closeModal()}
@@ -800,40 +814,72 @@ export default function WorkerOrdersPage() {
             {/* QR scan mode */}
             {modalMode === "qr" && (
               <>
-                <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
-                  Point camera at student&apos;s QR code
-                </p>
+                {/* Inline QR verification error */}
+                {qrVerifyError ? (
+                  <>
+                    <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 12, padding: "1rem", marginBottom: "0.85rem", textAlign: "center" }}>
+                      <div style={{ fontSize: "1.75rem", marginBottom: "0.35rem" }}>❌</div>
+                      <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", margin: 0, lineHeight: 1.5 }}>
+                        {qrVerifyError}
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        onClick={() => {
+                          setQrVerifyError(null);
+                          streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                          setQrRetryKey(k => k + 1);
+                        }}
+                        style={{ flex: 1, padding: "0.65rem", border: "none", background: "#1e293b", color: "#fff", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                      >
+                        Scan Again
+                      </button>
+                      <button
+                        onClick={() => { setQrVerifyError(null); setModalMode("otp"); }}
+                        style={{ flex: 1, padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                      >
+                        Use OTP Instead
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: "0.78rem", color: "#64748b", textAlign: "center", marginBottom: "0.75rem" }}>
+                      Point camera at student&apos;s QR code
+                    </p>
 
-                <QRCameraScanner
-                  key={qrRetryKey}
-                  streamPromise={streamPromiseRef.current}
-                  onScanned={handleQrScanned}
-                />
+                    <QRCameraScanner
+                      key={qrRetryKey}
+                      streamPromise={streamPromiseRef.current}
+                      onScanned={handleQrScanned}
+                    />
 
-                {otpSubmitting && (
-                  <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
-                    Verifying...
-                  </p>
+                    {otpSubmitting && (
+                      <p style={{ textAlign: "center", marginTop: "0.75rem", color: "#64748b", fontWeight: 600, fontSize: "0.85rem" }}>
+                        Verifying...
+                      </p>
+                    )}
+
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
+                      <button
+                        onClick={() => {
+                          streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                          setQrRetryKey(k => k + 1);
+                        }}
+                        disabled={otpSubmitting}
+                        style={{ flex: 1, padding: "0.65rem", border: "none", background: "#1e293b", color: "#fff", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                      >
+                        Try Again
+                      </button>
+                      <button
+                        onClick={() => !otpSubmitting && closeModal()}
+                        style={{ flex: 1, padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
                 )}
-
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.85rem" }}>
-                  <button
-                    onClick={() => {
-                      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                      setQrRetryKey(k => k + 1);
-                    }}
-                    disabled={otpSubmitting}
-                    style={{ flex: 1, padding: "0.65rem", border: "none", background: "#1e293b", color: "#fff", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
-                  >
-                    Try Again
-                  </button>
-                  <button
-                    onClick={() => !otpSubmitting && closeModal()}
-                    style={{ flex: 1, padding: "0.65rem", border: "1.5px solid #e5e7eb", background: "#f3f4f6", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}
-                  >
-                    Cancel
-                  </button>
-                </div>
               </>
             )}
           </div>
