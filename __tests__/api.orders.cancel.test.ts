@@ -64,7 +64,9 @@ const VENDOR_CTX         = { uid: "vd",   role: "vendor"        as const, cantee
 const WORKER_CTX         = { uid: "wk",   role: "worker"        as const, canteenId: "c-1" };
 const USER_CTX           = { uid: "u",    role: "user"          as const, canteenId: undefined };
 
-function req(body: unknown, orderId = "ord-1") {
+const DEFAULT_ORDER_ID = "00000000-0000-0000-0000-000000000001";
+
+function req(body: unknown, orderId = DEFAULT_ORDER_ID) {
   return {
     request: new Request(`http://localhost/api/orders/${orderId}/cancel`, {
       method: "POST",

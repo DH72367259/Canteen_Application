@@ -15,6 +15,7 @@ interface QB {
   select: jest.Mock;
   eq: jest.Mock;
   single: jest.Mock;
+  maybeSingle: jest.Mock;
   then: jest.Mock;
 }
 
@@ -32,6 +33,7 @@ function makeQB(opts: Partial<{ singleData: unknown; updateReturnData: unknown }
     data: opts.updateReturnData ?? opts.singleData ?? null,
     error: null,
   });
+  qb.maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
   // Fire-and-forget insert chain returns a thenable
   qb.then = jest.fn((onFulfilled?: (v: unknown) => unknown) => {
     if (onFulfilled) onFulfilled({ data: null, error: null });
