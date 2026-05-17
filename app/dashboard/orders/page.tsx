@@ -184,7 +184,7 @@ export default function MyOrdersPage() {
               </div>
             )}
             {active.map(o => (
-              <OrderCard key={o.id} order={o} onReorder={handleReorder} onInvoice={handleViewInvoice} showReorder={false} />
+              <OrderCard key={o.id} order={o} onReorder={handleReorder} onInvoice={handleViewInvoice} showReorder={false} showTrack={true} />
             ))}
           </>
         )}
@@ -311,11 +311,12 @@ export default function MyOrdersPage() {
 }
 
 // ─── Order card sub-component ─────────────────────────────────────────────────
-function OrderCard({ order, onReorder, onInvoice, showReorder }: {
+function OrderCard({ order, onReorder, onInvoice, showReorder, showTrack }: {
   order: DbOrder;
   onReorder: (o: DbOrder) => void;
   onInvoice: (id: string) => void;
   showReorder: boolean;
+  showTrack?: boolean;
 }) {
   const rawSt = order.rawStatus ?? order.status;
   const statusLabel = STATUS_LABEL[rawSt] ?? rawSt;
@@ -355,8 +356,19 @@ function OrderCard({ order, onReorder, onInvoice, showReorder }: {
         )}
       </div>
 
+      {/* Track Order — full-width prominent button for active orders */}
+      {showTrack && (
+        <Link
+          href={`/dashboard/order-status?id=${order.id}`}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginTop: "0.65rem", background: "#1e293b", color: "#fff", borderRadius: 10, padding: "0.6rem", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
+        >
+          📍 Track Order
+          <span style={{ fontSize: "0.7rem", opacity: 0.75 }}>›</span>
+        </Link>
+      )}
+
       {/* Action buttons */}
-      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", marginTop: showTrack ? "0.45rem" : "0.6rem" }}>
         <button onClick={() => onInvoice(order.id)}
           style={{ flex: 1, background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, padding: "0.4rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", color: "var(--ink-2)" }}>
           🧾 View Invoice (GST)
