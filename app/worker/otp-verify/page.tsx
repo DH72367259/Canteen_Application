@@ -162,6 +162,13 @@ export default function WorkerOtpVerifyPage() {
       qr.stop().catch(() => {}).finally(() => { try { qr.clear(); } catch { /* ignore */ } });
       qrInstanceRef.current = null;
     }
+    if (next === "qr") {
+      // Call getUserMedia synchronously inside the click/gesture context so
+      // Chrome on Android shows the permission dialog on first use.
+      navigator.mediaDevices?.getUserMedia({ video: true })
+        .then(s => s.getTracks().forEach(t => t.stop()))
+        .catch(() => {});
+    }
     setResult(null);
     setQrError(null);
     setOtp("");
@@ -325,11 +332,10 @@ export default function WorkerOtpVerifyPage() {
                     </div>
                     <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={async () => {
-                          try {
-                            const s = await navigator.mediaDevices.getUserMedia({ video: true });
-                            s.getTracks().forEach(t => t.stop());
-                          } catch { /* will surface as error in effect */ }
+                        onClick={() => {
+                          navigator.mediaDevices?.getUserMedia({ video: true })
+                            .then(s => s.getTracks().forEach(t => t.stop()))
+                            .catch(() => {});
                           setQrError(null);
                           setQrRetryKey(k => k + 1);
                         }}
@@ -338,10 +344,10 @@ export default function WorkerOtpVerifyPage() {
                         Try Again
                       </button>
                       <button
-                        onClick={() => router.replace("/worker/otp-verify")}
+                        onClick={() => switchMode("otp")}
                         style={{ padding: "0.75rem 1.5rem", background: "#f1f5f9", color: "#1e293b", border: "1.5px solid #cbd5e1", borderRadius: 12, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                       >
-                        Reload Page
+                        Use OTP Instead
                       </button>
                     </div>
                   </div>

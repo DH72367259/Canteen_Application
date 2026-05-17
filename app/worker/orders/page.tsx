@@ -841,16 +841,15 @@ export default function WorkerOrdersPage() {
               {(["otp", "qr"] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={async () => {
+                  onClick={() => {
                     setQrError(null); setOtpInput("");
                     if (m === "qr") {
-                      // Request camera IMMEDIATELY inside the gesture context so
-                      // Chrome shows the permission dialog. The stream is stopped
-                      // right after — html5-qrcode will reopen it in the effect.
-                      try {
-                        const s = await navigator.mediaDevices.getUserMedia({ video: true });
-                        s.getTracks().forEach(t => t.stop());
-                      } catch { /* permission denied — useEffect will show the error */ }
+                      // getUserMedia MUST be called synchronously in the click handler —
+                      // no await before it — so Chrome on Android keeps the user-gesture
+                      // context and shows the permission dialog on first use.
+                      navigator.mediaDevices?.getUserMedia({ video: true })
+                        .then(s => s.getTracks().forEach(t => t.stop()))
+                        .catch(() => {});
                     }
                     setModalMode(m);
                   }}
@@ -925,11 +924,11 @@ export default function WorkerOrdersPage() {
                     </p>
                     <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={async () => {
-                          try {
-                            const s = await navigator.mediaDevices.getUserMedia({ video: true });
-                            s.getTracks().forEach(t => t.stop());
-                          } catch { /* will surface as error in effect */ }
+                        onClick={() => {
+                          // Synchronous getUserMedia call to re-trigger permission dialog
+                          navigator.mediaDevices?.getUserMedia({ video: true })
+                            .then(s => s.getTracks().forEach(t => t.stop()))
+                            .catch(() => {});
                           setQrError(null);
                           setQrRetryKey(k => k + 1);
                         }}
@@ -938,10 +937,10 @@ export default function WorkerOrdersPage() {
                         Try Again
                       </button>
                       <button
-                        onClick={() => router.replace("/worker/orders")}
+                        onClick={() => { setModalMode("otp"); setQrError(null); }}
                         style={{ padding: "0.6rem 1.2rem", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
                       >
-                        Reload Page
+                        Use OTP Instead
                       </button>
                     </div>
                   </div>

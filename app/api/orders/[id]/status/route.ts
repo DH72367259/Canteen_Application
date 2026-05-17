@@ -270,5 +270,27 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
+  // Notify the student when their food is placed in the bin so they know to come pick up.
+  if (status === "placed_in_bin") {
+    const { data: orderRow } = await supabase
+      .from("orders")
+      .select("user_id, canteen_id, bin_label")
+      .eq("id", orderId)
+      .maybeSingle<{ user_id: string | null; canteen_id: string | null; bin_label: string | null }>();
+
+    if (orderRow?.user_id) {
+      const binText = orderRow.bin_label ? ` — Bin ${orderRow.bin_label}` : "";
+      await supabase.from("notifications").insert({
+        title: "🎉 Your food is ready!",
+        body: `Your order is in the bin and ready for pickup${binText}. Show your QR code or OTP to collect it.`,
+        type: "placed_in_bin",
+        recipient_type: "user",
+        recipient_id: orderRow.user_id,
+        target_role: "user",
+        created_by: auth.uid,
+      }).then(() => {}, () => {});
+    }
+  }
+
   return NextResponse.json({ order: finalRow });
 }
