@@ -63,7 +63,8 @@ body {
 
 /* Web shell (vendor/admin dashboards) */
 .web-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   background: var(--bg);
 }
@@ -163,7 +164,6 @@ body {
 .main-with-sidebar {
   margin-left: 240px;
   flex: 1;
-  min-height: 100vh;
   overflow-y: auto;
 }
 
@@ -1126,7 +1126,6 @@ body {
   --line: #e8cfb4;
 }
 
-html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
