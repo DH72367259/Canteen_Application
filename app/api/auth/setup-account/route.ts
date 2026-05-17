@@ -74,22 +74,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // Update Supabase auth user: set password, phone, and metadata
-  const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.uid, {
-    password,
-    phone: e164Phone,
-    phone_confirm: true,  // confirm phone immediately — no OTP needed since email is already verified
-    user_metadata: {
-      has_password: true,
-      password_changed_at: new Date().toISOString(),
-      must_change_password: false,
-    },
-  });
-  if (updateErr) {
-    return Response.json({ error: "Failed to complete account setup. Please try again." }, { status: 500 });
-  }
-
-  // Update profiles row with name, username, and phone
+  // Step 1: Update profiles row first — if this fails, auth is untouched and user can retry.
   const updates: Record<string, string> = {
     username: usernameClean,
     phone: e164Phone,
@@ -102,16 +87,26 @@ export async function POST(request: Request) {
     .eq("id", ctx.uid);
 
   if (profileErr) {
-    // Profile update failed — the password was already set so roll back by
-    // clearing it, forcing the student back through account setup next login.
-    await supabase.auth.admin.updateUserById(ctx.uid, {
-      password: undefined,
-      user_metadata: { has_password: false },
-    }).catch(() => {});
     const msg = profileErr.message?.includes("unique")
       ? "Username or phone is already taken. Please choose a different one."
       : "Failed to save your profile. Please try again.";
     return Response.json({ error: msg }, { status: 409 });
+  }
+
+  // Step 2: Set password and confirm phone in auth — profile is already saved so
+  // even if this call fails the user can retry and the profile update will be a no-op.
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.uid, {
+    password,
+    phone: e164Phone,
+    phone_confirm: true,
+    user_metadata: {
+      has_password: true,
+      password_changed_at: new Date().toISOString(),
+      must_change_password: false,
+    },
+  });
+  if (updateErr) {
+    return Response.json({ error: "Profile saved but password setup failed. Please try again." }, { status: 500 });
   }
 
   return Response.json({ success: true });
