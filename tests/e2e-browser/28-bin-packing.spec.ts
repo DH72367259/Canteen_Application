@@ -356,9 +356,9 @@ test.describe("Browser — cart extra bin fee display", () => {
     await page.context().clearCookies();
     await page.goto(`${APP_URL}/login`);
     await page.waitForURL(/login/, { timeout: 5_000 }).catch(() => {});
-    await page.fill("input[type=email]",    ACCOUNTS.student1.email);
+    await page.fill("input[type=text]",     ACCOUNTS.student1.email);
     await page.fill("input[type=password]", ACCOUNTS.student1.password);
-    await page.click("button[type=submit], button:has-text('Sign in'), button:has-text('Login')");
+    await page.click("button:has-text('Sign In'), button:has-text('Sign in'), button:has-text('Login')");
     await page.waitForURL(/dashboard|menu/, { timeout: 15_000 }).catch(() => {});
   }
 
