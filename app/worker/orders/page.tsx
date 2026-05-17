@@ -725,49 +725,62 @@ export default function WorkerOrdersPage() {
                         </div>
                       </div>
 
-                      <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
-                        {assignments.map((a) => {
-                          const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
-                          return (
-                            <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
-                              <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
-                                <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-8).toUpperCase()}</span>
-                              </div>
-                              <div style={{ padding: "0.55rem 0.7rem" }}>
-                                {a.items.map((it, idx) => (
-                                  <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
-                                    <span>{it.name}</span>
-                                    <span style={{ color: "#b45309" }}>x{it.quantity}</span>
-                                  </div>
-                                ))}
-                              </div>
+                      {/* Direct handover: slot closed, no bin was assigned */}
+                      {["confirmed", "preparing"].includes(order.status) ? (
+                        <>
+                          <div style={{ margin: "0 0.75rem", padding: "0.65rem 0.75rem", background: "#fff7ed", border: "1.5px dashed #f97316", borderRadius: 12 }}>
+                            <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#c2410c", marginBottom: "0.4rem" }}>
+                              🚫 No bin assigned — slot has closed. Hand food directly to student.
                             </div>
-                          );
-                        })}
-                      </div>
-
-                      <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {/* For orders not yet physically in a bin, worker must place it first */}
-                        {["confirmed", "preparing"].includes(order.status) && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`Place food in bin and mark as ready?\n\nBin: ${order.bin_label || "Assigned bin"}\nOrder: #${order.id.slice(-8).toUpperCase()}`)) {
-                                updateStatus(order.id, "placed_in_bin");
-                              }
-                            }}
-                            style={{ width: "100%", background: "#f97316", color: "#fff", border: "none", borderRadius: 10, padding: "0.65rem", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}
-                          >
-                            📦 Mark as Placed in Bin
-                          </button>
-                        )}
-                        <button
-                          onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
-                          style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                        >
-                          🔐 Verify OTP / Scan QR to Complete
-                        </button>
-                      </div>
+                            {order.items.map((it, idx) => (
+                              <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < order.items.length - 1 ? "1px dashed #fed7aa" : "none" }}>
+                                <span>{it.name}</span>
+                                <span style={{ color: "#b45309" }}>x{it.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ padding: "0.65rem 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
+                              style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                            >
+                              ✅ Verify OTP to Complete Direct Handover
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
+                            {assignments.map((a) => {
+                              const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
+                              return (
+                                <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
+                                  <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
+                                    <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Order {order.id.slice(-8).toUpperCase()}</span>
+                                  </div>
+                                  <div style={{ padding: "0.55rem 0.7rem" }}>
+                                    {a.items.map((it, idx) => (
+                                      <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
+                                        <span>{it.name}</span>
+                                        <span style={{ color: "#b45309" }}>x{it.quantity}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ padding: "0 0.75rem 0.75rem" }}>
+                            <button
+                              onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
+                              style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                            >
+                              🔐 Verify OTP / Scan QR to Complete
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
