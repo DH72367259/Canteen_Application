@@ -28,7 +28,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid username format" }, { status: 400 });
   }
 
-  const supabase = createAdminClient();
+  let supabase;
+  try {
+    supabase = createAdminClient();
+  } catch (configErr) {
+    console.error("[resolve-username] Admin client config error:", configErr);
+    return Response.json({ error: "Server configuration error. Contact support." }, { status: 503 });
+  }
 
   // Look up profile by username — returns the stored email (set during registration)
   const { data, error } = await supabase

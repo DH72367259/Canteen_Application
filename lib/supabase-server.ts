@@ -30,9 +30,15 @@ export async function createServerSupabaseClient() {
 
 // Admin client for API routes — bypasses RLS, uses service role key
 export function createAdminClient() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is not set. Add it to Railway environment variables."
+    )
+  }
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    serviceKey,
     {
       auth: {
         autoRefreshToken: false,
