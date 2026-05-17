@@ -744,7 +744,7 @@ export default function WorkerOrdersPage() {
                               onClick={() => { clearAutoReturn(); setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
                               style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
                             >
-                              ✅ Verify OTP to Complete Direct Handover
+                              🔐 Verify OTP / Scan QR to Complete
                             </button>
                           </div>
                         </>
