@@ -90,7 +90,9 @@ function PaymentStatusContent() {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", width: "100%", maxWidth: 320 }}>
-          <button className="btn btn-primary btn-full" onClick={() => router.push("/dashboard/orders")}>
+          <button className="btn btn-primary btn-full" onClick={() => router.push(`/dashboard/order-status?id=${orderId}`)}>
+            Track My Order</button>
+          <button className="btn btn-outline btn-full" onClick={() => router.push("/dashboard/orders")}>
             View My Orders
           </button>
           <button className="btn btn-outline btn-full" onClick={() => router.push("/dashboard")}>

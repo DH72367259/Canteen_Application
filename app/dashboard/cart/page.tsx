@@ -321,7 +321,7 @@ function CartContent() {
     localStorage.setItem("canteen_transactions", JSON.stringify(txns.slice(0, 100)));
 
     setBusy(false);
-    router.push("/dashboard/order-status");
+    router.push(`/dashboard/order-status?id=${orderId}`);
   }
 
   async function handleCheckout() {
