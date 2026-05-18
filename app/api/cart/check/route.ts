@@ -286,11 +286,25 @@ export async function POST(request: Request) {
     }
   }
 
+  // Fields used by the client to render precise partial-fit warnings:
+  //   bins_needed       — how many bins THIS cart wants
+  //   bins_available    — how many bins are still free in this slot
+  //   partial_fit       — true when bins_needed > bins_available but the slot
+  //                       isn't completely empty (i.e. some bins fit but not
+  //                       all). The student should either reduce the order
+  //                       to bins_available items or pick another slot.
+  const binsNeededForCart = binPlan.bins.length;
+  const binsAvailableInSlot = Math.max(0, capacity.maxBins - existingBinsUsed);
+  const partialFit = binsNeededForCart > binsAvailableInSlot && binsAvailableInSlot > 0;
+
   return Response.json({
     slot_available: !slotFull && !slotFullByType,
     slot_full: slotFull || slotFullByType,
     slot_bins_used: existingBinsUsed,
     slot_orders_used: slotOrdersUsed,
+    bins_needed: binsNeededForCart,
+    bins_available: binsAvailableInSlot,
+    partial_fit: partialFit,
     availability_message: availabilityMessage,
     slot_capacity: capacity,
     bin_plan: binPlan,

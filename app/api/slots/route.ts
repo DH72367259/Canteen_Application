@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase-server";
-import { generateTimeSlots, computeSlotCapacity } from "@/lib/slotCapacity";
+import { generateTimeSlots, computeSlotCapacity, assignBins, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +57,8 @@ export async function GET(request: Request) {
     available: boolean;
     is_full: boolean;
     capacity: number;
+    bins_used?: number;
+    bins_total?: number;
   };
 
   const result: Slot[] = [];
@@ -122,6 +124,86 @@ export async function GET(request: Request) {
       counts.set(o.slot, (counts.get(o.slot) || 0) + 1);
     }
 
+    // ── BIN-LEVEL capacity (more accurate than order-count) ───────────────
+    // Capacity is set as max_bins (e.g. 60). A single order can occupy
+    // multiple bins, so counting orders alone under-reports usage. Mirror
+    // the cart/check logic: fetch all order_items for today's orders,
+    // group by order, run assignBins per order, sum bins per slot label.
+    const mealsPerBin  = Number(control.meals_per_bin)  || 1;
+    const snacksPerBin = Number(control.snacks_per_bin) || 3;
+    const binsBySlot = new Map<string, number>();
+
+    const activeOrderIds = orderRows
+      .filter((o) => o.slot && o.status !== "cancelled" && o.status !== "refunded")
+      .map((o) => o.slot as string);
+
+    if (activeOrderIds.length > 0) {
+      // Need order IDs to look up items — re-fetch with id column included.
+      type IdRow = { id: string; slot: string | null };
+      let idRows: IdRow[] = [];
+      for (const slotCol of ["slot_label", "pickup_slot"] as const) {
+        try {
+          const q = await supabase
+            .from("orders")
+            .select(`id, ${slotCol}`)
+            .eq("canteen_id", canteenId)
+            .gte("created_at", `${dateStr}T00:00:00.000Z`)
+            .lte("created_at", `${dateStr}T23:59:59.999Z`)
+            .not("status", "in", '("cancelled")');
+          if (!q.error) {
+            idRows = (q.data || []).map((r) => {
+              const obj = r as Record<string, unknown>;
+              return { id: String(obj.id), slot: (obj[slotCol] as string | null) ?? null };
+            });
+            break;
+          }
+        } catch { /* try next column name */ }
+      }
+
+      const slotByOrderId = new Map(idRows.map((r) => [r.id, r.slot] as const));
+      const orderIds = idRows.map((r) => r.id);
+
+      if (orderIds.length > 0) {
+        type ItemRow = { order_id: string; menu_item_id: string; quantity: number; cancelled_quantity?: number | null };
+        let itemRows: ItemRow[] = [];
+        for (const cols of ["order_id, menu_item_id, quantity, cancelled_quantity", "order_id, menu_item_id, quantity"]) {
+          const { data, error } = await supabase.from("order_items").select(cols).in("order_id", orderIds);
+          if (!error) { itemRows = (data ?? []) as unknown as ItemRow[]; break; }
+        }
+        const menuIds = [...new Set(itemRows.map((r) => r.menu_item_id))];
+        const isMealMap = new Map<string, boolean>();
+        if (menuIds.length > 0) {
+          const { data: mealRows } = await supabase.from("menu_items").select("id, is_meal").in("id", menuIds);
+          for (const m of (mealRows ?? []) as Array<{ id: string; is_meal: boolean | null }>) {
+            isMealMap.set(String(m.id), !!m.is_meal);
+          }
+        }
+        // Group items by order
+        const linesPerOrder = new Map<string, CartLine[]>();
+        for (const r of itemRows) {
+          const net = Math.max(0, Number(r.quantity ?? 0) - Number(r.cancelled_quantity ?? 0));
+          if (net <= 0) continue;
+          const list = linesPerOrder.get(r.order_id) ?? [];
+          list.push({
+            itemId: String(r.menu_item_id),
+            name: "",
+            quantity: net,
+            isMeal: isMealMap.get(String(r.menu_item_id)) ?? false,
+          });
+          linesPerOrder.set(r.order_id, list);
+        }
+        // Sum bins per slot
+        for (const [orderId, lines] of linesPerOrder.entries()) {
+          const slotLabel = slotByOrderId.get(orderId);
+          if (!slotLabel) continue;
+          const bins = assignBins(lines, mealsPerBin, snacksPerBin, 0).bins.length;
+          binsBySlot.set(slotLabel, (binsBySlot.get(slotLabel) ?? 0) + bins);
+        }
+      }
+    }
+
+    const maxBins = control.max_bins || 60;
+
     for (const [winStart, winEnd] of windows) {
       if (!winStart || !winEnd) continue;
       const pieces = generateTimeSlots(winStart, winEnd, duration);
@@ -131,14 +213,20 @@ export async function GET(request: Request) {
         if (startMin > windowEndMin) continue;
         const label = rangeLabel(p.start, p.end);
         const id = `${winStart}-${p.start}`;
-        const booked = counts.get(label) || 0;
-        const isFull = booked >= cap;
+        const orderCount = counts.get(label) || 0;
+        const binsUsed = binsBySlot.get(label) || 0;
+        // A slot is full when EITHER the bin pool is exhausted (e.g. 60/60)
+        // OR the order-cap is hit (whichever happens first). This is the
+        // 60-bin hard stop the workflow requires.
+        const isFull = binsUsed >= maxBins || orderCount >= cap;
         result.push({
           id,
           label,
           available: !isFull,
           is_full: isFull,
           capacity: cap,
+          bins_used: binsUsed,
+          bins_total: maxBins,
         });
       }
     }
