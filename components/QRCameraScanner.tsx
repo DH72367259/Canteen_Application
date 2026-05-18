@@ -39,47 +39,67 @@ function detectBrowser(): BrowserKind {
   return "unknown";
 }
 
-// IMPORTANT: every browser requires BOTH a system-level permission (Android
-// Settings → Apps → {Browser} → Permissions → Camera) AND a per-site
-// permission for this specific URL. Granting only the system one (e.g.
-// "Camera is allowed for Chrome in Android Settings") is NOT enough —
-// the browser also needs to know that THIS website is allowed to use it.
+// Permission-recovery steps formatted as a multi-line string. We render
+// with white-space: pre-wrap so each \n becomes a real line break on the
+// phone — much easier to read than a wall of text.
 //
-// The menu labels below were verified against the live Chrome/Brave/Edge/
-// Opera/Firefox/Samsung Internet/Safari menus as of 2026-05. Path varies
-// across versions, so each entry lists the most common label first plus
-// fallbacks.
+// Modern browsers DO NOT have a "Permissions" menu, and Chrome Android
+// often hides the lock icon entirely (it's replaced by a small tune/info
+// icon). So the primary path for every browser is the 3-dot menu →
+// Settings → Site settings → Camera, which is reliable across versions.
+// The lock-icon shortcut is offered as an optional faster path.
 function permissionStepsFor(b: BrowserKind): string {
-  // Universal escape hatch — appended to every message — for cases where
-  // Camera doesn't even appear in the Site settings list (browser hasn't
-  // seen the permission request yet, or earlier "Block" got stored as a
-  // sticky default-deny).
-  const escape =
-    " If you don't see Camera in the menu, tap the 3-dot menu → Settings → Site settings → All sites → find this site → Clear & reset → Reload, then tap Start Camera again so the prompt fires fresh.";
+  const lines: string[] = ["Camera was blocked. To fix it:"];
 
-  // Sentence about system-level permission. Same for every browser.
-  const systemNote = (app: string) =>
-    ` Also make sure the system-level camera permission is ON: Android Settings → Apps → ${app} → Permissions → Camera → Allow.`;
+  const sysApp = (() => {
+    switch (b) {
+      case "brave":    return "Brave";
+      case "chrome":   return "Chrome";
+      case "edge":     return "Microsoft Edge";
+      case "opera":    return "Opera";
+      case "samsung":  return "Samsung Internet";
+      case "firefox":  return "Firefox";
+      default:         return "the browser";
+    }
+  })();
 
-  switch (b) {
-    case "brave":    return "Brave: tap the 🦁 lion icon in the address bar → toggle Shields OFF for this site → Reload. " +
-                            "If still blocked: tap the 🔒 lock → Site settings → Camera → Allow → Reload." +
-                            systemNote("Brave") + escape;
-    case "chrome":   return "Chrome: tap the 🔒 lock icon in the address bar → Site settings → Camera → Allow → Reload. " +
-                            "(On some Chrome builds the menu reads 'Permissions for this site' instead of 'Site settings' — same thing.)" +
-                            systemNote("Chrome") + escape;
-    case "edge":     return "Edge: tap the 🔒 lock icon in the address bar → Permissions for this site → Camera → Allow → Reload." +
-                            systemNote("Microsoft Edge") + escape;
-    case "opera":    return "Opera: tap the 🔒 lock icon in the address bar → Site settings → Camera → Allow → Reload." +
-                            systemNote("Opera") + escape;
-    case "samsung":  return "Samsung Internet: tap the 🔒 lock icon → Permissions → Camera → Allow → Reload." +
-                            systemNote("Samsung Internet") + escape;
-    case "firefox":  return "Firefox: tap the 🔒 shield/lock icon → Connection secure → More information → Permissions tab → 'Use the Camera' → Allow → Reload. " +
-                            "(On Firefox Android: 3-dot menu → Settings → Site permissions → Camera → tap this site → Allow.)" +
-                            systemNote("Firefox") + escape;
-    case "safari":   return "Safari (iOS): open the iOS Settings app → Safari → scroll to 'Settings for Websites' → Camera → tap this site → Allow → Reload.";
-    default:         return "Open your browser's site settings for this page (usually behind the 🔒 lock icon in the address bar) and set Camera to Allow. The system-level camera permission for the browser app must also be enabled." + escape;
+  if (b === "brave") {
+    // Brave's distinct UI — Shields is the usual culprit.
+    lines.push(
+      "1. Tap the 🦁 lion icon in the address bar → toggle 'Shields' OFF for this site → Reload.",
+      "2. If it still says blocked: 3-dot menu (bottom right) → Settings → Site settings → Camera → find this site → Allow.",
+      "3. System permission: Android Settings → Apps → Brave → Permissions → Camera → Allow.",
+      "4. Reload the page and tap Start Camera again.",
+    );
+  } else if (b === "safari") {
+    lines.push(
+      "1. Open the iOS Settings app (not Safari).",
+      "2. Scroll down and tap Safari.",
+      "3. Tap 'Settings for Websites' → Camera.",
+      "4. Find this site in the list → tap → Allow.",
+      "5. Return to Safari and Reload.",
+    );
+  } else {
+    // Chrome / Edge / Opera / Samsung / Firefox / unknown — modern Android.
+    // 3-dot menu is the universal reliable path (no lock-icon assumption).
+    lines.push(
+      "1. Tap the 3-dot menu at the top right of the browser.",
+      "2. Tap 'Settings'.",
+      "3. Scroll down and tap 'Site settings' (sometimes under Advanced).",
+      "4. Tap 'Camera'.",
+      "5. Find this site (canteenapplication-staging…) in the list, tap it, choose Allow.",
+      "   If the site isn't in the list yet, scroll up to 'Blocked' — it might be there. Tap it → Allow.",
+      `6. Also check the system permission: Android Settings → Apps → ${sysApp} → Permissions → Camera → Allow.`,
+      "7. Reload the page and tap Start Camera again.",
+    );
   }
+  // Universal fallback for the stuck case (default-deny got remembered).
+  lines.push(
+    "",
+    "Still stuck? Clear and retry:",
+    "→ 3-dot menu → Settings → Site settings → All sites → find this site → 'Clear & reset' → Reload → Start Camera. That fires the permission prompt fresh.",
+  );
+  return lines.join("\n");
 }
 
 interface Props {
@@ -202,11 +222,13 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
         const browser = detectBrowser();
 
         // Permission denied — happens on every browser when the user blocks
-        // it OR (Brave) when Shields silently blocks the API. Tailor the
-        // step-by-step instructions to the specific browser they're on.
+        // it OR (Brave) when Shields silently blocks the API. The helper
+        // returns a multi-line numbered list, so we render it with
+        // white-space: pre-wrap (see the error <p> below). Final sentence
+        // offers OTP as the bail-out.
         if (name === "NotAllowedError" || name === "SecurityError" ||
             /denied|not allowed|permission/i.test(msg)) {
-          setError(`Camera access was blocked. ${permissionStepsFor(browser)} Or use OTP instead.`);
+          setError(`${permissionStepsFor(browser)}\n\nOr just use the OTP option above instead.`);
           return;
         }
         if (name === "NotFoundError" || name === "DevicesNotFoundError") {
@@ -301,7 +323,19 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
     return (
       <div style={{ padding: "1.1rem", background: "#fef2f2", borderRadius: 12, border: "1.5px solid #fca5a5", textAlign: "center" }}>
         <div style={{ fontSize: "1.75rem", marginBottom: "0.4rem" }}>📷</div>
-        <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.83rem", margin: "0 0 0.9rem", lineHeight: 1.55 }}>
+        {/* whiteSpace: pre-wrap honours the \n line breaks from
+            permissionStepsFor() so the numbered steps render as a
+            readable list instead of a wall of text. textAlign:left
+            makes the numbered steps line up vertically. */}
+        <p style={{
+          color: "#dc2626",
+          fontWeight: 600,
+          fontSize: "0.78rem",
+          margin: "0 0 0.9rem",
+          lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
+          textAlign: "left",
+        }}>
           {error}
         </p>
         <div style={{ display: "flex", gap: "0.5rem", flexDirection: "column" }}>
