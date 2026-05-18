@@ -125,10 +125,12 @@ export async function GET(request: Request) {
     }
 
     // ── BIN-LEVEL capacity (more accurate than order-count) ───────────────
-    // Capacity is set as max_bins (e.g. 60). A single order can occupy
-    // multiple bins, so counting orders alone under-reports usage. Mirror
-    // the cart/check logic: fetch all order_items for today's orders,
-    // group by order, run assignBins per order, sum bins per slot label.
+    // Capacity is whatever the canteen manager set as max_bins in
+    // Slot & Bin Control — anywhere from 1 to 72 (we do NOT assume 60).
+    // A single order can occupy multiple bins, so counting orders alone
+    // under-reports usage. Mirror the cart/check logic: fetch all
+    // order_items for today's orders, group by order, run assignBins per
+    // order, sum bins per slot label.
     const mealsPerBin  = Number(control.meals_per_bin)  || 1;
     const snacksPerBin = Number(control.snacks_per_bin) || 3;
     const binsBySlot = new Map<string, number>();
@@ -202,7 +204,10 @@ export async function GET(request: Request) {
       }
     }
 
-    const maxBins = control.max_bins || 60;
+    // max_bins is the canteen manager's configured value (1..72).
+    // The || fallback only fires when control.max_bins is null/0, which
+    // ensureSlotControl above guarantees never happens — defensive only.
+    const maxBins = Number(control.max_bins) || 60;
 
     for (const [winStart, winEnd] of windows) {
       if (!winStart || !winEnd) continue;

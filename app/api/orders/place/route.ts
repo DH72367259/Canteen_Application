@@ -6,6 +6,7 @@ import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, computeSlotCapacity, type CartLine, type SlotMode } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
+import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -366,9 +367,11 @@ export async function POST(req: NextRequest) {
 
   // ── Student notification: "Order placed" ────────────────────────────────
   // The status-update route fires notifications for confirmed/preparing/
-  // placed_in_bin/collected. Without this insert the student would get
-  // nothing between paying and the canteen accepting the order.
-  await supabase.from("notifications").insert({
+  // placed_in_bin/collected. Without this insert the student gets nothing
+  // between paying and the canteen accepting the order.
+  // Uses insertNotification helper which retries without target_role on
+  // staging schemas where that column isn't present yet.
+  await insertNotification(supabase, {
     title: "🧾 Order Placed!",
     body: slotLabel
       ? `Your order is in — pickup window ${slotLabel}. We'll ping you as the canteen prepares it.`
@@ -378,7 +381,7 @@ export async function POST(req: NextRequest) {
     recipient_id: context.uid,
     target_role: "user",
     created_by: context.uid,
-  }).then(() => {}, () => {});
+  }, "orders/place");
 
   // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
   if (

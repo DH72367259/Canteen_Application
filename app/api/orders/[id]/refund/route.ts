@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -169,7 +170,7 @@ export async function POST(
 
   // Notify the student
   if (order.user_id && refund_status === "processed") {
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: "Refund processed",
       body:  `Your refund of ₹${Number(order.total_amount ?? 0).toFixed(2)} has been processed and will reflect in 5–7 business days.`,
       type:  "order",
@@ -177,7 +178,7 @@ export async function POST(
       recipient_id:   order.user_id,
       target_role:    "user",
       created_by:     auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/refund");
   }
 
   if (refund_status === "failed") {

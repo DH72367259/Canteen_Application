@@ -3,6 +3,7 @@ import { getRequestContext } from "@/lib/authServer";
 import { canManageOrders } from "@/lib/roleChecks";
 import { createAdminClient } from "@/lib/supabase-server";
 import { findUnfulfilledSiblings } from "@/lib/pickupGuard";
+import { insertNotification } from "@/lib/notify";
 
 // Raw DB statuses workers/admins may set directly.
 const STAFF_STATUSES = [
@@ -143,7 +144,7 @@ export async function PATCH(
       updated = u1 as Record<string, unknown>;
     }
 
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: "Order skipped",
       body: `Worker skipped order ${orderId} — needs review.`,
       type: "warning",
@@ -151,7 +152,7 @@ export async function PATCH(
       recipient_id: canteenIdForNotif,
       target_role: "canteen_admin",
       created_by: auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/status:skipped");
 
     return NextResponse.json({ order: updated });
   }
@@ -186,7 +187,7 @@ export async function PATCH(
       }).eq("id", cur.bin_id);
     }
 
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: "Late pickup → grace bin",
       body: `Order ${orderId} moved to grace bin by worker.`,
       type: "warning",
@@ -194,7 +195,7 @@ export async function PATCH(
       recipient_id: cur?.canteen_id ?? null,
       target_role: "canteen_admin",
       created_by: auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/status:grace-bin");
 
     return NextResponse.json({ order: updated });
   }
@@ -298,13 +299,16 @@ export async function PATCH(
         body = "Your order has been collected. Enjoy your meal!";
       }
 
-      await supabase.from("notifications").insert({
+      // The insertNotification helper handles staging schemas that lack the
+      // target_role column — retries once without it so the student bell
+      // doesn't silently drop status-change pings.
+      await insertNotification(supabase, {
         title, body, type,
         recipient_type: "user",
         recipient_id: orderRow.user_id,
         target_role: "user",
         created_by: auth.uid,
-      }).then(() => {}, () => {});
+      }, `orders/status:${status}`);
     }
   }
 

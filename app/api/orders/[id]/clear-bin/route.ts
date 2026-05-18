@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
+import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,7 @@ export async function POST(
 
   // Notify the student their food has moved to the late pickup counter
   if (order.user_id) {
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: "⚠️ Food moved to late pickup counter",
       body: `Your order was not collected during your slot. Your food is now at the late pickup counter — please collect it as soon as possible.`,
       type: "late_pickup",
@@ -102,7 +103,7 @@ export async function POST(
       recipient_id: order.user_id,
       target_role: "user",
       created_by: auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/clear-bin");
   }
 
   return NextResponse.json({ success: true, orderId, binLabel, binColor });
