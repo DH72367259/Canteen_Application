@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import QRCameraScanner from "@/components/QRCameraScanner";
+import { requestRearCamera } from "@/lib/camera";
 
 interface WorkerOrder {
   id: string;
@@ -756,7 +757,7 @@ export default function WorkerOrdersPage() {
                       try {
                         // Use the most permissive constraint — works across
                         // every browser. Rear-camera upgrade happens after.
-                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
+                        streamPromiseRef.current = navigator.mediaDevices ? requestRearCamera() : null;
                       } catch {
                         streamPromiseRef.current = null;
                       }
@@ -832,7 +833,7 @@ export default function WorkerOrdersPage() {
                         onClick={() => {
                           setQrVerifyError(null);
                           try {
-                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
+                            streamPromiseRef.current = navigator.mediaDevices ? requestRearCamera() : null;
                           } catch {
                             streamPromiseRef.current = null;
                           }
@@ -872,7 +873,7 @@ export default function WorkerOrdersPage() {
                       <button
                         onClick={() => {
                           try {
-                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
+                            streamPromiseRef.current = navigator.mediaDevices ? requestRearCamera() : null;
                           } catch {
                             streamPromiseRef.current = null;
                           }

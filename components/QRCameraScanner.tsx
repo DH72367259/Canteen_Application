@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { requestRearCamera } from "@/lib/camera";
 
 type BrowserKind = "brave" | "chrome" | "edge" | "opera" | "firefox" | "safari" | "samsung" | "unknown";
 
@@ -141,13 +142,12 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
       return;
     }
     try {
-      // MUST be called synchronously inside the click handler — otherwise
-      // mobile browsers won't show the permission dialog.
-      // We use {video: true} (no facingMode) because that's the most
-      // permissive call and works on every Chrome / Brave / Edge / Opera /
-      // Firefox / Safari / Samsung Internet build. We upgrade to the rear
-      // camera AFTER the stream resolves (see effect below).
-      const p = navigator.mediaDevices.getUserMedia({ video: true });
+      // requestRearCamera() asks for the back camera first
+      // (facingMode: exact "environment"). If the device lacks a rear cam
+      // it falls back to {video: true}. The synchronous call into
+      // getUserMedia keeps the user-gesture context that mobile browsers
+      // require for the permission dialog.
+      const p = requestRearCamera();
       setInternalPromise(p);
       setAttemptKey((k) => k + 1);
     } catch (e) {
@@ -167,19 +167,8 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
       .then(async (s) => {
         if (!alive) { s.getTracks().forEach((t) => t.stop()); return; }
         stream = s;
-
-        // Best-effort upgrade to the rear (environment-facing) camera. We
-        // do this AFTER the permissive {video:true} succeeded so we never
-        // get blocked on facingMode constraints. If the swap fails (single-
-        // camera laptop, browser doesn't support applyConstraints) we just
-        // keep the original stream — the QR scanner still works either way.
-        try {
-          const track = s.getVideoTracks()[0];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if (track && typeof (track as any).applyConstraints === "function") {
-            await (track as MediaStreamTrack).applyConstraints({ facingMode: { ideal: "environment" } as ConstrainDOMString });
-          }
-        } catch { /* keep original track */ }
+        // No post-stream applyConstraints needed — requestRearCamera() now
+        // asks for the rear cam up-front with facingMode: exact "environment".
 
         const video = videoRef.current;
         if (!video) { s.getTracks().forEach((t) => t.stop()); return; }
