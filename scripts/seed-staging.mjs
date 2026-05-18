@@ -262,44 +262,68 @@ async function seed() {
   await createUser(STUDENT1, null);
   await createUser(STUDENT2, null);
 
-  // 6. Seed menu items for canteen 1
+  // 6. Seed menu items for canteen 1 — UPSERT by name so existing rows that
+  //    were created before is_meal was a column get their flags corrected.
+  //    Without this step every meal in staging ends up with is_meal=true and
+  //    every test that looks up a snack (is_meal=false) silently skips.
   log("\n6. Seeding menu items for canteen 1…");
   if (canteen1Id) {
-    const { data: existingItems } = await db.from("menu_items").select("id").eq("canteen_id", canteen1Id).limit(1);
-    if (existingItems?.length > 0) {
-      skip("Menu items already exist for canteen 1");
-    } else {
-      const items = [
-        { name: "Veg Thali",       category: "Meals",  price: 80,  availability_type: "batched_prepared", is_available: true, is_meal: true  },
-        { name: "Chicken Biryani", category: "Meals",  price: 120, availability_type: "batched_prepared", is_available: true, is_meal: true  },
-        { name: "Masala Dosa",     category: "Snacks", price: 45,  availability_type: "slot_based",       is_available: true, is_meal: false },
-        { name: "Cold Coffee",     category: "Drinks", price: 50,  availability_type: "slot_based",       is_available: true, is_meal: false },
-        { name: "Paneer Roll",     category: "Snacks", price: 60,  availability_type: "batched_prepared", is_available: true, is_meal: false },
-      ];
-      const { error: menuErr } = await db.from("menu_items").insert(items.map(i => ({ ...i, canteen_id: canteen1Id })));
-      if (menuErr) warn(`Menu seed failed: ${menuErr.message}`);
-      else ok(`Seeded ${items.length} menu items for canteen 1`);
+    const items = [
+      { name: "Veg Thali",       category: "Meals",  price: 80,  availability_type: "batched_prepared", is_available: true, is_meal: true  },
+      { name: "Chicken Biryani", category: "Meals",  price: 120, availability_type: "batched_prepared", is_available: true, is_meal: true  },
+      { name: "Masala Dosa",     category: "Snacks", price: 45,  availability_type: "slot_based",       is_available: true, is_meal: false },
+      { name: "Cold Coffee",     category: "Drinks", price: 50,  availability_type: "slot_based",       is_available: true, is_meal: false },
+      { name: "Paneer Roll",     category: "Snacks", price: 60,  availability_type: "batched_prepared", is_available: true, is_meal: false },
+    ];
+    const { data: existing } = await db.from("menu_items").select("id, name").eq("canteen_id", canteen1Id);
+    const byName = new Map((existing ?? []).map((r) => [r.name, r.id]));
+    let inserted = 0, updated = 0;
+    for (const it of items) {
+      const payload = { ...it, canteen_id: canteen1Id };
+      const existingId = byName.get(it.name);
+      if (existingId) {
+        const { error: upErr } = await db.from("menu_items").update(payload).eq("id", existingId);
+        if (upErr) warn(`Menu update failed for ${it.name}: ${upErr.message}`);
+        else updated++;
+      } else {
+        const { error: insErr } = await db.from("menu_items").insert(payload);
+        if (insErr) warn(`Menu insert failed for ${it.name}: ${insErr.message}`);
+        else inserted++;
+      }
     }
+    ok(`menu_items canteen 1: ${inserted} inserted, ${updated} updated (snacks now have is_meal=false)`);
   } else {
     warn("Skipping menu seed — canteen 1 creation failed");
   }
 
-  // 7. Seed time slots for canteen 1
+  // 7. Seed time slots for canteen 1 — same upsert-by-name pattern. Tests like
+  //    "no available slot" only skip when zero rows match; preserving stale
+  //    rows from old seeds is fine, but make sure the canonical three exist
+  //    and are active so getFirstSlotLabel() always finds one.
   log("\n7. Seeding time slots for canteen 1…");
   if (canteen1Id) {
-    const { data: existingSlots } = await db.from("time_slots").select("id").eq("canteen_id", canteen1Id).limit(1);
-    if (existingSlots?.length > 0) {
-      skip("Time slots already exist for canteen 1");
-    } else {
-      const slots = [
-        { slot_name: "morning",   start_time: "08:00", end_time: "09:00", is_active: true },
-        { slot_name: "afternoon", start_time: "12:00", end_time: "13:00", is_active: true },
-        { slot_name: "evening",   start_time: "16:00", end_time: "17:00", is_active: true },
-      ];
-      const { error: slotErr } = await db.from("time_slots").insert(slots.map(s => ({ ...s, canteen_id: canteen1Id })));
-      if (slotErr) warn(`Time slots seed failed: ${slotErr.message}`);
-      else ok(`Seeded ${slots.length} time slots for canteen 1`);
+    const slots = [
+      { slot_name: "morning",   start_time: "08:00", end_time: "09:00", is_active: true },
+      { slot_name: "afternoon", start_time: "12:00", end_time: "13:00", is_active: true },
+      { slot_name: "evening",   start_time: "16:00", end_time: "17:00", is_active: true },
+    ];
+    const { data: existing } = await db.from("time_slots").select("id, slot_name").eq("canteen_id", canteen1Id);
+    const byName = new Map((existing ?? []).map((r) => [r.slot_name, r.id]));
+    let inserted = 0, updated = 0;
+    for (const s of slots) {
+      const payload = { ...s, canteen_id: canteen1Id };
+      const existingId = byName.get(s.slot_name);
+      if (existingId) {
+        const { error: upErr } = await db.from("time_slots").update(payload).eq("id", existingId);
+        if (upErr) warn(`Time slot update failed for ${s.slot_name}: ${upErr.message}`);
+        else updated++;
+      } else {
+        const { error: insErr } = await db.from("time_slots").insert(payload);
+        if (insErr) warn(`Time slot insert failed for ${s.slot_name}: ${insErr.message}`);
+        else inserted++;
+      }
     }
+    ok(`time_slots canteen 1: ${inserted} inserted, ${updated} updated`);
   } else {
     warn("Skipping time slots — canteen 1 creation failed");
   }
