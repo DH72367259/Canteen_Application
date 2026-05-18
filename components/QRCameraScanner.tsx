@@ -3,20 +3,54 @@
 /**
  * QRCameraScanner — native camera QR scanner.
  *
- * Self-sufficient: if no `streamPromise` is passed, shows a "Tap to start camera"
- * button that calls getUserMedia() inside the click handler. This is the ONLY
- * reliable way to trigger the Android Chrome permission dialog (it must run in
- * a user-gesture context).
+ * Designed to work on ANY desktop or mobile browser that supports getUserMedia:
+ * Chrome, Edge, Brave, Opera, Firefox, Samsung Internet, Safari.
  *
- * The parent can also pass a streamPromise directly when the camera was already
- * requested from another click handler (e.g. when the user taps the "Scan QR"
- * tab — the getUserMedia call must happen in that same click handler too).
+ * Strategy:
+ *   1. Tap "Start Camera" → call getUserMedia({ video: true }) FIRST. No
+ *      facingMode constraint — this is the most permissive call and succeeds
+ *      on every browser/device combo that has any usable camera.
+ *   2. Once we have a stream, try (best-effort) to switch tracks to a rear
+ *      ("environment") camera via applyConstraints. If that fails we keep
+ *      the original stream — the user can still scan, they just point the
+ *      front camera at the QR.
+ *   3. On NotAllowedError we detect the browser engine and show step-by-step
+ *      guidance for the user's actual browser instead of generic text.
  *
  * Retry never reloads the page (that would lose the auth session and bounce
- * the user to /login). Instead it re-runs getUserMedia in-place.
+ * the user to /login). It re-runs getUserMedia in-place.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+
+type BrowserKind = "brave" | "chrome" | "edge" | "opera" | "firefox" | "safari" | "samsung" | "unknown";
+
+function detectBrowser(): BrowserKind {
+  if (typeof navigator === "undefined") return "unknown";
+  const ua = navigator.userAgent;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((navigator as any).brave?.isBrave) return "brave";
+  if (/Edg\//.test(ua))                  return "edge";
+  if (/OPR\/|Opera/.test(ua))            return "opera";
+  if (/SamsungBrowser/.test(ua))         return "samsung";
+  if (/Firefox\//.test(ua))              return "firefox";
+  if (/Chrome\//.test(ua))               return "chrome";
+  if (/Safari\//.test(ua))               return "safari";
+  return "unknown";
+}
+
+function permissionStepsFor(b: BrowserKind): string {
+  switch (b) {
+    case "brave":    return "Brave: tap the 🦁 lion icon → set Shields to 'Down for this site' → Reload. Or tap the lock icon → Site settings → Camera → Allow.";
+    case "chrome":   return "Chrome: tap the lock icon in the address bar → Permissions → Camera → Allow → reload.";
+    case "edge":     return "Edge: tap the lock icon → Site permissions → Camera → Allow → reload.";
+    case "opera":    return "Opera: tap the lock icon → Site settings → Camera → Allow → reload.";
+    case "firefox":  return "Firefox: tap the shield/lock icon → Permissions → Use the Camera → Allow → reload.";
+    case "safari":   return "Safari: open Settings app → Safari → scroll down → Camera → set this site to Allow → reload.";
+    case "samsung":  return "Samsung Internet: tap the lock icon → Permissions → Camera → Allow → reload.";
+    default:         return "Open your browser's Site settings for this page and set Camera to Allow, then reload.";
+  }
+}
 
 interface Props {
   streamPromise: Promise<MediaStream> | null;
@@ -48,23 +82,22 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      // Brave (Shields strict mode) and some embedded browsers strip
-      // navigator.mediaDevices entirely. Tell the user how to fix it.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const isBrave = !!(navigator as any).brave;
-      if (isBrave) {
-        setError("Brave Shields is blocking camera access. Tap the Brave lion icon in the address bar → set Shields to 'Down for this site' → Reload. Or use OTP instead.");
-      } else {
-        setError("This browser does not expose camera APIs. Try Chrome (Android) / Safari (iOS), or use OTP instead.");
-      }
+      const b = detectBrowser();
+      setError(
+        b === "brave"
+          ? "Brave Shields is hiding the camera API for this site. Tap the 🦁 lion icon → set Shields to 'Down for this site' → Reload. Or use OTP."
+          : `This browser does not expose the camera API. ${permissionStepsFor(b)}`,
+      );
       return;
     }
     try {
       // MUST be called synchronously inside the click handler — otherwise
-      // Chrome Android won't show the permission dialog.
-      const p = navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
+      // mobile browsers won't show the permission dialog.
+      // We use {video: true} (no facingMode) because that's the most
+      // permissive call and works on every Chrome / Brave / Edge / Opera /
+      // Firefox / Safari / Samsung Internet build. We upgrade to the rear
+      // camera AFTER the stream resolves (see effect below).
+      const p = navigator.mediaDevices.getUserMedia({ video: true });
       setInternalPromise(p);
       setAttemptKey((k) => k + 1);
     } catch (e) {
@@ -81,9 +114,22 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
     let rafId: number | null = null;
 
     activePromise
-      .then((s) => {
+      .then(async (s) => {
         if (!alive) { s.getTracks().forEach((t) => t.stop()); return; }
         stream = s;
+
+        // Best-effort upgrade to the rear (environment-facing) camera. We
+        // do this AFTER the permissive {video:true} succeeded so we never
+        // get blocked on facingMode constraints. If the swap fails (single-
+        // camera laptop, browser doesn't support applyConstraints) we just
+        // keep the original stream — the QR scanner still works either way.
+        try {
+          const track = s.getVideoTracks()[0];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (track && typeof (track as any).applyConstraints === "function") {
+            await (track as MediaStreamTrack).applyConstraints({ facingMode: { ideal: "environment" } as ConstrainDOMString });
+          }
+        } catch { /* keep original track */ }
 
         const video = videoRef.current;
         if (!video) { s.getTracks().forEach((t) => t.stop()); return; }
@@ -123,47 +169,33 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
         if (!alive) return;
         const name = e instanceof Error ? e.name : "";
         const msg  = e instanceof Error ? e.message : String(e);
+        const browser = detectBrowser();
 
-        // ── Progressive fallback for OverconstrainedError ─────────────────
-        // Some Android devices (especially ones without a real "environment"
-        // facing camera) reject the strict facingMode constraint. Retry once
-        // with no constraints before giving up.
-        if (name === "OverconstrainedError" || name === "NotReadableError") {
-          try {
-            const fallback = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (!alive) { fallback.getTracks().forEach((t) => t.stop()); return; }
-            stream = fallback;
-            const video = videoRef.current;
-            if (video) {
-              video.srcObject = fallback;
-              video.play().catch(() => {});
-              setReady(true);
-            }
-            return;
-          } catch { /* fall through to error UI */ }
-        }
-
-        // ── Permission-denied: distinguish Brave from Chrome/Safari ─────
-        if (name === "NotAllowedError" || /denied|not allowed|permission/i.test(msg)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const isBrave = !!(navigator as any).brave;
-          if (isBrave) {
-            setError(
-              "Camera blocked by Brave Shields. Tap the 🦁 lion icon in the address bar → set Shields to 'Down for this site' → Reload. If that doesn't help, open Site settings → Camera → Allow. Or use OTP instead.",
-            );
-          } else {
-            setError(
-              "Camera access was blocked. Tap the lock icon in the address bar → Permissions → Camera → Allow, then tap Try Again below. If the prompt never appeared, try opening the site in Chrome.",
-            );
-          }
+        // Permission denied — happens on every browser when the user blocks
+        // it OR (Brave) when Shields silently blocks the API. Tailor the
+        // step-by-step instructions to the specific browser they're on.
+        if (name === "NotAllowedError" || name === "SecurityError" ||
+            /denied|not allowed|permission/i.test(msg)) {
+          setError(`Camera access was blocked. ${permissionStepsFor(browser)} Or use OTP instead.`);
           return;
         }
-        if (name === "NotFoundError") {
+        if (name === "NotFoundError" || name === "DevicesNotFoundError") {
           setError("No camera found on this device. Use OTP instead.");
           return;
         }
-        if (name === "NotReadableError") {
+        if (name === "NotReadableError" || name === "TrackStartError") {
           setError("Camera is in use by another app (e.g. WhatsApp video call). Close it and tap Try Again, or use OTP.");
+          return;
+        }
+        if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+          // Shouldn't happen with our {video:true} call, but if a device
+          // somehow rejects it, fall back even further.
+          setError(`Camera constraints not supported on this device. Try Again or use OTP. (${msg})`);
+          return;
+        }
+        if (name === "TypeError") {
+          // navigator.mediaDevices missing — usually HTTPS or in-app browser.
+          setError(`The camera API isn't available in this browser. ${permissionStepsFor(browser)} Or use OTP instead.`);
           return;
         }
         setError(`Camera error: ${msg || name || "unknown"}. Tap Try Again or use OTP.`);

@@ -65,9 +65,11 @@ export default function WorkerOtpVerifyPage() {
       // unavailable (HTTP context, iframe), QRCameraScanner falls back to its
       // own "Start Camera" button instead of crashing the page.
       try {
-        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({
-          video: { facingMode: "environment" },
-        }) ?? null;
+        // {video: true} is the most permissive constraint and succeeds on
+        // every browser (Chrome / Brave / Edge / Opera / Firefox / Safari /
+        // Samsung Internet). QRCameraScanner upgrades to rear camera via
+        // applyConstraints after the stream resolves.
+        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
       } catch {
         streamPromiseRef.current = null;
       }
@@ -244,7 +246,7 @@ export default function WorkerOtpVerifyPage() {
                   <button
                     onClick={() => {
                       try {
-                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
                       } catch {
                         streamPromiseRef.current = null;
                       }

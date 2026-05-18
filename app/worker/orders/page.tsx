@@ -754,9 +754,9 @@ export default function WorkerOrdersPage() {
                       // Chrome Android requires this to show the permission dialog.
                       // Store the Promise so QRCameraScanner can use the stream directly.
                       try {
-                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({
-                          video: { facingMode: "environment" },
-                        }) ?? null;
+                        // Use the most permissive constraint — works across
+                        // every browser. Rear-camera upgrade happens after.
+                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
                       } catch {
                         streamPromiseRef.current = null;
                       }
@@ -832,7 +832,7 @@ export default function WorkerOrdersPage() {
                         onClick={() => {
                           setQrVerifyError(null);
                           try {
-                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
                           } catch {
                             streamPromiseRef.current = null;
                           }
@@ -872,7 +872,7 @@ export default function WorkerOrdersPage() {
                       <button
                         onClick={() => {
                           try {
-                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? null;
+                            streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
                           } catch {
                             streamPromiseRef.current = null;
                           }
