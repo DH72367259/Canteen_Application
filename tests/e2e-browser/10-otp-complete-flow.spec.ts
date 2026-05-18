@@ -34,7 +34,7 @@ async function createOrderWithOtp(canteenId: string, otp = "654321") {
     order_id: order.id,
     menu_item_id: items[0].id,
     quantity: 1,
-    price_at_time: items[0].price ?? 80,
+    unit_price: items[0].price ?? 80,
   });
 
   return order.id;

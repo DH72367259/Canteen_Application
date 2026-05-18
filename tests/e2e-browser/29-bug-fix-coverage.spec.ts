@@ -184,9 +184,9 @@ test.describe("FIX 1+2 — Extra bin fee seeding and consistency", () => {
     };
     expect(body.requires_extra_bin).toBe(true);
     expect(body.bin_plan.bins.length).toBe(2);
-    // Fee must be >0 — was ₹0 before the seed fix
+    // New fee model (Phase-7+): every bin pays. 2 meals → 2 bins → 2 × 200.
     expect(body.extra_fee_paise).toBeGreaterThan(0);
-    expect(body.extra_fee_paise).toBe(200); // platform_charges default
+    expect(body.extra_fee_paise).toBe(400); // 2 bins × 200 paise default
   });
 
   test("cart/check and orders/place return consistent fee for multi-bin cart", async () => {
@@ -277,9 +277,11 @@ test.describe("FIX 1+2 — Extra bin fee seeding and consistency", () => {
       }),
     }, ACCOUNTS.student1);
     if (checkRes.ok) {
-      const body = await checkRes.json() as { extra_fee_paise: number; requires_extra_bin: boolean };
+      const body = await checkRes.json() as { extra_fee_paise: number; requires_extra_bin: boolean; bin_plan: { bins: unknown[] } };
       if (body.requires_extra_bin) {
-        expect(body.extra_fee_paise).toBe(TEST_FEE);
+        // New fee model: every bin pays — fee = binCount × TEST_FEE.
+        const binCount = body.bin_plan.bins.length;
+        expect(body.extra_fee_paise).toBe(TEST_FEE * binCount);
       }
     }
 

@@ -89,7 +89,40 @@ export async function GET(request: Request) {
   if (toDate)   query = query.lt("created_at", toDate);
   if (slotParam) query = query.eq("slot_label", slotParam);
 
-  const { data: orders, error: ordErr, count } = await query;
+  let { data: orders, error: ordErr, count } = await query;
+
+  // Fallback: when the orders→profiles foreign key isn't set up on this
+  // deployment, the embedded join above 500s with PGRST200. Refetch orders
+  // alone and hydrate the profile fields in JS so the route stays 200.
+  if (ordErr && (ordErr.code === "PGRST200" || /relationship|foreign key|could not find/i.test(ordErr.message ?? ""))) {
+    let fb = supabase
+      .from("orders")
+      .select(`id, slot_label, bin_label, bin_color, total_amount, status, created_at, user_id`, { count: "exact" })
+      .eq("canteen_id", canteenId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .range(page * limit, page * limit + limit - 1);
+    if (fromDate) fb = fb.gte("created_at", fromDate);
+    if (toDate)   fb = fb.lt("created_at", toDate);
+    if (slotParam) fb = fb.eq("slot_label", slotParam);
+    const retry = await fb;
+    if (!retry.error && retry.data) {
+      type Row = { id: string; slot_label: string | null; bin_label: string | null; bin_color: string | null; total_amount: number | null; status: string; created_at: string; user_id: string | null };
+      const rows = retry.data as Row[];
+      const uids = [...new Set(rows.map(r => r.user_id).filter((u): u is string => !!u))];
+      const profMap = new Map<string, { name?: string; phone?: string }>();
+      if (uids.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("id, name, phone").in("id", uids);
+        for (const p of (profs ?? []) as Array<{ id: string; name: string | null; phone: string | null }>) {
+          profMap.set(p.id, { name: p.name ?? undefined, phone: p.phone ?? undefined });
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      orders = rows.map(r => ({ ...r, profiles: r.user_id ? [profMap.get(r.user_id) ?? {}] : null })) as any;
+      count = retry.count;
+      ordErr = null;
+    }
+  }
   if (ordErr) return Response.json({ error: ordErr.message }, { status: 500 });
 
   const orderList = orders ?? [];
