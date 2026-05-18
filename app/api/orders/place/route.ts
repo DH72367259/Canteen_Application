@@ -364,6 +364,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Student notification: "Order placed" ────────────────────────────────
+  // The status-update route fires notifications for confirmed/preparing/
+  // placed_in_bin/collected. Without this insert the student would get
+  // nothing between paying and the canteen accepting the order.
+  await supabase.from("notifications").insert({
+    title: "🧾 Order Placed!",
+    body: slotLabel
+      ? `Your order is in — pickup window ${slotLabel}. We'll ping you as the canteen prepares it.`
+      : "Your order is in. We'll ping you as the canteen prepares it.",
+    type: "placed",
+    recipient_type: "user",
+    recipient_id: context.uid,
+    target_role: "user",
+    created_by: context.uid,
+  }).then(() => {}, () => {});
+
   // ── Audit-ledger entry for the Razorpay capture ─────────────────────────
   if (
     typeof paymentId === "string" && RZP_PAYMENT_RE.test(paymentId) &&
