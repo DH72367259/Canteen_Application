@@ -184,9 +184,10 @@ test.describe("FIX 1+2 — Extra bin fee seeding and consistency", () => {
     };
     expect(body.requires_extra_bin).toBe(true);
     expect(body.bin_plan.bins.length).toBe(2);
-    // New fee model (Phase-7+): every bin pays. 2 meals → 2 bins → 2 × 200.
+    // Fee model: first bin free, fee starts from 2nd bin onward.
+    // 2 bins → 1 extra → 1 × 200 = 200.
     expect(body.extra_fee_paise).toBeGreaterThan(0);
-    expect(body.extra_fee_paise).toBe(400); // 2 bins × 200 paise default
+    expect(body.extra_fee_paise).toBe(200);
   });
 
   test("cart/check and orders/place return consistent fee for multi-bin cart", async () => {
@@ -279,9 +280,9 @@ test.describe("FIX 1+2 — Extra bin fee seeding and consistency", () => {
     if (checkRes.ok) {
       const body = await checkRes.json() as { extra_fee_paise: number; requires_extra_bin: boolean; bin_plan: { bins: unknown[] } };
       if (body.requires_extra_bin) {
-        // New fee model: every bin pays — fee = binCount × TEST_FEE.
+        // Fee model: first bin free. fee = (binCount - 1) × TEST_FEE.
         const binCount = body.bin_plan.bins.length;
-        expect(body.extra_fee_paise).toBe(TEST_FEE * binCount);
+        expect(body.extra_fee_paise).toBe(TEST_FEE * (binCount - 1));
       }
     }
 

@@ -41,6 +41,24 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
   const startCamera = useCallback(() => {
     setError(null);
     setReady(false);
+    // Defensive checks BEFORE calling getUserMedia — gives the user a clear
+    // reason instead of a generic NotAllowedError.
+    if (typeof window === "undefined" || !window.isSecureContext) {
+      setError("Camera requires HTTPS. This page must be served over a secure connection. Use OTP instead.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      // Brave (Shields strict mode) and some embedded browsers strip
+      // navigator.mediaDevices entirely. Tell the user how to fix it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isBrave = !!(navigator as any).brave;
+      if (isBrave) {
+        setError("Brave Shields is blocking camera access. Tap the Brave lion icon in the address bar → set Shields to 'Down for this site' → Reload. Or use OTP instead.");
+      } else {
+        setError("This browser does not expose camera APIs. Try Chrome (Android) / Safari (iOS), or use OTP instead.");
+      }
+      return;
+    }
     try {
       // MUST be called synchronously inside the click handler — otherwise
       // Chrome Android won't show the permission dialog.
@@ -101,19 +119,54 @@ export default function QRCameraScanner({ streamPromise: externalPromise, onScan
         video.onloadedmetadata = () => { void scan(); };
         if (video.readyState >= 2) void scan();
       })
-      .catch((e) => {
+      .catch(async (e) => {
         if (!alive) return;
         const name = e instanceof Error ? e.name : "";
         const msg  = e instanceof Error ? e.message : String(e);
-        if (name === "NotAllowedError" || /denied|not allowed|permission/i.test(msg)) {
-          setError(
-            "Camera access was blocked. Tap the lock icon in the address bar → Permissions → Camera → Allow, then tap Try Again below.",
-          );
-        } else if (name === "NotFoundError") {
-          setError("No camera found on this device. Use OTP instead.");
-        } else {
-          setError(`Camera error: ${msg || "unknown"}. Tap Try Again or use OTP.`);
+
+        // ── Progressive fallback for OverconstrainedError ─────────────────
+        // Some Android devices (especially ones without a real "environment"
+        // facing camera) reject the strict facingMode constraint. Retry once
+        // with no constraints before giving up.
+        if (name === "OverconstrainedError" || name === "NotReadableError") {
+          try {
+            const fallback = await navigator.mediaDevices.getUserMedia({ video: true });
+            if (!alive) { fallback.getTracks().forEach((t) => t.stop()); return; }
+            stream = fallback;
+            const video = videoRef.current;
+            if (video) {
+              video.srcObject = fallback;
+              video.play().catch(() => {});
+              setReady(true);
+            }
+            return;
+          } catch { /* fall through to error UI */ }
         }
+
+        // ── Permission-denied: distinguish Brave from Chrome/Safari ─────
+        if (name === "NotAllowedError" || /denied|not allowed|permission/i.test(msg)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const isBrave = !!(navigator as any).brave;
+          if (isBrave) {
+            setError(
+              "Camera blocked by Brave Shields. Tap the 🦁 lion icon in the address bar → set Shields to 'Down for this site' → Reload. If that doesn't help, open Site settings → Camera → Allow. Or use OTP instead.",
+            );
+          } else {
+            setError(
+              "Camera access was blocked. Tap the lock icon in the address bar → Permissions → Camera → Allow, then tap Try Again below. If the prompt never appeared, try opening the site in Chrome.",
+            );
+          }
+          return;
+        }
+        if (name === "NotFoundError") {
+          setError("No camera found on this device. Use OTP instead.");
+          return;
+        }
+        if (name === "NotReadableError") {
+          setError("Camera is in use by another app (e.g. WhatsApp video call). Close it and tap Try Again, or use OTP.");
+          return;
+        }
+        setError(`Camera error: ${msg || name || "unknown"}. Tap Try Again or use OTP.`);
       });
 
     return () => {

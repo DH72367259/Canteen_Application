@@ -211,7 +211,7 @@ describe("POST /api/cart/check", () => {
     expect(j.slot_available).toBe(true);
     expect(j.requires_extra_bin).toBe(true);
     expect(j.bin_plan.bins).toHaveLength(5); // 1 meal per bin = 5 bins
-    expect(j.extra_fee_paise).toBe(1000); // 5 bins × ₹2 (fee applies to all bins)
+    expect(j.extra_fee_paise).toBe(800); // 4 extra bins × ₹2 (first bin free)
     expect(j.slot_capacity.maxOrdersPerSlot).toBe(60); // 100% capacity
   });
 

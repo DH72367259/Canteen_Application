@@ -294,7 +294,7 @@ export async function POST(request: Request) {
     availability_message: availabilityMessage,
     slot_capacity: capacity,
     bin_plan: binPlan,
-    requires_extra_bin: binPlan.bins.length >= 1,
+    requires_extra_bin: binPlan.bins.length > 1,
     extra_fee_paise: binPlan.extraFeePaise,
     meals_per_bin: mealsPerBin,
     snacks_per_bin: snacksPerBin,
