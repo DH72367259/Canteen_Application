@@ -346,8 +346,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  // Notify students on all key status transitions.
-  if (["confirmed", "preparing", "placed_in_bin", "collected"].includes(status)) {
+  // Notify students on all key status transitions, including self-cancel.
+  if (["confirmed", "preparing", "placed_in_bin", "collected", "cancelled"].includes(status)) {
     const { data: orderRow } = await supabase
       .from("orders")
       .select("user_id, canteen_id, bin_label")
@@ -357,7 +357,7 @@ export async function PATCH(
     if (orderRow?.user_id) {
       let title = "";
       let body = "";
-      let type = status;
+      const type = status;
 
       if (status === "confirmed") {
         title = "✅ Order Confirmed!";
@@ -372,18 +372,29 @@ export async function PATCH(
       } else if (status === "collected") {
         title = "✅ Order Collected!";
         body = "Your order has been collected. Enjoy your meal!";
+      } else if (status === "cancelled") {
+        // Hit when the student cancels within the 45s self-cancel window
+        // (the staff-cancel path in /api/orders/[id]/cancel sends its own
+        // notification with the staff-given reason — different copy).
+        title = "🚫 Order Cancelled";
+        body = "Your order was cancelled. Refund will reach your account within 5–7 business days.";
       }
 
-      // The insertNotification helper handles staging schemas that lack the
-      // target_role column — retries once without it so the student bell
-      // doesn't silently drop status-change pings.
-      await insertNotification(supabase, {
-        title, body, type,
-        recipient_type: "user",
-        recipient_id: orderRow.user_id,
-        target_role: "user",
-        created_by: auth.uid,
-      }, `orders/status:${status}`);
+      // Defensive: only insert if a title was produced. Prevents an empty
+      // notification from being saved if a new status sneaks past the
+      // outer guard list without a matching case here.
+      if (title) {
+        // The insertNotification helper handles staging schemas that lack the
+        // target_role column — retries once without it so the student bell
+        // doesn't silently drop status-change pings.
+        await insertNotification(supabase, {
+          title, body, type,
+          recipient_type: "user",
+          recipient_id: orderRow.user_id,
+          target_role: "user",
+          created_by: auth.uid,
+        }, `orders/status:${status}`);
+      }
     }
   }
 
