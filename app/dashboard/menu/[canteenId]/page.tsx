@@ -32,20 +32,6 @@ interface LiveCanteenInfo {
   desc: string;
 }
 
-interface ActiveOrder {
-  id: string;
-  rawStatus: string;
-  slotLabel?: string;
-  canteenId?: string;
-  items: Array<{ name: string; quantity: number }>;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  placed: "Order Placed", confirmed: "Confirmed", preparing: "Preparing",
-  ready_for_placement: "Ready Soon", placed_in_bin: "In Your Bin! 🎉",
-  ready_for_pickup: "Ready to Pick Up", late_pickup: "Late Pickup ⚠️",
-};
-
 export default function CanteenMenuPage() {
   const params = useParams();
   const router = useRouter();
@@ -135,32 +121,32 @@ export default function CanteenMenuPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [canteenId]);
 
-  // ── Meal-period tabs ──────────────────────────────────────────────────
+  // ── Time-window filtering ─────────────────────────────────────────────
+  // The vendor's morning/afternoon/evening windows decide which categorised
+  // items show at a given hour. Snacks/packed_snacks are ALWAYS visible
+  // (the vendor only removes them when out of stock or when the canteen is
+  // closed) — those serve as the "anytime" menu. Items whose category
+  // doesn't resolve to a meal period (null) are treated as anytime too so
+  // we don't accidentally hide custom categories.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
-  // Category sub-tabs handle filtering — meal-period tabs removed (redundant)
-  const mealFilteredItems = visibleItems;
 
-  // ── Active orders for this canteen ────────────────────────────────
-  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
-  useEffect(() => {
-    if (!session?.access_token) return;
-    let cancelled = false;
-    fetch("/api/orders", { headers: { Authorization: `Bearer ${session.access_token}` } })
-      .then(r => r.ok ? r.json() : { orders: [] })
-      .then((d: { orders?: ActiveOrder[] }) => {
-        if (cancelled) return;
-        const active = (d.orders ?? []).filter(
-          o => !["collected", "cancelled"].includes(o.rawStatus) && o.canteenId === canteenId
-        );
-        setActiveOrders(active);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [session?.access_token, canteenId]);
+  const currentPeriod = getCurrentMealPeriod(now, mealWindows);
+  const mealFilteredItems = visibleItems.filter((item) => {
+    const itemPeriod = categoryToMealPeriod(item.category);
+    // Snacks/packed snacks → always visible.
+    if (itemPeriod === "snacks") return true;
+    // Items not tied to a specific period (Drinks, custom categories) → visible.
+    if (itemPeriod === null) return true;
+    // Outside any meal window (e.g. early morning) → don't hide anything, let
+    // the canteen-open guard decide.
+    if (currentPeriod === null) return true;
+    // Otherwise show only when the item's period matches now.
+    return itemPeriod === currentPeriod;
+  });
 
   const CART_KEY = `menu_cart_${canteenId}`;
 
@@ -238,46 +224,9 @@ export default function CanteenMenuPage() {
         </div>
       )}
 
-      {/* Active orders for this canteen */}
-      {activeOrders.length > 0 && (
-        <div style={{ padding: "0.75rem 1rem 0", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-          <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            🔄 Your Active Orders Here
-          </div>
-          {activeOrders.map(order => {
-            const preview = order.items.slice(0, 2).map(i => `${i.name} ×${i.quantity}`).join(", ");
-            const extra = order.items.length > 2 ? ` +${order.items.length - 2}` : "";
-            const isReady = ["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(order.rawStatus);
-            return (
-              <Link
-                key={order.id}
-                href={`/dashboard/order-status?id=${order.id}`}
-                style={{
-                  display: "flex", alignItems: "center", gap: "0.6rem",
-                  background: isReady ? "#f0fdf4" : "#fff",
-                  border: `1.5px solid ${isReady ? "#86efac" : "var(--border)"}`,
-                  borderRadius: 12, padding: "0.6rem 0.75rem",
-                  textDecoration: "none", color: "inherit",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: isReady ? "#15803d" : "var(--orange)", marginBottom: "0.1rem" }}>
-                    {STATUS_LABELS[order.rawStatus] ?? order.rawStatus}
-                    {order.slotLabel ? ` · ${order.slotLabel}` : ""}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {preview}{extra}
-                  </div>
-                </div>
-                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: isReady ? "#15803d" : "var(--orange)", flexShrink: 0 }}>
-                  Track →
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      {/* Active orders intentionally NOT shown here — the home page (floating
+          carousel) and the Stats tab already surface this. Repeating it on
+          every canteen menu page was noisy. */}
 
       {/* Category sub-tabs (driven by live menu) */}
       {categories.length > 1 && (

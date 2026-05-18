@@ -178,15 +178,14 @@ test.describe("Cart check — bin plan API", () => {
     if (!slot) slot = "8:00 AM - 8:15 AM";
   });
 
-  test("1 meal → 1 bin, fee charged (every bin pays)", async () => {
+  test("1 meal → 1 bin, no extra fee (first bin free)", async () => {
     if (!canteenId || !mealId) { test.skip(true, "No canteen/menu items"); return; }
     const res = await cartCheck(canteenId, [{ id: mealId, qty: 1 }], slot, ACCOUNTS.student1);
     if (!res.ok) { test.skip(true, `cart/check failed: ${res.status}`); return; }
     const j = await res.json() as { bin_plan: { bins: unknown[]; extraFeePaise: number }; extra_fee_paise: number };
     expect(j.bin_plan.bins).toHaveLength(1);
-    // Phase-7+ model: every bin (including the first) incurs the bin fee.
-    expect(j.extra_fee_paise).toBeGreaterThan(0);
-    expect(j.bin_plan.extraFeePaise).toBeGreaterThan(0);
+    expect(j.extra_fee_paise).toBe(0);
+    expect(j.bin_plan.extraFeePaise).toBe(0);
   });
 
   test("2 meals → 2 bins, extra fee charged", async () => {
@@ -199,7 +198,7 @@ test.describe("Cart check — bin plan API", () => {
     expect(j.bin_plan.extraFeePaise).toBeGreaterThan(0);
   });
 
-  test("1 meal + 3 snacks → 1 bin, fee charged", async () => {
+  test("1 meal + 3 snacks → 1 bin, no extra fee", async () => {
     if (!canteenId || !mealId || !snackId) { test.skip(true, "No canteen/menu items"); return; }
     const res = await cartCheck(
       canteenId,
@@ -210,7 +209,7 @@ test.describe("Cart check — bin plan API", () => {
     if (!res.ok) { test.skip(true, `cart/check failed: ${res.status}`); return; }
     const j = await res.json() as { bin_plan: { bins: unknown[]; extraFeePaise: number }; extra_fee_paise: number };
     expect(j.bin_plan.bins).toHaveLength(1);
-    expect(j.extra_fee_paise).toBeGreaterThan(0);
+    expect(j.extra_fee_paise).toBe(0);
   });
 
   test("1 meal + 4 snacks → 2 bins, extra fee charged", async () => {
@@ -227,13 +226,13 @@ test.describe("Cart check — bin plan API", () => {
     expect(j.extra_fee_paise).toBeGreaterThan(0);
   });
 
-  test("5 snacks → 1 bin, fee charged", async () => {
+  test("5 snacks → 1 bin, no extra fee", async () => {
     if (!canteenId || !snackId) { test.skip(true, "No canteen/menu items"); return; }
     const res = await cartCheck(canteenId, [{ id: snackId, qty: 5 }], slot, ACCOUNTS.student1);
     if (!res.ok) { test.skip(true, `cart/check failed: ${res.status}`); return; }
     const j = await res.json() as { bin_plan: { bins: unknown[]; extraFeePaise: number }; extra_fee_paise: number };
     expect(j.bin_plan.bins).toHaveLength(1);
-    expect(j.extra_fee_paise).toBeGreaterThan(0);
+    expect(j.extra_fee_paise).toBe(0);
   });
 
   test("6 snacks → 2 bins (5+1), extra fee charged", async () => {

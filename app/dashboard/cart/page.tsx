@@ -236,6 +236,23 @@ function CartContent() {
     setCart(prev => prev.map(c => c.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
   }
 
+  // Mirror cart edits made on the checkout page back into the menu page's
+  // localStorage key. Without this, removing an item here and clicking the
+  // "Back to {canteen}" button would restore the original cart from
+  // localStorage, undoing the deletion.
+  useEffect(() => {
+    if (!canteenId) return;
+    try {
+      const KEY = `menu_cart_${canteenId}`;
+      if (cart.length > 0) {
+        // Serialize to the same shape the menu page writes.
+        localStorage.setItem(KEY, JSON.stringify(cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty }))));
+      } else {
+        localStorage.removeItem(KEY);
+      }
+    } catch { /* ignore quota/private-mode errors */ }
+  }, [cart, canteenId]);
+
   async function finaliseOrder(
     paymentId: string,
     razorpayOrderId?: string,
@@ -622,10 +639,10 @@ function CartContent() {
         {cartCheck && !cartCheck.slot_full && extraBinFee > 0 && (
           <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #f97316", background: "#fff7ed" }}>
             <div style={{ fontWeight: 700, color: "#9a3412", marginBottom: "0.25rem" }}>
-              📦 {cartCheck.bin_plan.bins.length} bin{cartCheck.bin_plan.bins.length > 1 ? "s" : ""} reserved for your order
+              📦 Your order needs {cartCheck.bin_plan.bins.length} pickup bins
             </div>
             <div style={{ fontSize: "0.82rem", color: "#7c2d12" }}>
-              A bin fee of <strong>₹{extraBinFee}</strong> will be added at checkout.
+              First bin is free. An extra-bin fee of <strong>₹{extraBinFee}</strong> will be added for the additional bin{cartCheck.bin_plan.bins.length > 2 ? "s" : ""}.
             </div>
           </div>
         )}
@@ -715,7 +732,7 @@ function CartContent() {
           </div>
           {extraBinFee > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#9a3412" }}>
-              <span>Bin fee</span><span>+₹{extraBinFee}</span>
+              <span>Extra-bin fee</span><span>+₹{extraBinFee}</span>
             </div>
           )}
           <div style={{ marginBottom: "0.4rem" }}>
@@ -760,10 +777,41 @@ function CartContent() {
       </div>
 
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, padding: "0.75rem 1rem", background: "var(--surface)", borderTop: "1px solid var(--border)", zIndex: 35, pointerEvents: "none" }}>
-        <button className="btn btn-primary btn-full" disabled={busy || cart.length === 0} onClick={handleCheckout}
-          style={{ pointerEvents: "auto", padding: "0.9rem", fontSize: "1rem", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-          {busy ? "Processing…" : (!isPro && proChoice === "go_pro") ? "Get Pro & Save →" : payable === 0 ? "Place Order (Wallet)" : `Pay ₹${payable} via Razorpay →`}
-        </button>
+        {/* Disable Pay until the cart/check round-trip confirms this slot still
+            has bin capacity. While waiting → "Checking slot availability…".
+            Slot full → "Slot full — pick another". Otherwise enable the button
+            with the normal Razorpay label. */}
+        {(() => {
+          const noCart = cart.length === 0;
+          const noSlot = !slot;
+          const checking = !noCart && !noSlot && !cartCheck;
+          const slotFull = !!cartCheck?.slot_full;
+          const disabled = busy || noCart || noSlot || checking || slotFull;
+          let label: string;
+          if (busy) label = "Processing…";
+          else if (noCart) label = "Cart is empty";
+          else if (noSlot) label = "Choose a pickup slot";
+          else if (checking) label = "⏳ Checking slot availability…";
+          else if (slotFull) label = "🚫 Slot full — pick another";
+          else if (!isPro && proChoice === "go_pro") label = "Get Pro & Save →";
+          else if (payable === 0) label = "Place Order (Wallet)";
+          else label = `Pay ₹${payable} via Razorpay →`;
+          return (
+            <button
+              className="btn btn-primary btn-full"
+              disabled={disabled}
+              onClick={handleCheckout}
+              style={{
+                pointerEvents: "auto", padding: "0.9rem", fontSize: "1rem", fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+                opacity: disabled ? 0.65 : 1, cursor: disabled ? "not-allowed" : "pointer",
+                background: slotFull ? "#dc2626" : undefined,
+              }}
+            >
+              {label}
+            </button>
+          );
+        })()}
       </div>
 
       {/* ── Phase 7: Extra-bin acknowledgement modal ─────────────────────
