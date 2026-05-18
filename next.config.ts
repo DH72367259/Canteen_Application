@@ -5,10 +5,17 @@ const securityHeaders = [
   { key: "X-Frame-Options",           value: "SAMEORIGIN" },
   { key: "X-Content-Type-Options",    value: "nosniff" },
   { key: "Referrer-Policy",           value: "strict-origin-when-cross-origin" },
-  // geolocation=(self) is required for the user app's "Use my current
-  // location" button — leaving it () disables the API even when the
-  // browser's site permission is granted. Camera/mic stay disabled.
-  { key: "Permissions-Policy",        value: "camera=(), microphone=(), geolocation=(self)" },
+  // Permissions-Policy gates which browser APIs the page is ALLOWED to
+  // use, even before the user grants permission. () = blocked entirely,
+  // (self) = page may request the API (browser then asks the user).
+  //   camera=(self):  worker QR scanner needs this. Without it,
+  //                   getUserMedia rejects with NotAllowedError no matter
+  //                   what Chrome Site settings say. THIS WAS THE ROOT
+  //                   CAUSE of "camera blocked even when permission is
+  //                   granted" — fixed 2026-05-18.
+  //   microphone=():  not needed anywhere; keep disabled.
+  //   geolocation=(self): user app's "Use my current location" button.
+  { key: "Permissions-Policy",        value: "camera=(self), microphone=(), geolocation=(self)" },
   {
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains; preload",
