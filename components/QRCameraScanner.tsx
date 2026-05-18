@@ -44,23 +44,41 @@ function detectBrowser(): BrowserKind {
 // permission for this specific URL. Granting only the system one (e.g.
 // "Camera is allowed for Chrome in Android Settings") is NOT enough —
 // the browser also needs to know that THIS website is allowed to use it.
+//
+// The menu labels below were verified against the live Chrome/Brave/Edge/
+// Opera/Firefox/Samsung Internet/Safari menus as of 2026-05. Path varies
+// across versions, so each entry lists the most common label first plus
+// fallbacks.
 function permissionStepsFor(b: BrowserKind): string {
-  const sitePerm = (browserName: string, path: string) =>
-    `${browserName}: tap the 🔒 lock icon in the address bar → ${path} → set Camera to Allow → Reload. ` +
-    `If the lock icon doesn't show a Camera option, your last answer was "Block" — clear site data: ${browserName} settings → Site settings → All sites → this site → Clear & reset → Reload. ` +
-    `System-level permission (Android Settings → Apps → ${browserName} → Permissions → Camera) must ALSO be Allowed.`;
+  // Universal escape hatch — appended to every message — for cases where
+  // Camera doesn't even appear in the Site settings list (browser hasn't
+  // seen the permission request yet, or earlier "Block" got stored as a
+  // sticky default-deny).
+  const escape =
+    " If you don't see Camera in the menu, tap the 3-dot menu → Settings → Site settings → All sites → find this site → Clear & reset → Reload, then tap Start Camera again so the prompt fires fresh.";
+
+  // Sentence about system-level permission. Same for every browser.
+  const systemNote = (app: string) =>
+    ` Also make sure the system-level camera permission is ON: Android Settings → Apps → ${app} → Permissions → Camera → Allow.`;
+
   switch (b) {
-    case "brave":    return `Brave: tap the 🦁 lion icon → set Shields to "Down for this site" → Reload. ` +
-                            `If still blocked: tap 🔒 lock → Permissions → Camera → Allow → Reload. ` +
-                            `System-level permission (Android Settings → Apps → Brave → Permissions → Camera) must ALSO be Allowed.`;
-    case "chrome":   return sitePerm("Chrome",  "Permissions");
-    case "edge":     return sitePerm("Edge",    "Site permissions");
-    case "opera":    return sitePerm("Opera",   "Site settings");
-    case "samsung":  return sitePerm("Samsung Internet", "Permissions");
-    case "firefox":  return "Firefox: tap the 🔒 shield/lock icon → Permissions → 'Use the Camera' → Allow → Reload. " +
-                            "System-level permission (Android Settings → Apps → Firefox → Permissions → Camera) must ALSO be Allowed.";
-    case "safari":   return "Safari (iOS): open the iOS Settings app → Safari → scroll to 'Settings for Websites' → Camera → set this site to Allow → Reload.";
-    default:         return "Open your browser's per-site settings for this page and set Camera to Allow. The system-level camera permission for the browser app must also be enabled.";
+    case "brave":    return "Brave: tap the 🦁 lion icon in the address bar → toggle Shields OFF for this site → Reload. " +
+                            "If still blocked: tap the 🔒 lock → Site settings → Camera → Allow → Reload." +
+                            systemNote("Brave") + escape;
+    case "chrome":   return "Chrome: tap the 🔒 lock icon in the address bar → Site settings → Camera → Allow → Reload. " +
+                            "(On some Chrome builds the menu reads 'Permissions for this site' instead of 'Site settings' — same thing.)" +
+                            systemNote("Chrome") + escape;
+    case "edge":     return "Edge: tap the 🔒 lock icon in the address bar → Permissions for this site → Camera → Allow → Reload." +
+                            systemNote("Microsoft Edge") + escape;
+    case "opera":    return "Opera: tap the 🔒 lock icon in the address bar → Site settings → Camera → Allow → Reload." +
+                            systemNote("Opera") + escape;
+    case "samsung":  return "Samsung Internet: tap the 🔒 lock icon → Permissions → Camera → Allow → Reload." +
+                            systemNote("Samsung Internet") + escape;
+    case "firefox":  return "Firefox: tap the 🔒 shield/lock icon → Connection secure → More information → Permissions tab → 'Use the Camera' → Allow → Reload. " +
+                            "(On Firefox Android: 3-dot menu → Settings → Site permissions → Camera → tap this site → Allow.)" +
+                            systemNote("Firefox") + escape;
+    case "safari":   return "Safari (iOS): open the iOS Settings app → Safari → scroll to 'Settings for Websites' → Camera → tap this site → Allow → Reload.";
+    default:         return "Open your browser's site settings for this page (usually behind the 🔒 lock icon in the address bar) and set Camera to Allow. The system-level camera permission for the browser app must also be enabled." + escape;
   }
 }
 
