@@ -509,10 +509,18 @@ async function runWipeAll(supabase: ReturnType<typeof createAdminClient>) {
     if (error || !data) { errors.push(`canteen ${u.canteenName}: ${error?.message}`); continue; }
     canteenMap[u.canteenName] = data.id;
 
-    // Add a default time slot + bin
-    await supabase.from("time_slots").insert({
-      canteen_id: data.id, slot_name: "Lunch", start_time: "12:00:00", end_time: "14:00:00", duration_minutes: 15, is_active: true,
-    });
+    // Add a default time slot + bin. Schema drift: staging's time_slots has
+    // duration_minutes; production has capacity instead. Insert with both
+    // keys; if one is rejected, retry with only the other.
+    {
+      const base = { canteen_id: data.id, slot_name: "Lunch", start_time: "12:00:00", end_time: "14:00:00", is_active: true } as Record<string, unknown>;
+      let { error: tsErr } = await supabase.from("time_slots").insert({ ...base, duration_minutes: 15 });
+      if (tsErr && /duration_minutes/i.test(tsErr.message)) {
+        const retry = await supabase.from("time_slots").insert({ ...base, capacity: 60 });
+        tsErr = retry.error;
+      }
+      if (tsErr) console.warn("[seed] time_slots insert failed:", tsErr.message);
+    }
     await supabase.from("bins").insert({
       canteen_id: data.id, bin_code: "BLU001", color: "blue", is_occupied: false,
     });
