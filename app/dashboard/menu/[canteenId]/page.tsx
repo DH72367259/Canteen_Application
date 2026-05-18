@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getCurrentMealPeriod, categoryToMealPeriod, DEFAULT_WINDOWS, type MealWindows, type MealPeriod } from "@/lib/mealPeriod";
+import { getCurrentMealPeriod, categoryToMealPeriod, type MealWindows, type MealPeriod } from "@/lib/mealPeriod";
 import { useAuth } from "@/lib/auth-context";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
@@ -104,10 +104,16 @@ export default function CanteenMenuPage() {
     : items.filter(i => i.category === activeCategory);
 
   // ── Dynamic meal windows from the canteen's slot_control ───────────────
-  // The vendor sets their own breakfast/lunch/dinner times via Slot and Bin
-  // Control. We poll every 60s so a vendor's window edit lands on the
-  // student menu without a page reload.
-  const [mealWindows, setMealWindows] = useState<MealWindows>(DEFAULT_WINDOWS);
+  // The CANTEEN MANAGER is the single source of truth: morning/afternoon/
+  // evening times set in Slot & Bin Control flow through /api/canteens/{id}/
+  // meal-windows and drive the student menu's time-based item filter.
+  // We intentionally initialise mealWindows to null (NOT a hardcoded default)
+  // so that during the brief load window we don't accidentally filter items
+  // using stale defaults the manager might not be using. While null → no
+  // filtering happens; all items show. Once the API responds, filtering
+  // engages with the manager's exact times. Polled every 60 s so window
+  // edits in the manager app appear without the student reloading.
+  const [mealWindows, setMealWindows] = useState<MealWindows | null>(null);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
@@ -134,19 +140,24 @@ export default function CanteenMenuPage() {
     return () => clearInterval(id);
   }, []);
 
-  const currentPeriod = getCurrentMealPeriod(now, mealWindows);
-  const mealFilteredItems = visibleItems.filter((item) => {
-    const itemPeriod = categoryToMealPeriod(item.category);
-    // Snacks/packed snacks → always visible.
-    if (itemPeriod === "snacks") return true;
-    // Items not tied to a specific period (Drinks, custom categories) → visible.
-    if (itemPeriod === null) return true;
-    // Outside any meal window (e.g. early morning) → don't hide anything, let
-    // the canteen-open guard decide.
-    if (currentPeriod === null) return true;
-    // Otherwise show only when the item's period matches now.
-    return itemPeriod === currentPeriod;
-  });
+  // Filtering is skipped entirely until the manager's windows arrive — that
+  // way no item is incorrectly hidden based on a hardcoded default.
+  const currentPeriod = mealWindows ? getCurrentMealPeriod(now, mealWindows) : null;
+  const mealFilteredItems = !mealWindows
+    ? visibleItems
+    : visibleItems.filter((item) => {
+        const itemPeriod = categoryToMealPeriod(item.category);
+        // Snacks/packed snacks → always visible (vendor controls availability
+        // via is_available / out-of-stock; time-of-day never hides snacks).
+        if (itemPeriod === "snacks") return true;
+        // Items not tied to a specific period (Drinks, custom categories) → visible.
+        if (itemPeriod === null) return true;
+        // Outside any meal window (e.g. late night) → don't hide anything,
+        // let the canteen-open guard decide.
+        if (currentPeriod === null) return true;
+        // Otherwise show only when the item's period matches now.
+        return itemPeriod === currentPeriod;
+      });
 
   const CART_KEY = `menu_cart_${canteenId}`;
 
