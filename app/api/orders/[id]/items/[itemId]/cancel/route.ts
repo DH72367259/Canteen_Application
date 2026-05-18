@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { canManageOrders } from "@/lib/roleChecks";
 import { createAdminClient } from "@/lib/supabase-server";
+import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -241,7 +242,7 @@ export async function POST(
           : refund_status === "pending"
             ? "Refund will be processed manually within 24 hours."
             : "No payment was charged for this item cancellation.";
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: allItemsCancelled ? "Order cancelled" : "Item cancelled from your order",
       body: `Reason: ${reasonRaw}. ${refundLine}`,
       type: "order",
@@ -249,7 +250,7 @@ export async function POST(
       recipient_id: order.user_id,
       target_role: "user",
       created_by: auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/items/cancel");
   }
 
   return NextResponse.json({

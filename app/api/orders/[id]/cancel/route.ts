@@ -24,6 +24,7 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { canManageOrders } from "@/lib/roleChecks";
 import { createAdminClient } from "@/lib/supabase-server";
+import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -277,7 +278,7 @@ export async function POST(
       : refund_status === "failed"   ? "Refund attempt failed — our team will process it manually within 24 hours."
       : refund_status === "pending"  ? "Refund will be processed manually within 24 hours."
       : "No payment was charged for this order.";
-    await supabase.from("notifications").insert({
+    await insertNotification(supabase, {
       title: "Order cancelled by canteen",
       body:  `Reason: ${reasonRaw}. ${refundLine}`,
       type:  "order",
@@ -285,11 +286,11 @@ export async function POST(
       recipient_id:   order.user_id,
       target_role:    "user",
       created_by:     auth.uid,
-    }).then(() => {}, () => {});
+    }, "orders/cancel:user");
   }
 
   // ─── Notify the canteen + admin ───────────────────────────────────────
-  await supabase.from("notifications").insert({
+  await insertNotification(supabase, {
     title: "Order cancelled",
     body:  `Order ${orderId.slice(-8).toUpperCase()} cancelled by ${role}. Reason: ${reasonRaw}`,
     type:  "order",
@@ -297,7 +298,7 @@ export async function POST(
     recipient_id:   order.canteen_id,
     target_role:    "canteen_admin",
     created_by:     auth.uid,
-  }).then(() => {}, () => {});
+  }, "orders/cancel:staff");
 
   return NextResponse.json({
     order: updated,
