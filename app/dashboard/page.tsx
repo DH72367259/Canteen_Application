@@ -123,18 +123,23 @@ export default function UserHomePage() {
   useEffect(() => {
     const savedLoc = localStorage.getItem("canteen_student_location");
     const savedCoords = localStorage.getItem("canteen_student_coords");
-    // Tracks whether we've already prompted the user — even if they dismissed
-    // the picker without selecting a location, we don't auto-show it again on
-    // tab navigations. They can still open it manually via the location button.
-    const promptedBefore = localStorage.getItem("canteen_location_prompted");
     if (savedCoords) {
       try { setUserCoords(JSON.parse(savedCoords)); } catch { /* ignore */ }
     }
     if (savedLoc) {
+      // User already picked a location — never auto-prompt again.
       setSelectedLocation(savedLoc);
-    } else if (!promptedBefore) {
+      return;
+    }
+    // Auto-prompt at most once per calendar day, only on the very first visit
+    // of the day. Tab navigations (Stats → Home, Profile → Home, etc.) on the
+    // same day do not re-trigger the picker. User can still tap the location
+    // pin in the header to open it manually anytime.
+    const todayKey = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const lastPromptDate = localStorage.getItem("canteen_location_prompted_date");
+    if (lastPromptDate !== todayKey) {
       setShowLocationPicker(true);
-      localStorage.setItem("canteen_location_prompted", "true");
+      localStorage.setItem("canteen_location_prompted_date", todayKey);
     }
   }, [user?.uid]);
 
