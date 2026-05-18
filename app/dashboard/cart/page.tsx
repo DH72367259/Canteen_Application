@@ -14,12 +14,22 @@ declare global {
 }
 
 interface CartItem { id: string; name: string; price: number; qty: number; }
-interface SlotOption { id: string; label: string; available: boolean; is_full: boolean; }
+interface SlotOption {
+  id: string;
+  label: string;
+  available: boolean;
+  is_full: boolean;
+  bins_used?: number;
+  bins_total?: number;
+}
 interface CartCheck {
   slot_available: boolean;
   slot_full: boolean;
   slot_bins_used: number;
   slot_orders_used: number;
+  bins_needed?: number;
+  bins_available?: number;
+  partial_fit?: boolean;
   slot_capacity: { maxOrdersPerSlot: number; maxBins: number };
   bin_plan: { bins: { binIndex: number }[] };
   requires_extra_bin: boolean;
@@ -562,15 +572,32 @@ function CartContent() {
               <span style={{ fontSize: "0.82rem", color: "var(--orange)", fontWeight: 600 }}>No slots available right now. Check back later.</span>
             ) : slots.map(s => {
               const capacity = slotCapacity[s.id];
-              const isFull = capacity && !capacity.available;
+              // Two reasons a slot is unselectable:
+              //   1. /api/slots already flagged it as is_full (bin pool hit
+              //      max_bins OR order count hit cap). The 60-bin hard stop
+              //      lives here — the slot disappears from selection the
+              //      instant the 60th bin is filled.
+              //   2. /api/cart/check says this cart wouldn't fit in this
+              //      slot (partial-fit case for the current cart size).
+              const slotLevelFull = !!s.is_full;
+              const cartLevelFull = !!(capacity && !capacity.available);
+              const isFull = slotLevelFull || cartLevelFull;
               const isDisabled = !s.available || isFull;
+              // Prefer slot-level bin counts from /api/slots (always present
+              // since the seed step); fall back to cart-check capacity map.
+              const used  = s.bins_used ?? capacity?.ordersUsed ?? 0;
+              const total = s.bins_total ?? capacity?.maxCapacity ?? 0;
 
               return (
                 <div key={s.id} style={{ position: "relative" }}>
                   <button
                     disabled={isDisabled}
                     onClick={() => setSlot(s.id)}
-                    title={isFull ? "Not enough bins for your order" : s.label}
+                    title={
+                      slotLevelFull ? "This slot has reached its bin capacity"
+                      : cartLevelFull ? "Not enough bins for your current cart"
+                      : s.label
+                    }
                     style={{
                       padding: "0.65rem 0.9rem",
                       borderRadius: 10,
@@ -590,9 +617,9 @@ function CartContent() {
                     }}
                   >
                     <span>{s.label}</span>
-                    {capacity && (
+                    {(total > 0) && (
                       <span style={{ fontSize: "0.68rem", opacity: 0.7, fontWeight: 500 }}>
-                        {capacity.ordersUsed}/{capacity.maxCapacity} bins
+                        {used}/{total} bins
                       </span>
                     )}
                   </button>
@@ -627,12 +654,30 @@ function CartContent() {
           )}
         </section>
 
-        {/* ── Slot full / extra-bin notices ────────────────────────────── */}
+        {/* ── Slot full / partial-fit / extra-bin notices ───────────────── */}
         {cartCheck?.slot_full && (
           <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #dc2626", background: "#fef2f2" }}>
             <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: "0.25rem" }}>⚠️ Slot just filled up</div>
             <div style={{ fontSize: "0.82rem", color: "#7f1d1d" }}>
               {cartCheck.slot_bins_used ?? cartCheck.slot_orders_used}/{cartCheck.slot_capacity.maxBins ?? cartCheck.slot_capacity.maxOrdersPerSlot} bins used. Please pick a different slot to continue.
+            </div>
+          </div>
+        )}
+        {/* Partial-fit: some of the order will fit but not all. Tell the
+            student exactly how many bins are free vs needed so they can
+            decide between reducing the cart or picking another slot. */}
+        {cartCheck && !cartCheck.slot_full && cartCheck.partial_fit && (
+          <div className="card" style={{ padding: "0.85rem", border: "1.5px solid #f97316", background: "#fff7ed" }}>
+            <div style={{ fontWeight: 700, color: "#9a3412", marginBottom: "0.25rem" }}>
+              ⚠️ Not enough room in this slot
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#7c2d12", lineHeight: 1.45 }}>
+              Your order needs <strong>{cartCheck.bins_needed} bins</strong> but only{" "}
+              <strong>{cartCheck.bins_available} {cartCheck.bins_available === 1 ? "bin is" : "bins are"} free</strong>{" "}
+              in this slot.
+              <br />
+              Pick a different slot, or reduce your order to fit in{" "}
+              {cartCheck.bins_available} {cartCheck.bins_available === 1 ? "bin" : "bins"}.
             </div>
           </div>
         )}
@@ -786,13 +831,18 @@ function CartContent() {
           const noSlot = !slot;
           const checking = !noCart && !noSlot && !cartCheck;
           const slotFull = !!cartCheck?.slot_full;
-          const disabled = busy || noCart || noSlot || checking || slotFull;
+          const partialFit = !slotFull && !!cartCheck?.partial_fit;
+          const disabled = busy || noCart || noSlot || checking || slotFull || partialFit;
           let label: string;
           if (busy) label = "Processing…";
           else if (noCart) label = "Cart is empty";
           else if (noSlot) label = "Choose a pickup slot";
           else if (checking) label = "⏳ Checking slot availability…";
           else if (slotFull) label = "🚫 Slot full — pick another";
+          else if (partialFit) {
+            const avail = cartCheck?.bins_available ?? 0;
+            label = `🚫 Only ${avail} bin${avail === 1 ? "" : "s"} free — reduce order or pick another slot`;
+          }
           else if (!isPro && proChoice === "go_pro") label = "Get Pro & Save →";
           else if (payable === 0) label = "Place Order (Wallet)";
           else label = `Pay ₹${payable} via Razorpay →`;
@@ -805,7 +855,7 @@ function CartContent() {
                 pointerEvents: "auto", padding: "0.9rem", fontSize: "1rem", fontWeight: 700,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
                 opacity: disabled ? 0.65 : 1, cursor: disabled ? "not-allowed" : "pointer",
-                background: slotFull ? "#dc2626" : undefined,
+                background: (slotFull || partialFit) ? "#dc2626" : undefined,
               }}
             >
               {label}
