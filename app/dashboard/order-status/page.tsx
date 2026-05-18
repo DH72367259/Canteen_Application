@@ -86,6 +86,11 @@ function OrderStatusContent() {
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Cancel-within-45s UI state
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number>(0);
+
   const fetchOrder = async (token: string, id: string) => {
     try {
       // Use the list API — student gets their own orders, all fields mapped
@@ -126,6 +131,52 @@ function OrderStatusContent() {
       return () => clearTimeout(t);
     }
   }, [currentStatus, router]);
+
+  // 45-second self-cancel countdown — derived from order.createdAt every
+  // second while the order is still in "placed" state. Stops once the
+  // canteen confirms the order (currentStatus !== "placed") or the window
+  // elapses.
+  useEffect(() => {
+    if (!order?.createdAt || currentStatus !== "placed") {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () => {
+      const ageMs = Date.now() - new Date(order.createdAt!).getTime();
+      const remaining = Math.max(0, Math.ceil((45_000 - ageMs) / 1000));
+      setSecondsLeft(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [order?.createdAt, currentStatus]);
+
+  async function handleCancelOrder() {
+    if (!session?.access_token || !orderId || cancelling) return;
+    if (!confirm("Cancel this order? Your payment will be refunded automatically.")) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCancelError(j?.error ?? "Could not cancel the order. Try again.");
+        setCancelling(false);
+        return;
+      }
+      // Refetch so the UI flips to the cancelled state (which then routes
+      // back to /dashboard after 5s via the existing effect above).
+      await fetchOrder(session.access_token, orderId);
+    } catch (e) {
+      setCancelError((e as Error).message || "Network error. Try again.");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
   if (error || !order) {
@@ -209,6 +260,63 @@ function OrderStatusContent() {
             })}
           </div>
         </div>
+
+        {/* ── 45s self-cancel window (placed orders only) ── */}
+        {currentStatus === "placed" && secondsLeft > 0 && (
+          <div style={{
+            background: "#fff7ed", borderRadius: 16, padding: "0.9rem 1rem",
+            border: "1.5px solid #fed7aa", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#9a3412" }}>
+                  Cancel within {secondsLeft}s
+                </div>
+                <div style={{ fontSize: "0.78rem", color: "#7c2d12", marginTop: "0.15rem" }}>
+                  Changed your mind? Cancel now for a full refund. After the canteen accepts the order, only staff can cancel.
+                </div>
+              </div>
+              <button
+                onClick={handleCancelOrder}
+                disabled={cancelling || secondsLeft === 0}
+                style={{
+                  flexShrink: 0,
+                  padding: "0.6rem 1rem",
+                  background: cancelling ? "#fed7aa" : "#dc2626",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                  cursor: cancelling ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {cancelling ? "Cancelling…" : "Cancel order"}
+              </button>
+            </div>
+            {cancelError && (
+              <div style={{ marginTop: "0.6rem", fontSize: "0.78rem", color: "#991b1b", fontWeight: 600 }}>
+                ⚠️ {cancelError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Cancelled banner ── */}
+        {currentStatus === "cancelled" && (
+          <div style={{
+            background: "#fef2f2", borderRadius: 16, padding: "1rem",
+            border: "1.5px solid #fca5a5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>🚫</div>
+            <div style={{ fontWeight: 800, color: "#991b1b", fontSize: "1rem" }}>Order cancelled</div>
+            <div style={{ fontSize: "0.82rem", color: "#7f1d1d", marginTop: "0.25rem" }}>
+              Your refund will reach your account within 5–7 business days.
+            </div>
+          </div>
+        )}
 
         {/* ── Slot & canteen info ── */}
         <div style={{ background: "#fff", borderRadius: 16, padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>

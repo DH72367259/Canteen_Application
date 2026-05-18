@@ -64,24 +64,30 @@ export async function PATCH(
     }
   }
 
-  // Student-initiated cancel: 30-second window from order creation — same
+  // Student-initiated cancel: 45-second window from order creation — same
   // model as Swiggy/Zomato. Once that elapses the canteen has "accepted"
   // the order in practice and we lock cancellation. Vendor staff can still
   // cancel via their own UI if needed.
+  //
+  // Refund: if a Razorpay payment_id is on the order, we also fire an
+  // automatic refund inline so the student gets their money back without
+  // staff intervention. Refund failure is logged but does NOT block the
+  // cancel — operations can re-issue the refund from the Razorpay dashboard
+  // if needed. Same shape used by /api/orders/[id]/cancel for staff cancels.
   if (!isStaff && status === "cancelled") {
     const { data: o } = await supabase
       .from("orders")
-      .select("status, canteen_id, bin_id, slot_id, created_at")
+      .select("status, canteen_id, bin_id, slot_id, created_at, payment_id, total_amount")
       .eq("id", orderId)
-      .single<{ status: string; canteen_id: string; bin_id: string | null; slot_id: string | null; created_at: string }>();
+      .single<{ status: string; canteen_id: string; bin_id: string | null; slot_id: string | null; created_at: string; payment_id: string | null; total_amount: number | null }>();
     if (!o) return NextResponse.json({ error: "Order not found." }, { status: 404 });
     if (["placed_in_bin", "ready_for_pickup", "collected", "cancelled", "completed", "preparing", "confirmed"].includes(o.status)) {
       return NextResponse.json({ error: "Order can no longer be cancelled." }, { status: 400 });
     }
     const ageMs = Date.now() - new Date(o.created_at).getTime();
-    if (ageMs > 30_000) {
+    if (ageMs > 45_000) {
       return NextResponse.json({
-        error: "Cancellation window closed. Orders can only be cancelled within 30 seconds of placement.",
+        error: "Cancellation window closed. Orders can only be cancelled within 45 seconds of placement.",
       }, { status: 400 });
     }
     // Free the bin so it can be reused for another order in the same slot.
@@ -102,6 +108,75 @@ export async function PATCH(
       status: "empty",
       updated_at: new Date().toISOString(),
     }).eq("assigned_order_id", orderId);
+
+    // ── Automatic refund ─────────────────────────────────────────────────
+    // Same Razorpay flow staff cancels use. Wrapped in try/catch so a
+    // refund failure (Razorpay down, key missing, etc.) doesn't undo the
+    // cancellation itself. Refund status is recorded on the order row.
+    const PAYMENT_ID_RE = /^pay_[A-Za-z0-9]{14,}$/;
+    const paymentId = (o.payment_id ?? "").trim();
+    let refund_status: "processed" | "failed" | "pending" | "not_required" = "not_required";
+    let refund_id: string | null = null;
+    if (paymentId && PAYMENT_ID_RE.test(paymentId)) {
+      const KEY_ID     = process.env.RAZORPAY_KEY_ID     || "";
+      const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
+      if (!KEY_ID || !KEY_SECRET) {
+        refund_status = "pending";
+      } else {
+        try {
+          const rzpAuth = Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
+          const amountPaise = Math.round(Number(o.total_amount ?? 0) * 100);
+          const refundBody: Record<string, unknown> = {
+            speed: "optimum",
+            notes: { reason: "order_cancelled", order_id: orderId, cancelled_by_role: "user" },
+          };
+          if (amountPaise > 0) refundBody.amount = amountPaise;
+          const resp = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
+            method:  "POST",
+            headers: { Authorization: `Basic ${rzpAuth}`, "Content-Type": "application/json" },
+            body:    JSON.stringify(refundBody),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data?.id) {
+            refund_status = "processed";
+            refund_id = data.id;
+            // Best-effort: update the payments row so the audit ledger matches.
+            await supabase
+              .from("payments")
+              .update({
+                status: "refunded",
+                refunded_amount_paise: amountPaise,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("razorpay_payment_id", paymentId)
+              .then(() => {}, () => {});
+          } else {
+            refund_status = "failed";
+            console.warn(`[orders/status] self-cancel refund failed for order ${orderId}:`, data?.error?.description ?? resp.status);
+          }
+        } catch (e) {
+          refund_status = "failed";
+          console.warn(`[orders/status] self-cancel refund threw for order ${orderId}:`, (e as Error).message);
+        }
+      }
+    }
+
+    // Persist refund + cancellation metadata onto the order row. Schema
+    // drift safe — staging may not have refund_status/cancelled_at columns;
+    // in that case the update silently falls back to status only.
+    const cancelledAt = new Date().toISOString();
+    const meta: Record<string, unknown> = {
+      cancellation_reason: "Self-cancelled within 45s window",
+      cancelled_by: auth.uid,
+      cancelled_by_role: "user",
+      cancelled_at: cancelledAt,
+      refund_status,
+      refund_id,
+    };
+    const metaUpdate = await supabase.from("orders").update(meta).eq("id", orderId);
+    if (metaUpdate.error && /column .* does not exist/i.test(metaUpdate.error.message)) {
+      // Older schema — skip the audit columns silently.
+    }
   }
 
   // ── Pseudo: skip ───────────────────────────────────────────────
