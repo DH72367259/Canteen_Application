@@ -36,14 +36,29 @@ export async function POST(req: NextRequest) {
   // Users due = registered 30+ days ago AND (never notified OR last notified 30+ days ago)
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: profiles, error: fetchError } = await supabase
+  // Schema drift safety: staging doesn't have password_notified_at yet, so the
+  // .or() filter would 500 there. Try with the column; if missing, fall back
+  // to filtering by created_at alone (every eligible user is candidate).
+  let { data: profiles, error: fetchError } = await supabase
     .from("profiles")
     .select("id, email")
     .eq("role", "user")
     .lte("created_at", cutoff)
     .or(`password_notified_at.is.null,password_notified_at.lte.${cutoff}`)
-    .order("created_at", { ascending: true }) // oldest registrations first
+    .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
+
+  if (fetchError && /password_notified_at/i.test(fetchError.message)) {
+    const retry = await supabase
+      .from("profiles")
+      .select("id, email")
+      .eq("role", "user")
+      .lte("created_at", cutoff)
+      .order("created_at", { ascending: true })
+      .limit(BATCH_SIZE);
+    profiles = retry.data;
+    fetchError = retry.error;
+  }
 
   if (fetchError) {
     console.error("[cron:pw-expiry]", fetchError.message);
@@ -78,12 +93,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Mark all successfully notified users so they won't be picked up again for 30 days
+  // Mark all successfully notified users so they won't be picked up again for 30 days.
+  // Tolerant of staging schemas that don't have password_notified_at yet —
+  // the update just no-ops there. Notifications still went out either way.
   if (notifiedIds.length > 0) {
-    await supabase
+    const { error: updateErr } = await supabase
       .from("profiles")
       .update({ password_notified_at: new Date().toISOString() })
       .in("id", notifiedIds);
+    if (updateErr && !/password_notified_at/i.test(updateErr.message)) {
+      console.warn("[cron:pw-expiry] mark-notified failed:", updateErr.message);
+    }
   }
 
   return NextResponse.json({

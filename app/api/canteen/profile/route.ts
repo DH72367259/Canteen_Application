@@ -57,7 +57,16 @@ export async function PATCH(request: Request) {
   if (Object.keys(canteenUpdates).length > 0) {
     hasWork = true;
     canteenUpdates.updated_at = new Date().toISOString();
-    const { error } = await supabase.from("canteens").update(canteenUpdates).eq("id", canteenId);
+    let { error } = await supabase.from("canteens").update(canteenUpdates).eq("id", canteenId);
+    // Schema drift safety: prod's canteens table doesn't have `location` yet.
+    // If the column is missing, drop it and retry instead of 500-ing.
+    if (error && /column .* (location|updated_at) (does not exist|of relation)/i.test(error.message)) {
+      const slim: Record<string, unknown> = { ...canteenUpdates };
+      if (/location/i.test(error.message))   delete slim.location;
+      if (/updated_at/i.test(error.message)) delete slim.updated_at;
+      const retry = await supabase.from("canteens").update(slim).eq("id", canteenId);
+      error = retry.error;
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
