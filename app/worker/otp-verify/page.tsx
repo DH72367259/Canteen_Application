@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import QRCameraScanner from "@/components/QRCameraScanner";
+import { requestRearCamera } from "@/lib/camera";
 
 type Mode = "otp" | "qr";
 
@@ -65,11 +66,12 @@ export default function WorkerOtpVerifyPage() {
       // unavailable (HTTP context, iframe), QRCameraScanner falls back to its
       // own "Start Camera" button instead of crashing the page.
       try {
-        // {video: true} is the most permissive constraint and succeeds on
-        // every browser (Chrome / Brave / Edge / Opera / Firefox / Safari /
-        // Samsung Internet). QRCameraScanner upgrades to rear camera via
-        // applyConstraints after the stream resolves.
-        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
+        // requestRearCamera() asks for the back camera first
+        // (facingMode: exact "environment") and falls back to {video: true}
+        // only when no rear cam exists. Called synchronously inside the
+        // click handler to preserve the user-gesture context required by
+        // mobile browsers for the permission dialog.
+        streamPromiseRef.current = navigator.mediaDevices ? requestRearCamera() : null;
       } catch {
         streamPromiseRef.current = null;
       }
@@ -246,7 +248,7 @@ export default function WorkerOtpVerifyPage() {
                   <button
                     onClick={() => {
                       try {
-                        streamPromiseRef.current = navigator.mediaDevices?.getUserMedia({ video: true }) ?? null;
+                        streamPromiseRef.current = navigator.mediaDevices ? requestRearCamera() : null;
                       } catch {
                         streamPromiseRef.current = null;
                       }
