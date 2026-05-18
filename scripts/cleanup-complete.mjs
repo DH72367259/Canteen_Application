@@ -60,12 +60,15 @@ async function cleanup() {
     console.log(`  ✅ Deleted ${ephemeralIds.length} ephemeral users`);
   }
 
-  // 3. Free bins whose current_order_id points to a deleted order
-  await db
-    .from("bins")
-    .update({ current_order_id: null, assigned_order_id: null, is_occupied: false, status: "empty" })
-    .not("current_order_id", "is", null)
-    .catch(() => {});
+  // 3. Free bins whose current_order_id points to a deleted order.
+  // The PostgrestFilterBuilder chain doesn't have a .catch() method until it
+  // resolves into a promise — using try/await is the only safe way.
+  try {
+    await db
+      .from("bins")
+      .update({ current_order_id: null, assigned_order_id: null, is_occupied: false, status: "empty" })
+      .not("current_order_id", "is", null);
+  } catch { /* schema may lack current_order_id — fall through */ }
   console.log("  ✅ Released orphaned bins");
 
   console.log("\n✅ Cleanup complete — whitelist accounts and canteen data preserved.");

@@ -56,7 +56,8 @@ async function placeTestOrder(canteenId: string): Promise<string | null> {
     order_id: orderData.id,
     menu_item_id: items[0].id,
     quantity: 1,
-    price_at_time: 80,
+    // Real schema column is `unit_price`; older test code used the wrong name.
+    unit_price: 80,
   });
 
   return orderData.id;

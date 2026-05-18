@@ -181,6 +181,14 @@ jobs:
         run: node scripts/cleanup-db-deep.mjs
         continue-on-error: true
 
+      - name: Seed staging data (canteen, menu, slots, bins, platform_charges)
+        # Idempotent — replaces test-deleted menu items / time slots so every
+        # test that depends on `!canteenId`, `!menu`, `!slot`, `!orderId`
+        # actually runs instead of skipping. Required after cleanup-db-deep
+        # which wipes E2E-prefixed slots but doesn't recreate them.
+        run: node scripts/seed-staging.mjs
+        continue-on-error: true
+
       - name: Run E2E tests
         run: npx playwright test
 

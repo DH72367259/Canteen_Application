@@ -81,7 +81,7 @@ async function seedTestOrder(canteenId: string, status = "placed"): Promise<stri
     order_id: order.id,
     menu_item_id: items[0].id,
     quantity: 1,
-    price_at_time: price,
+    unit_price: price,
   }).then(() => {}, () => {});
 
   return order.id;

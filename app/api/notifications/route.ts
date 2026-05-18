@@ -113,27 +113,42 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  const basePayload = {
+    title: title.trim(),
+    body: message.trim(),
+    type: "admin",
+    recipient_type,
+    recipient_id: recipient_id ?? null,
+    created_by: auth.uid,
+  };
+  // Prod DB check_constraint on `target_role` does NOT permit 'all' (only
+  // 'all_staff'/'user'/'worker'/'canteen_admin'). For broadcasts we fall
+  // back to 'all_staff'; visibility is still universal because the GET
+  // filter OR's `recipient_type.eq.all` so every role still sees the row.
+  const targetRoleValue = !target_role || target_role === "all" ? "all_staff" : target_role;
+
+  let { data, error } = await supabase
     .from("notifications")
-    .insert({
-      title: title.trim(),
-      body: message.trim(),
-      type: "admin",
-      recipient_type,
-      recipient_id: recipient_id ?? null,
-      // Prod DB check_constraint on `target_role` does NOT permit 'all' (only
-      // 'all_staff'/'user'/'worker'/'canteen_admin'). For broadcasts we fall
-      // back to 'all_staff'; visibility is still universal because the GET
-      // filter OR's `recipient_type.eq.all` so every role still sees the row.
-      target_role: !target_role || target_role === "all" ? "all_staff" : target_role,
-      created_by: auth.uid,
-    })
+    .insert({ ...basePayload, target_role: targetRoleValue })
     .select("id")
     .single();
 
+  // Staging schemas (notably STAGING_FULL_SETUP.sql before phase1_data_foundation
+  // ran) don't have target_role yet. Retry the insert without it so the test
+  // suite isn't blocked on a column that the prod migration adds.
+  if (error && (/target_role/i.test(error.message) || error.code === "42703" || error.code === "PGRST204")) {
+    const retry = await supabase
+      .from("notifications")
+      .insert(basePayload)
+      .select("id")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) return NextResponse.json({ error: `Failed to send notification: ${error.message}` }, { status: 500 });
 
-  return NextResponse.json({ success: true, id: data.id });
+  return NextResponse.json({ success: true, id: data!.id });
 }
 
 // PATCH /api/notifications — mark notification(s) as read
