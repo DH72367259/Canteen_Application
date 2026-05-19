@@ -1,5 +1,5 @@
 node_modules/
 android/
 ios/
-package-lock.json
 *.log
+# package-lock.json IS committed — required by setup-node cache: npm

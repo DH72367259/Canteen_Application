@@ -53,11 +53,8 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Worker workspace ships without a lockfile because the android/ dir
-      # is generated fresh each build (kept out of git via mobile-worker/.gitignore).
-      # `npm install` is fine here — deps are minimal and pinned.
       - name: Install Node dependencies
-        run: npm install
+        run: npm ci
 
       # First-time: generate the android/ directory. Idempotent — no-op if it exists.
       - name: Add Android Capacitor platform
@@ -88,9 +85,24 @@ jobs:
 
       - name: Decode upload keystore
         if: env.HAS_KEYSTORE == 'true'
+        id: decode_keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.WORKER_ANDROID_KEYSTORE_BASE64 }}
-        run: echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload.jks
+        continue-on-error: true
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n"\047' | base64 --decode > android/app/upload.jks
+          if [ ! -s android/app/upload.jks ]; then
+            echo "::warning::Decoded keystore is empty — WORKER_ANDROID_KEYSTORE_BASE64 is malformed."
+            rm -f android/app/upload.jks
+            exit 1
+          fi
+          echo "✓ Keystore decoded ($(stat -c%s android/app/upload.jks) bytes)"
+
+      - name: Override HAS_KEYSTORE on decode failure
+        if: env.HAS_KEYSTORE == 'true' && steps.decode_keystore.outcome == 'failure'
+        run: |
+          echo "HAS_KEYSTORE=false" >> "$GITHUB_ENV"
+          echo "::warning::Falling back to UNSIGNED worker build because keystore decode failed."
 
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
