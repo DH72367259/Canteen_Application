@@ -123,6 +123,15 @@ export async function GET(request: Request) {
       ordErr = null;
     }
   }
+  // PostgREST returns "Requested range not satisfiable" (code PGRST103)
+  // when .range(N, M) is asked against a result set smaller than N. For
+  // pagination "give me page 2 of an empty table" the right answer is
+  // "empty page", not an error. Treat that case as zero rows.
+  if (ordErr && (ordErr.code === "PGRST103" || /range not satisfiable/i.test(ordErr.message ?? ""))) {
+    orders = [];
+    count = 0;
+    ordErr = null;
+  }
   if (ordErr) return Response.json({ error: ordErr.message }, { status: 500 });
 
   const orderList = orders ?? [];
