@@ -150,6 +150,13 @@ interface AuthContextValue {
   clearConcurrentSession: () => void
   forceLogoutAllSessions: () => Promise<void>
   logout: () => Promise<void>
+  /** Nuclear-option recovery: wipes every local cookie / localStorage /
+   *  sessionStorage / IndexedDB / service-worker cache and hard-reloads.
+   *  Used by the StuckLoadingRecovery banner when a corrupt cookie traps
+   *  the user (Brave's stricter cookie partitioning is the usual trigger).
+   *  More thorough than logout() which only signs out of Supabase and
+   *  clears app-managed keys. */
+  resetSession: () => Promise<void>
   sendEmailOtp: (email: string) => Promise<void>
   sendPasswordResetOtp: (email: string) => Promise<void>
   verifyEmailOtp: (email: string, token: string) => Promise<void>
@@ -612,6 +619,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.signOut().catch(() => {})
   }
 
+  /**
+   * Nuclear recovery — wipes every piece of local browser state we own and
+   * hard-reloads. Designed for the stuck-loading case where a corrupt
+   * cookie (typically Brave's partitioned cookie store) puts the auth-
+   * context into a state it can't recover from. Safe to call from anywhere.
+   *
+   * Everything is wrapped in try/catch — a single storage API failing on a
+   * weird browser must not prevent the rest of the cleanup or the reload.
+   */
+  async function resetSession() {
+    // 1. Local-only Supabase signOut (skips the network round-trip that
+    //    can hang on a bad refresh token).
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* ignore */ }
+
+    // 2. App-managed cache + flags
+    try { clearProfileCache() } catch { /* ignore */ }
+    try { purgeStudentLocalState() } catch { /* ignore */ }
+
+    // 3. Wipe everything else in localStorage / sessionStorage. We've
+    //    already preserved nothing — the user is in recovery mode, they
+    //    expect to log in fresh.
+    try { if (typeof localStorage !== 'undefined') localStorage.clear() } catch { /* ignore */ }
+    try { if (typeof sessionStorage !== 'undefined') sessionStorage.clear() } catch { /* ignore */ }
+
+    // 4. IndexedDB — Supabase stores some auth state here on certain browsers.
+    try {
+      if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
+        const dbs = await indexedDB.databases()
+        for (const db of dbs ?? []) {
+          if (db?.name) indexedDB.deleteDatabase(db.name)
+        }
+      }
+    } catch { /* not all browsers expose databases() */ }
+
+    // 5. Unregister service workers + nuke their caches. The SW could
+    //    be serving a stale shell that re-runs the same broken init.
+    try {
+      if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister().catch(() => {})))
+      }
+      if (typeof caches !== 'undefined' && caches.keys) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k).catch(() => {})))
+      }
+    } catch { /* ignore */ }
+
+    // 6. Hard reload to whichever login page suits the last-known role
+    //    (or generic /login if we don't know).
+    if (typeof window !== 'undefined') {
+      const target = loginUrlForRole(roleRef.current) || '/login'
+      window.location.replace(target)
+    }
+  }
+
   /** Maps well-known demo emails to a role; all others → 'user'. */
   function demoRoleFor(email: string | null): UserRole {
     if (email === 'admin@canteen.app')   return 'super_admin'
@@ -808,6 +870,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearConcurrentSession,
         forceLogoutAllSessions,
         logout,
+        resetSession,
         sendEmailOtp,
         sendPasswordResetOtp,
         verifyEmailOtp,
