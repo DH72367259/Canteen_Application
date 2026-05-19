@@ -1018,9 +1018,12 @@ body {
 }
 
 @media (min-width: 769px) {
-  .bottom-nav { display: none; }
-  /* app-shell stays flex-direction:column on desktop — student/worker pages
-     are mobile-first UIs; the web-shell handles vendor/admin desktop layout */
+  /* Bottom nav stays visible on desktop too — students using the web app
+     need the Home/Stats/Profile tabs regardless of viewport. The nav is
+     already absolute-centered with max-width:430px so it sits nicely
+     inside the mobile-style 540px frame.
+     (Previously `display:none` here hid the only way to switch tabs on
+     desktop — see 2026-05-19 fix.) */
   .app-shell {
     max-width: 540px;
   }
