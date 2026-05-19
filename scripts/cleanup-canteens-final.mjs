@@ -85,12 +85,33 @@ await safe(`all canteens`,     () => db.from("canteens").delete().not("id", "is"
 
 console.log("");
 
-// Retry the soft-deleted auth row (admin@noqx.test) one more time
+// Retry the soft-deleted auth row (admin@noqx.test) one more time.
+// Before deleting, walk known FK chains and NULL out references that
+// would otherwise block the delete with PG error 23503. We hit this on
+// 2026-05-19 with platform_charges.updated_by pointing at a phantom row.
 const { data: { users } } = await db.auth.admin.listUsers({ perPage: 1000 });
 const stragglers = users.filter(u => (u.email ?? "").toLowerCase() !== "admin@noqx.co.in");
 if (stragglers.length > 0) {
   console.log(`🧹 Retrying ${stragglers.length} soft-deleted auth row(s) with hard-delete...`);
+
+  // Tables/columns known to reference auth.users(id). Extend this list
+  // whenever a new FK trips delete. Format: { table, column, action }
+  // action="null" → SET col = NULL (preferred when column is nullable)
+  // action="delete" → DELETE row (use when col is NOT NULL)
+  const fkChain = [
+    { table: "platform_charges", column: "updated_by", action: "null" },
+  ];
+
   for (const u of stragglers) {
+    for (const fk of fkChain) {
+      const patch = fk.action === "null"
+        ? db.from(fk.table).update({ [fk.column]: null }).eq(fk.column, u.id)
+        : db.from(fk.table).delete().eq(fk.column, u.id);
+      const { error } = await patch;
+      if (error && !/does not exist|schema cache/i.test(error.message)) {
+        console.warn(`   ⚠️  FK clear (${fk.table}.${fk.column}) for ${u.id.slice(0,8)}…: ${error.message}`);
+      }
+    }
     const { error } = await db.auth.admin.deleteUser(u.id, false);
     console.log(error ? `   ⚠️  ${u.id.slice(0,8)}…: ${error.message}` : `   ✓ hard-deleted ${u.id.slice(0,8)}…`);
   }
