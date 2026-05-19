@@ -154,7 +154,7 @@ function TopBar({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(t);
   }, []);
   return (
-    <div style={{ background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)", color: "#fff", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 8px rgba(0,0,0,0.25)", position: "sticky", top: 0, zIndex: 20 }}>
+    <div style={{ background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)", color: "#fff", padding: "calc(env(safe-area-inset-top, 0) + 0.75rem) 1rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 8px rgba(0,0,0,0.25)", position: "sticky", top: 0, zIndex: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span style={{ fontSize: "1.2rem" }}>🧑‍🍳</span>
         <span style={{ fontWeight: 800, fontSize: "0.95rem" }}>Worker Portal</span>

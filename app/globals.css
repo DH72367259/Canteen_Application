@@ -50,7 +50,9 @@ body {
 
 /* ─── Layout Shells ─── */
 
-/* Mobile-first app shell (user app) */
+/* Mobile-first app shell (user app)
+   safe-area-inset-top: keeps content out from under the Android status bar
+   when running inside the Capacitor WebView (web browsers ignore this var). */
 .app-shell {
   max-width: 430px;
   margin: 0 auto;
@@ -59,6 +61,7 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0);
 }
 
 /* Web shell (vendor/admin dashboards) */
@@ -198,6 +201,12 @@ body {
   justify-content: space-between;
   padding: 1rem 1rem 0.5rem;
   background: var(--surface);
+  /* Stick at the top of the viewport so child pages' position:sticky tab
+     bars (top: 56) have something above to slot under instead of scrolling
+     away. zIndex 20 sits above slot-tabs (zIndex 10) and below modals (30+). */
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .app-topbar .greeting-block .greeting {

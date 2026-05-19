@@ -395,8 +395,14 @@ export default function WorkerOrdersPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-      {/* Top bar */}
-      <div style={{ background: "#1e293b", color: "#fff", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* Top bar — sticky + safe-area-inset-top so Android status bar (Capacitor
+          WebView fills the screen including under it) doesn't clip "Orders | time | Logout". */}
+      <div style={{
+        background: "#1e293b", color: "#fff",
+        padding: "calc(env(safe-area-inset-top, 0) + 0.75rem) 1rem 0.75rem",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        position: "sticky", top: 0, zIndex: 20,
+      }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           {tab !== "orders" && (
             <button

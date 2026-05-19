@@ -111,7 +111,7 @@ export default function WorkerOtpVerifyPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       {/* Top bar */}
-      <div style={{ background: "#1e293b", color: "#fff", padding: "0.75rem 1rem", fontWeight: 700, fontSize: "1rem" }}>
+      <div style={{ background: "#1e293b", color: "#fff", padding: "calc(env(safe-area-inset-top, 0) + 0.75rem) 1rem 0.75rem", fontWeight: 700, fontSize: "1rem", position: "sticky", top: 0, zIndex: 20 }}>
         NOQX · Verify Order
       </div>
 
