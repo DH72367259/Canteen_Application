@@ -8,10 +8,14 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * component in the app signs out any non-student role that opens this app
  * and shows a "Student app only" screen.
  *
+ * CURRENTLY POINTS AT STAGING. Before shipping to Play Store / TestFlight,
+ * switch SERVER_URL to https://canteenapplication-production.up.railway.app
+ * (or rebuild with CAPACITOR_SERVER_URL=... env var).
+ *
  * To test against a local dev server:
  *   CAPACITOR_SERVER_URL=http://192.168.x.x:3000 npx cap sync
  */
-const SERVER_URL = process.env.CAPACITOR_SERVER_URL ?? 'https://noqx.up.railway.app';
+const SERVER_URL = process.env.CAPACITOR_SERVER_URL ?? 'https://canteenapplication-staging.up.railway.app';
 
 const config: CapacitorConfig = {
   appId: 'com.noqx.student',
@@ -23,7 +27,8 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
     iosScheme: 'https',
     allowNavigation: [
-      'noqx.up.railway.app',
+      'canteenapplication-staging.up.railway.app',
+      'canteenapplication-production.up.railway.app',
       '*.supabase.co',
       'api.razorpay.com',
       'checkout.razorpay.com',

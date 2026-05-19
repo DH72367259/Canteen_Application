@@ -10,8 +10,12 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *
  * Initial URL is /worker/login because workers don't need the public
  * landing — they go straight to login.
+ *
+ * CURRENTLY POINTS AT STAGING. For production: switch SERVER_URL to
+ * https://canteenapplication-production.up.railway.app/worker/login or
+ * rebuild with CAPACITOR_SERVER_URL=... env var.
  */
-const SERVER_URL = process.env.CAPACITOR_SERVER_URL ?? 'https://noqx.up.railway.app/worker/login';
+const SERVER_URL = process.env.CAPACITOR_SERVER_URL ?? 'https://canteenapplication-staging.up.railway.app/worker/login';
 
 const config: CapacitorConfig = {
   appId: 'com.noqx.worker',
@@ -22,7 +26,8 @@ const config: CapacitorConfig = {
     cleartext: false,
     androidScheme: 'https',
     allowNavigation: [
-      'noqx.up.railway.app',
+      'canteenapplication-staging.up.railway.app',
+      'canteenapplication-production.up.railway.app',
       '*.supabase.co',
       'api.razorpay.com',
       'checkout.razorpay.com',
