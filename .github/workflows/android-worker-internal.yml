@@ -51,7 +51,8 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          # Capacitor 8 requires JDK 21 (capacitor.build.gradle uses VERSION_21)
+          java-version: '21'
 
       - name: Install Node dependencies
         run: npm ci

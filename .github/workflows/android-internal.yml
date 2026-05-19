@@ -42,7 +42,10 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          # Capacitor 8 generates capacitor.build.gradle with sourceCompatibility
+          # VERSION_21, so the runner JDK must be ≥21 even though our own
+          # build.gradle still targets 17.
+          java-version: '21'
 
       - name: Install Node dependencies
         run: npm ci --legacy-peer-deps
