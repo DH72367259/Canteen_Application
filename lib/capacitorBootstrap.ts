@@ -2,9 +2,24 @@
  * Capacitor bootstrap — runs once, only inside the native shell.
  *
  * Safe to import from any client component; does nothing on the web.
- * Wires up: status-bar styling, push-notifications registration, and
- * surfaces the device push token so the backend can save it for
- * targeted notifications (order-ready, refund-processed, etc.).
+ * Currently wires up only the status-bar style.
+ *
+ * Push notifications were intentionally removed 2026-05-19 because the
+ * @capacitor/push-notifications v8 plugin requires Firebase Cloud Messaging
+ * (google-services.json) at the native level. Without that config, the
+ * Android Firebase SDK throws during MainActivity.onCreate and the app
+ * crashes BEFORE any JS runs — try/catch here cannot save it.
+ *
+ * Re-add when FCM is properly set up:
+ *   1. Create Firebase project, register both Android packages
+ *      (com.noqx.student + com.noqx.worker)
+ *   2. Download google-services.json for each app
+ *   3. Commit them into android/app/ and mobile-worker/android/app/
+ *      (NOT the secret API keys — just the public client config)
+ *   4. Reinstate @capacitor/push-notifications in both package.json files
+ *   5. Restore the registration block below (see git log for the version
+ *      that previously lived here)
+ *   6. Build the /api/notifications/device-token endpoint server-side
  */
 "use client";
 
@@ -27,31 +42,6 @@ export function useCapacitorBootstrap() {
             await StatusBar.setBackgroundColor({ color: "#ffffff" });
           }
         } catch { /* plugin not installed in this build */ }
-
-        // Push notifications — request permission then register
-        try {
-          const { PushNotifications } = await import("@capacitor/push-notifications");
-          const perm = await PushNotifications.checkPermissions();
-          let granted = perm.receive === "granted";
-          if (!granted) {
-            const req = await PushNotifications.requestPermissions();
-            granted = req.receive === "granted";
-          }
-          if (granted) {
-            await PushNotifications.register();
-            PushNotifications.addListener("registration", async (token) => {
-              // Best-effort: ship the token to the backend so we can target this device.
-              // Endpoint not yet implemented; silently no-op on 404.
-              try {
-                await fetch("/api/notifications/device-token", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ token: token.value, platform: Capacitor.getPlatform() }),
-                });
-              } catch { /* offline — try again next launch */ }
-            });
-          }
-        } catch { /* plugin not installed */ }
       } catch {
         // Capacitor not present — running on plain web. No-op.
       }

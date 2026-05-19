@@ -43,10 +43,8 @@ const config: CapacitorConfig = {
     minWebViewVersion: 80,
   },
   plugins: {
-    PushNotifications: {
-      // Order-ready, new-order, cancelled notifications matter for kitchen staff
-      presentationOptions: ['badge', 'sound', 'alert'],
-    },
+    // PushNotifications removed until FCM (google-services.json) is configured.
+    // Order-ready / new-order / cancelled push will be re-enabled then.
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',
