@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { CanteenOrder } from "@/types/canteen";
 import type { Session } from "@supabase/supabase-js";
 import CancelOrderModal from "@/components/CancelOrderModal";
+import { MobileSidebarToggle, MobileSidebarBackdrop } from "@/components/MobileSidebarToggle";
 import dynamic from "next/dynamic";
 
 const QRScanner    = dynamic(() => import("@/components/QRScanner"),    { ssr: false });
@@ -631,6 +632,9 @@ export default function VendorDashboard() {
 
   return (
     <div className="web-shell">
+      {/* Mobile-only hamburger + backdrop. display:none on desktop. */}
+      <MobileSidebarToggle />
+      <MobileSidebarBackdrop />
       {/* Low-stock global popup — visible on ANY tab */}
       {lowStockAlerts.filter(a => !lowStockDismissed.has(a.id)).length > 0 && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
