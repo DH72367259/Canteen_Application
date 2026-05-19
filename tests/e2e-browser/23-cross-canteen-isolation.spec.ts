@@ -3,7 +3,7 @@
  * Data isolation between canteen 1 and canteen 2 — no cross-canteen data leaks.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id } from "./_helpers";
 
 async function getCanteen2Id(): Promise<string> {
   const db = adminClient();
@@ -67,7 +67,7 @@ test.describe("Order isolation", () => {
 
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteen2Id, status: "placed", total_amount: 80, otp: "c2c1c3" })
+      .insert({ canteen_id: canteen2Id, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "c2c1c3" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -86,7 +86,7 @@ test.describe("Order isolation", () => {
     const db = adminClient();
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "iso001", slot_label: "12:00 - 12:15" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "iso001", slot_label: "12:00 - 12:15" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -105,7 +105,7 @@ test.describe("Order isolation", () => {
 
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteen2Id, status: "placed_in_bin", total_amount: 80, otp: "iso002" })
+      .insert({ canteen_id: canteen2Id, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "iso002" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

@@ -3,7 +3,7 @@
  * Multiple students ordering in the same slot — isolation and concurrent ordering.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, provisionStudent, deleteUser } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, provisionStudent, deleteUser } from "./_helpers";
 
 test.describe("Two students — order isolation", () => {
   let canteenId: string;
@@ -90,7 +90,7 @@ test.describe("Order status transitions", () => {
   test("order status progresses: placed → placed_in_bin → collected", async () => {
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "444000" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "444000" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -117,7 +117,7 @@ test.describe("Order status transitions", () => {
   test("cancelled order cannot be moved to collected", async () => {
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "cancelled", total_amount: 80, otp: "555000" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "cancelled", total_amount: 80, otp: "555000" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -144,7 +144,7 @@ test.describe("Canteen live-orders aggregation", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "666000", slot_label: "12:00 - 12:15" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "666000", slot_label: "12:00 - 12:15" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

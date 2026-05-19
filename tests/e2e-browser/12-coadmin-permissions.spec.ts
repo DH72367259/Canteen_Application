@@ -3,7 +3,7 @@
  * Co-admin role: same read access as super_admin, limited write access.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id } from "./_helpers";
 
 test.describe("Co-admin — read access", () => {
   test("co_admin can list all users", async () => {
@@ -69,7 +69,7 @@ test.describe("Co-admin — write access", () => {
     if (!items?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "654321" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "654321" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

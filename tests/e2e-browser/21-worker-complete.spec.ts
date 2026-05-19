@@ -3,7 +3,7 @@
  * Worker full workflow: login, view orders, OTP entry, access control.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, APP_URL } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, APP_URL } from "./_helpers";
 
 test.describe("Worker login and navigation", () => {
   test("worker reaches orders or dashboard after login", async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe("Worker API access — allowed", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "987654" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "987654" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -110,7 +110,7 @@ test.describe("Worker API access — blocked", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "111999" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "111999" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

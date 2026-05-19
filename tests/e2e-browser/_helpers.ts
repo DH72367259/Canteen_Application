@@ -132,6 +132,27 @@ export async function getCanteen1Id(): Promise<string> {
   return id;
 }
 
+/**
+ * Returns student1's profile.id — used as the user_id when test helpers
+ * seed orders directly. orders.user_id is NOT NULL on staging, so every
+ * order-creation helper MUST set a real profile id or the insert fails
+ * silently and the test skips. Cached to keep test fixtures fast.
+ */
+let _student1IdCache: string | null = null;
+export async function getStudent1Id(): Promise<string> {
+  if (_student1IdCache) return _student1IdCache;
+  const db = adminClient();
+  const { data } = await db
+    .from("profiles")
+    .select("id")
+    .eq("email", ACCOUNTS.student1.email)
+    .maybeSingle();
+  const id = (data as { id?: string } | null)?.id;
+  if (!id) throw new Error("student1 profile not found — run scripts/seed-staging.mjs first");
+  _student1IdCache = id;
+  return id;
+}
+
 /** Returns the canteen_id linked to the worker's profile. */
 export async function getWorkerCanteenId(): Promise<string> {
   const db = adminClient();

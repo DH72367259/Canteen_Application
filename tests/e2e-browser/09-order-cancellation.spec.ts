@@ -4,7 +4,7 @@
  * already-cancelled orders reject re-cancel.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id } from "./_helpers";
 
 async function getAnyActiveOrder() {
   const db = adminClient();
@@ -38,11 +38,13 @@ async function placeTestOrder(canteenId: string): Promise<string | null> {
   const endMin = m + dur;
   const slotLabel = `${start} - ${String(Math.floor(h + endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
 
+  // orders.user_id is NOT NULL on staging — must point at a real profile
+  const userId = await getStudent1Id().catch(() => null);
   const { data: orderData, error } = await db
     .from("orders")
     .insert({
       canteen_id: canteenId,
-      user_id: null,
+      user_id: userId,
       status: "placed",
       total_amount: 80,
       slot_label: slotLabel,

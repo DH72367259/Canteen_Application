@@ -9,7 +9,7 @@
  *   GET  /api/orders/[id]/invoice    — canteen_admin or order owner fetches printable data
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, APP_URL } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, APP_URL } from "./_helpers";
 
 // Fetch a fresh QR payload for an order (as student1 — order must be theirs)
 async function fetchQrPayload(orderId: string): Promise<string | null> {
@@ -168,7 +168,7 @@ test.describe("QR verify — worker scans student QR", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "qr012" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "qr012" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -284,7 +284,7 @@ test.describe("QR verify — worker scans student QR", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "qr021" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "qr021" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
