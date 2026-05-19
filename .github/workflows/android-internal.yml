@@ -92,17 +92,27 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
 
-      - name: Build release AAB (signed if secrets present, unsigned otherwise)
+      - name: Build release AAB (signed if all 4 secrets work; auto-fallback to unsigned)
         working-directory: android
         run: |
+          set +e
           if [ "${HAS_KEYSTORE}" = "true" ]; then
             ./gradlew bundleRelease \
               -Pandroid.injected.signing.store.file=app/upload.jks \
               -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
               -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
               -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
-          else
-            ./gradlew bundleRelease
+            STATUS=$?
+            if [ $STATUS -eq 0 ]; then
+              echo "✓ Signed AAB built"
+              exit 0
+            fi
+            echo "::warning::Signed build failed (exit $STATUS) — most likely the existing 2026-05-13 ANDROID_KEY_PASSWORD doesn't match the keystore. Rebuilding UNSIGNED."
+            rm -rf app/build/outputs/bundle/release
+            echo "HAS_KEYSTORE=false" >> "$GITHUB_ENV"
+          fi
+          ./gradlew bundleRelease
+          if [ "${HAS_KEYSTORE}" != "true" ]; then
             echo "::warning::Student AAB built UNSIGNED. Populate ANDROID_KEYSTORE_BASE64 + 3 sibling secrets to ship to Play Store."
           fi
 
