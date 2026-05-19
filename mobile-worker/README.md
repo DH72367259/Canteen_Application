@@ -16,6 +16,10 @@ cd mobile-worker
 npm install
 npx cap add android        # generates the android/ directory
 npx cap sync android
+
+# REQUIRED: grant WebView camera access for QR scanning. CI does this
+# automatically; for local builds, run once after every `cap add android`:
+./scripts/patch-camera-permission.sh
 ```
 
 ## Build a debug APK locally

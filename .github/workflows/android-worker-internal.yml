@@ -66,6 +66,26 @@ jobs:
       - name: Sync Capacitor assets + plugins
         run: npx cap sync android
 
+      # Worker app scans QRs from inside the WebView via getUserMedia().
+      # On Android, BridgeWebChromeClient only grants the WebView camera
+      # access if the host AndroidManifest declares CAMERA. Without this
+      # step the QR scanner page fails silently with a "permission denied".
+      - name: Grant WebView camera access (CAMERA permission)
+        working-directory: mobile-worker/android/app/src/main
+        run: |
+          if ! grep -q "android.permission.CAMERA" AndroidManifest.xml; then
+            python3 -c "
+          import re
+          p = open('AndroidManifest.xml').read()
+          inject = '    <uses-permission android:name=\"android.permission.CAMERA\" />\n    <uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />\n'
+          p = re.sub(r'(\s*</manifest>)', inject + r'\1', p, count=1)
+          open('AndroidManifest.xml','w').write(p)
+          "
+            echo "✓ CAMERA permission added to AndroidManifest"
+          else
+            echo "✓ CAMERA permission already present"
+          fi
+
       - name: Decode upload keystore
         if: env.HAS_KEYSTORE == 'true'
         env:
