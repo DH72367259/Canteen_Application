@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import CancelOrderModal from "@/components/CancelOrderModal";
+import { MobileSidebarToggle, MobileSidebarBackdrop } from "@/components/MobileSidebarToggle";
 
 type AdminSection = "overview" | "canteens" | "users" | "managers" | "workers" | "cities" | "orders" | "refunds" | "analytics" | "payments" | "support" | "notifications" | "account";
 
@@ -78,6 +79,11 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="web-shell">
+      {/* Mobile-only hamburger + backdrop — display:none on desktop via CSS.
+          The toggle is position:fixed top-left so it floats over the
+          content without depending on the section having a topbar. */}
+      <MobileSidebarToggle />
+      <MobileSidebarBackdrop />
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
