@@ -357,12 +357,44 @@ export async function POST(req: NextRequest) {
   if (verifiedItems.length > 0) {
     await supabase.from("order_items").insert(
       verifiedItems.map(item => ({
-        order_id: order.id,
-        menu_item_id: item.menu_item_id,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
+        order_id:      order.id,
+        menu_item_id:  item.menu_item_id,
+        quantity:      item.quantity,
+        unit_price:    item.unit_price,
       }))
     );
+
+    // ── POST-CREATION PER-ITEM CAP RECHECK (atomic race condition guard) ─────
+    // The pre-insert per-item check at the top of this route is non-atomic —
+    // two concurrent students can both pass it and both insert order_items
+    // that together exceed quantity_per_slot or total_per_day. After the items
+    // are persisted, re-run getMenuItemUsageForToday and compare against the
+    // configured caps. If any item is now overbooked, roll back THIS order
+    // (delete order + order_items) so the earlier order wins.
+    const verify = await getMenuItemUsageForToday(supabase, {
+      canteenId, menuItemIds: itemIds, slotId,
+      slotLabel: slotLabel ? String(slotLabel) : null,
+    });
+    for (const item of cartItems as Array<{ id: string; qty: number }>) {
+      const menuItem = menuMap.get(item.id);
+      if (!menuItem) continue;
+      const avail = menuItem.availability_type ?? "slot_based";
+      const slotCap = Number(menuItem.quantity_per_slot ?? 0);
+      const dayCap = Number(menuItem.total_per_day ?? 0);
+      const slotUsedNow = verify.slotUsed.get(item.id) ?? 0;
+      const dayUsedNow = verify.dayUsed.get(item.id) ?? 0;
+      const overSlot = avail === "slot_based" && slotCap > 0 && slotUsedNow > slotCap;
+      const overDay  = avail === "batched_prepared" && dayCap > 0 && dayUsedNow > dayCap;
+      if (overSlot || overDay) {
+        await supabase.from("order_items").delete().eq("order_id", order.id);
+        await supabase.from("orders").delete().eq("id", order.id);
+        return Response.json({
+          error: `${menuItem.name} just sold out while your order was being placed. Please remove it and try again.`,
+          item_sold_out: true,
+          item_id: item.id,
+        }, { status: 409 });
+      }
+    }
   }
 
   // ── Student notification: "Order placed" ────────────────────────────────

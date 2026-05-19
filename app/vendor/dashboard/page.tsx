@@ -3697,7 +3697,9 @@ function VendorInventoryView({ session }: { session: { access_token: string } | 
 
   useEffect(() => {
     void load();
-    const iv = setInterval(load, 30000);
+    // Poll inventory every 8s so canteen staff see live decrements as
+    // students place orders. 30s felt stale once orders started flowing.
+    const iv = setInterval(load, 8000);
     return () => clearInterval(iv);
   }, [load]);
 
