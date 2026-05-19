@@ -103,7 +103,12 @@ jobs:
             rm -f android/app/upload.jks
             exit 1
           fi
-          echo "✓ Keystore decoded ($(stat -c%s android/app/upload.jks) bytes)"
+          if ! keytool -list -keystore android/app/upload.jks -storepass "${KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
+            echo "::warning::Worker keystore opened but keytool -list failed — BASE64/PASSWORD mismatch."
+            rm -f android/app/upload.jks
+            exit 1
+          fi
+          echo "✓ Keystore decoded and verified ($(stat -c%s android/app/upload.jks) bytes)"
 
       - name: Override HAS_KEYSTORE on decode failure
         if: env.HAS_KEYSTORE == 'true' && steps.decode_keystore.outcome == 'failure'

@@ -70,11 +70,16 @@ jobs:
             rm -f android/app/upload.jks
             exit 1
           fi
-          # Sanity check: must look like a JKS or PKCS12 file (4-byte magic header)
-          if ! file android/app/upload.jks | grep -qE "Java KeyStore|data"; then
-            echo "::warning::Decoded keystore does not look like a JKS/PKCS12 file."
+          # Decisive validity check: can keytool actually open it with the
+          # provided password? If not, the secret pair (BASE64 + PASSWORD)
+          # is mismatched or corrupt and signing WILL fail anyway. Better
+          # to detect now and fall back to unsigned than fail mid-build.
+          if ! keytool -list -keystore android/app/upload.jks -storepass "${KEYSTORE_PASSWORD}" > /dev/null 2>&1; then
+            echo "::warning::Keystore opened but keytool -list failed — BASE64/PASSWORD mismatch or corrupt store."
+            rm -f android/app/upload.jks
+            exit 1
           fi
-          echo "✓ Keystore decoded ($(stat -c%s android/app/upload.jks) bytes)"
+          echo "✓ Keystore decoded and verified ($(stat -c%s android/app/upload.jks) bytes)"
 
       # Re-export HAS_KEYSTORE as false if decode failed, so subsequent
       # build/publish steps fall back to unsigned cleanly.
