@@ -64,6 +64,12 @@ jobs:
       - name: Sync Capacitor assets + plugins
         run: npx cap sync android
 
+      # Generate launcher icon + splash from mobile-worker/assets/icon-only.png
+      # (the same orange noqx logo used on the web). @capacitor/assets writes
+      # all mipmap-*dpi resources and the adaptive-icon XML in one shot.
+      - name: Generate app icon + splash from web icon
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#1f2937' --splashBackgroundColor '#2563eb' --splashBackgroundColorDark '#1e3a8a'
+
       # Worker app scans QRs from inside the WebView via getUserMedia().
       # On Android, BridgeWebChromeClient only grants the WebView camera
       # access if the host AndroidManifest declares CAMERA. Without this
