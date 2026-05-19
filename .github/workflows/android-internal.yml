@@ -61,20 +61,36 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
 
-      - name: Build release AAB
+      - name: Build release AAB (signed if secrets present, unsigned otherwise)
         working-directory: android
         run: |
-          ./gradlew bundleRelease \
-            -Pandroid.injected.signing.store.file=app/upload.jks \
-            -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
-            -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
-            -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
+          if [ "${HAS_KEYSTORE}" = "true" ]; then
+            ./gradlew bundleRelease \
+              -Pandroid.injected.signing.store.file=app/upload.jks \
+              -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
+              -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
+              -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
+          else
+            ./gradlew bundleRelease
+            echo "::warning::Student AAB built UNSIGNED. Populate ANDROID_KEYSTORE_BASE64 + 3 sibling secrets to ship to Play Store."
+          fi
+
+      - name: Build debug APK (sideload-friendly)
+        working-directory: android
+        run: ./gradlew assembleDebug
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: noqx-student-release.aab
           path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 14
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noqx-student-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
       # Only publish to Play Store when both secrets are populated

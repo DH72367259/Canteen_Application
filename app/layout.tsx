@@ -6,6 +6,7 @@ import { UpdateBanner, ForceUpdateGate } from "@/components/UpdateGate";
 import { CapacitorBoot } from "@/components/CapacitorBoot";
 import { DisableDevTools } from "@/components/DisableDevTools";
 import { NativeStudentGuard } from "@/components/NativeStudentGuard";
+import { NativeWorkerGuard } from "@/components/NativeWorkerGuard";
 import { StuckLoadingRecovery } from "@/components/StuckLoadingRecovery";
 
 export const metadata: Metadata = {
@@ -62,16 +63,18 @@ export default function RootLayout({
         <CapacitorBoot />
         <AuthProvider>
           <NativeStudentGuard>
-            <ForceUpdateGate>
-              <UpdateBanner />
-              {/* Recovery banner that surfaces only when auth-context's
-                  loading stays true past 10s — gives users a one-tap
-                  escape from stale-cookie hangs (Brave cookie partitioning,
-                  corrupted Supabase session token, etc.). Invisible
-                  otherwise. */}
-              <StuckLoadingRecovery />
-              {children}
-            </ForceUpdateGate>
+            <NativeWorkerGuard>
+              <ForceUpdateGate>
+                <UpdateBanner />
+                {/* Recovery banner that surfaces only when auth-context's
+                    loading stays true past 10s — gives users a one-tap
+                    escape from stale-cookie hangs (Brave cookie partitioning,
+                    corrupted Supabase session token, etc.). Invisible
+                    otherwise. */}
+                <StuckLoadingRecovery />
+                {children}
+              </ForceUpdateGate>
+            </NativeWorkerGuard>
           </NativeStudentGuard>
         </AuthProvider>
       </body>

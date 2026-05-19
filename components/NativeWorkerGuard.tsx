@@ -3,45 +3,41 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { getNativeAppId } from "@/lib/nativeAppId";
 
-const STUDENT_APP_ID = "com.noqx.student";
+const WORKER_APP_ID = "com.noqx.worker";
 
 /**
- * Enforces student-only access when the app runs inside the student native shell.
+ * Enforces worker-only access when the app runs inside the worker native shell.
  *
  * On web: invisible no-op.
- * On a non-student native app (e.g. com.noqx.worker): also a no-op — the
- *   worker app uses NativeWorkerGuard instead.
- * On com.noqx.student native: if the logged-in user is NOT a student
- *   (role === 'user'), they're signed out and shown a "student app only" screen.
+ * On a non-worker native app (e.g. com.noqx.student): also a no-op.
+ * On com.noqx.worker native: if the logged-in user is NOT a worker
+ *   (role === 'worker'), they're signed out and shown a "worker app only"
+ *   screen so students/admins can't accidentally see live-order queues.
  */
-export function NativeStudentGuard({ children }: { children: React.ReactNode }) {
+export function NativeWorkerGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [isStudentApp, setIsStudentApp] = useState(false);
+  const [isWorkerApp, setIsWorkerApp] = useState(false);
   const [platformChecked, setPlatformChecked] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  // Detect native platform + appId once on mount
   useEffect(() => {
     (async () => {
       const appId = await getNativeAppId();
-      setIsStudentApp(appId === STUDENT_APP_ID);
+      setIsWorkerApp(appId === WORKER_APP_ID);
       setPlatformChecked(true);
     })();
   }, []);
 
-  // Re-check role whenever auth or platform state changes
   useEffect(() => {
-    if (!platformChecked || !isStudentApp || loading) return;
+    if (!platformChecked || !isWorkerApp || loading) return;
 
     if (!user) {
-      // Not logged in — let the normal login flow run
       setBlocked(false);
       return;
     }
 
-    const isStudent = user.role === "user" || user.role === null;
-    if (!isStudent) {
+    if (user.role !== "worker") {
       setSigningOut(true);
       import("@/lib/supabase-client")
         .then(({ getSupabaseClient }) => getSupabaseClient()?.auth.signOut())
@@ -53,63 +49,59 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
     } else {
       setBlocked(false);
     }
-  }, [user, loading, platformChecked, isStudentApp]);
+  }, [user, loading, platformChecked, isWorkerApp]);
 
   if (blocked) {
     return (
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "center",
         justifyContent: "center", minHeight: "100vh",
-        background: "linear-gradient(135deg, #fff7f4 0%, #ffffff 100%)",
+        background: "linear-gradient(135deg, #f4f7ff 0%, #ffffff 100%)",
         padding: "32px 24px", textAlign: "center", fontFamily: "system-ui, sans-serif",
       }}>
-        {/* Icon */}
-        <div style={{ fontSize: "72px", marginBottom: "8px", lineHeight: 1 }}>🎓</div>
+        <div style={{ fontSize: "72px", marginBottom: "8px", lineHeight: 1 }}>👨‍🍳</div>
 
-        {/* Brand */}
-        <div style={{ fontSize: "28px", fontWeight: "800", color: "#ff6b35", marginBottom: "4px" }}>
-          NoQx Student
+        <div style={{ fontSize: "28px", fontWeight: "800", color: "#2563eb", marginBottom: "4px" }}>
+          NoQx Worker
         </div>
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px", letterSpacing: "0.5px" }}>
-          COLLEGE CANTEEN APP
+          CANTEEN STAFF APP
         </div>
 
-        {/* Message */}
         <div style={{
-          background: "#fff3ee", border: "1px solid #ffd4c0",
+          background: "#eef2ff", border: "1px solid #c7d2fe",
           borderRadius: "16px", padding: "20px 24px", marginBottom: "32px",
           maxWidth: "320px",
         }}>
           <div style={{ fontSize: "16px", fontWeight: "600", color: "#333", marginBottom: "8px" }}>
-            Student accounts only
+            Worker accounts only
           </div>
           <div style={{ fontSize: "14px", color: "#666", lineHeight: "1.6" }}>
-            This app is for students to order food from their college canteen.
-            Staff &amp; admin accounts must use the desktop site.
+            This app is for canteen workers to manage live orders, prep,
+            and OTP verification. Students &amp; admins must use the
+            desktop site or student app.
           </div>
         </div>
 
-        {/* URL hint */}
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px" }}>
-          Staff portal:{" "}
-          <span style={{ color: "#ff6b35", fontWeight: "600" }}>noqx.up.railway.app</span>
+          Other portals:{" "}
+          <span style={{ color: "#2563eb", fontWeight: "600" }}>noqx.up.railway.app</span>
         </div>
 
-        {/* Back to login button */}
         <button
           onClick={() => {
             setBlocked(false);
-            window.location.href = "/login";
+            window.location.href = "/worker/login";
           }}
           style={{
-            background: "#ff6b35", color: "#fff", border: "none",
+            background: "#2563eb", color: "#fff", border: "none",
             borderRadius: "14px", padding: "16px 40px",
             fontSize: "16px", fontWeight: "700", cursor: "pointer",
-            boxShadow: "0 4px 20px rgba(255,107,53,0.35)",
+            boxShadow: "0 4px 20px rgba(37,99,235,0.35)",
             letterSpacing: "0.3px",
           }}
         >
-          Back to Student Login
+          Back to Worker Login
         </button>
       </div>
     );

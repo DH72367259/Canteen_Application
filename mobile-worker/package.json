@@ -1,0 +1,25 @@
+{
+  "name": "noqx-worker-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NoQx Worker — Android-only Capacitor shell. Points at the same Next.js codebase via serverUrl. iOS not built (workers use Android phones in the canteen).",
+  "scripts": {
+    "add:android": "cap add android",
+    "sync": "cap sync android",
+    "open:android": "cap open android",
+    "build:debug": "cd android && ./gradlew assembleDebug",
+    "build:release": "cd android && ./gradlew bundleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.6.2"
+  }
+}
