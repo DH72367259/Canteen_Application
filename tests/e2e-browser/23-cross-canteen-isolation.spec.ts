@@ -15,21 +15,29 @@ async function getCanteen2Id(): Promise<string> {
 
 test.describe("Menu isolation", () => {
   test("canteen1_admin cannot create menu items for canteen2", async () => {
-    // canteen_admin role always operates on their own canteen — no canteen_id param accepted
-    const res = await apiFetch("/api/canteen/menu", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Cross Item", price: 50, category: "Meals", availability_type: "batched_prepared" }),
-    }, ACCOUNTS.canteenAdmin);
-    if (res.status === 200) {
-      const data = await res.json() as { item?: { id: string } };
-      if (data.item?.id) {
-        const db = adminClient();
-        const { data: item } = await db.from("menu_items").select("canteen_id").eq("id", data.item.id).single();
-        const canteen1Id = await getCanteen1Id();
-        expect(item?.canteen_id).toBe(canteen1Id); // Must belong to canteen1, not canteen2
-        await db.from("menu_items").delete().eq("id", data.item.id);
+    // Unique per-run name + try/finally cleanup — without these, a failed
+    // assertion below would leak a "Cross Item" row into staging (we shipped
+    // with 4 such leaked rows on 2026-05-19; see commit 2eb1f for the cleanup).
+    const uniqueName = `Cross Item ${Date.now()}`;
+    let createdId: string | null = null;
+    const db = adminClient();
+    try {
+      const res = await apiFetch("/api/canteen/menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: uniqueName, price: 50, category: "Meals", availability_type: "batched_prepared" }),
+      }, ACCOUNTS.canteenAdmin);
+      if (res.status === 200) {
+        const data = await res.json() as { item?: { id: string } };
+        if (data.item?.id) {
+          createdId = data.item.id;
+          const { data: item } = await db.from("menu_items").select("canteen_id").eq("id", createdId).single();
+          const canteen1Id = await getCanteen1Id();
+          expect(item?.canteen_id).toBe(canteen1Id); // Must belong to canteen1, not canteen2
+        }
       }
+    } finally {
+      if (createdId) await db.from("menu_items").delete().eq("id", createdId);
     }
   });
 

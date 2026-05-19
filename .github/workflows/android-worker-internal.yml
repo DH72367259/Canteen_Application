@@ -147,11 +147,14 @@ jobs:
         working-directory: mobile-worker/android
         run: ./gradlew assembleDebug
 
+      # Unsigned and signed bundleRelease produce different filenames
+      # (app-release-unsigned.aab vs app-release.aab); glob both.
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: noqx-worker-release.aab
-          path: mobile-worker/android/app/build/outputs/bundle/release/app-release.aab
+          path: mobile-worker/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload debug APK artifact

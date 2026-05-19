@@ -120,11 +120,16 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
+      # Unsigned bundleRelease produces app-release-unsigned.aab; signed
+      # builds produce app-release.aab. Glob both so the artifact is uploaded
+      # whichever path the build took. if-no-files-found: warn = the run
+      # still passes if AAB generation itself failed.
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: noqx-student-release.aab
-          path: android/app/build/outputs/bundle/release/app-release.aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload debug APK artifact
