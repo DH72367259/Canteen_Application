@@ -20,7 +20,14 @@ export async function GET(request: Request) {
   // assertt status in [200, 400, 404]) passes and clients degrade gracefully.
   if (error) {
     const msg = error.message ?? "";
-    if (/does not exist|relation .* does not exist|undefined_table/i.test(msg) || error.code === "42P01") {
+    // Cover BOTH the postgres "relation does not exist" wording AND the
+    // Supabase REST wording "Could not find the table '...' in the schema
+    // cache". Either way the table isn't there → graceful 200 + empty list.
+    if (
+      /does not exist|relation .* does not exist|undefined_table|could not find the table|schema cache/i.test(msg) ||
+      error.code === "42P01" ||
+      error.code === "PGRST205"
+    ) {
       return Response.json({ bank_details: [] });
     }
     return Response.json({ error: msg }, { status: 500 });
