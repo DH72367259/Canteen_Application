@@ -3,7 +3,7 @@
  * Slot capacity: slot-control API, slot generation, order count enforcement.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id } from "./_helpers";
 
 test.describe("Slot control — GET", () => {
   test("canteen_admin can fetch slot-control settings", async () => {
@@ -117,7 +117,7 @@ test.describe("Slot capacity — order count tracking", () => {
     if (!items?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, slot_label: slotLabel, otp: "121212" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, slot_label: slotLabel, otp: "121212" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

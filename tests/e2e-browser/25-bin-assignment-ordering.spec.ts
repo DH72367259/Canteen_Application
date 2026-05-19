@@ -25,7 +25,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, APP_URL } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, APP_URL } from "./_helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG 1: Worker app QR scan UI
@@ -91,7 +91,7 @@ test.describe("BUG-1 fix: Worker OTP verify page has Scan QR tab", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "b1test" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "b1test" })
       .select("id").single();
 
     if (!order) { test.skip(); return; }
@@ -133,9 +133,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
 
     // Order A — placed first, but for the LATER slot (8:30 AM)
     const { data: orderA } = await db.from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 80,
         otp: "bug2a",
         slot_label: "01:30 AM - 01:45 AM",  // later slot — always in the past
@@ -147,9 +145,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
 
     // Order B — placed second, but for the EARLIER slot (8:00 AM)
     const { data: orderB } = await db.from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 80,
         otp: "bug2b",
         slot_label: "01:00 AM - 01:15 AM",  // earlier slot — should be prioritised
@@ -205,11 +201,11 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     if (!freeBins || freeBins.length < 2) { test.skip(); return; }
 
     const { data: orderA } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2c", slot_label: "01:30 AM - 01:45 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug2c", slot_label: "01:30 AM - 01:45 AM" })
       .select("id").single();
 
     const { data: orderB } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2d", slot_label: "01:00 AM - 01:15 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug2d", slot_label: "01:00 AM - 01:15 AM" })
       .select("id").single();
 
     if (!orderA || !orderB) { test.skip(); return; }
@@ -235,7 +231,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
 
     // Use a slot far in the future
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2e", slot_label: "11:00 PM - 11:15 PM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug2e", slot_label: "11:00 PM - 11:15 PM" })
       .select("id").single();
 
     if (!order) { test.skip(); return; }
@@ -270,14 +266,14 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
 
     // Create order with 8:30 AM slot first (would win old FIFO ordering)
     const { data: lateSlotOrder } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2f", slot_label: "01:30 AM - 01:45 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug2f", slot_label: "01:30 AM - 01:45 AM" })
       .select("id").single();
 
     await new Promise(r => setTimeout(r, 60));
 
     // Create order with 8:00 AM slot second (would LOSE old FIFO ordering, wins new sort)
     const { data: earlySlotOrder } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug2g", slot_label: "01:00 AM - 01:15 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug2g", slot_label: "01:00 AM - 01:15 AM" })
       .select("id").single();
 
     if (!lateSlotOrder || !earlySlotOrder) { test.skip(); return; }
@@ -331,7 +327,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug3a", slot_label: "02:00 AM - 02:15 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug3a", slot_label: "02:00 AM - 02:15 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -358,7 +354,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "confirmed", total_amount: 80, otp: "bug3b", slot_label: "02:15 AM - 02:30 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "confirmed", total_amount: 80, otp: "bug3b", slot_label: "02:15 AM - 02:30 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -380,7 +376,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     if (!freeBins?.length) { test.skip(); return; }
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "preparing", total_amount: 80, otp: "bug3c", slot_label: "02:30 AM - 02:45 AM" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "preparing", total_amount: 80, otp: "bug3c", slot_label: "02:30 AM - 02:45 AM" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -410,7 +406,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     const db = adminClient();
 
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed", total_amount: 80, otp: "bug3d" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed", total_amount: 80, otp: "bug3d" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 

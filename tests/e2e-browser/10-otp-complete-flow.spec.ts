@@ -5,7 +5,7 @@
  * and confirms status transitions.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id } from "./_helpers";
 
 async function createOrderWithOtp(canteenId: string, otp = "654321") {
   const db = adminClient();
@@ -17,10 +17,15 @@ async function createOrderWithOtp(canteenId: string, otp = "654321") {
     .limit(1);
   if (!items?.length) return null;
 
+  // orders.user_id is NOT NULL on staging — must set a real profile id
+  // or insert fails silently and tests skip.
+  const userId = await getStudent1Id().catch(() => null);
+
   const { data: order, error } = await db
     .from("orders")
     .insert({
       canteen_id: canteenId,
+      user_id: userId,
       status: "placed_in_bin",
       total_amount: items[0].price ?? 80,
       slot_label: "12:00 - 12:15",
@@ -171,7 +176,7 @@ test.describe("OTP verification — access control", () => {
 
     const { data: order } = await db
       .from("orders")
-      .insert({ canteen_id: canteenId, status: "collected", total_amount: 80, otp: "778899" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "collected", total_amount: 80, otp: "778899" })
       .select("id")
       .single();
     if (!order) { test.skip(); return; }

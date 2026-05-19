@@ -42,6 +42,7 @@ import {
   ACCOUNTS,
   adminClient,
   getCanteen1Id,
+  getStudent1Id,
   loginCanteenAdmin,
   loginWorker,
   APP_URL,
@@ -67,7 +68,7 @@ async function seedTestOrder(canteenId: string, status = "placed"): Promise<stri
     .from("orders")
     .insert({
       canteen_id: canteenId,
-      user_id: null,
+      user_id: await getStudent1Id().catch(() => null),
       status,
       total_amount: price,
       slot_label: "9:00 AM - 9:15 AM",
@@ -349,7 +350,7 @@ test.describe("FIX-3: Deferred bin assignment resilience", () => {
       .from("orders")
       .insert({
         canteen_id: canteenId,
-        user_id: null,
+        user_id: await getStudent1Id().catch(() => null),
         status: "confirmed",
         total_amount: 50,
         slot_label: "12:00 AM - 12:15 AM", // always in the past

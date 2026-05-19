@@ -30,6 +30,7 @@ import {
   ACCOUNTS,
   adminClient,
   getCanteen1Id,
+  getStudent1Id,
   loginWorker,
   APP_URL,
 } from "./_helpers";
@@ -48,7 +49,7 @@ async function seedOrder(
     .from("orders")
     .insert({
       canteen_id: canteenId,
-      user_id: null,
+      user_id: await getStudent1Id().catch(() => null),
       status: "placed",
       total_amount: 50,
       otp: String(Math.floor(1000 + Math.random() * 9000)),
@@ -191,9 +192,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
     // Use bin_count=2 for A to force the "not enough" condition.
     const { data: orderA } = await db
       .from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 100,
         otp: "t2oa",
         slot_label: "01:00 AM - 01:15 AM",
@@ -204,9 +203,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
 
     const { data: orderB } = await db
       .from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 50,
         otp: "t2ob",
         slot_label: "01:00 AM - 01:15 AM",
@@ -217,9 +214,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
 
     const { data: orderC } = await db
       .from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 50,
         otp: "t2oc",
         slot_label: "01:00 AM - 01:15 AM",
@@ -667,7 +662,7 @@ test.describe("TEST-6: Extra-bin fee shown on order status and in API response",
       .from("orders")
       .insert({
         canteen_id: canteenId,
-        user_id: null,
+        user_id: await getStudent1Id().catch(() => null),
         status: "placed",
         total_amount: 120,
         otp: "9999",
@@ -706,7 +701,7 @@ test.describe("TEST-6: Extra-bin fee shown on order status and in API response",
       .from("orders")
       .insert({
         canteen_id: canteenId,
-        user_id: null,
+        user_id: await getStudent1Id().catch(() => null),
         status: "placed",
         total_amount: 50,
         otp: "1111",
@@ -830,9 +825,7 @@ test.describe("TEST-7: Worker app shows shortcode not UUID for customer_name", (
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({
-        canteen_id: canteenId,
-        status: "placed_in_bin",
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin",
         total_amount: 80,
         otp: "uuid1",
         slot_label: "01:00 AM - 01:15 AM",

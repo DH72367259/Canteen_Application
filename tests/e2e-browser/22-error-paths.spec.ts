@@ -3,7 +3,7 @@
  * Invalid inputs, malformed requests, missing fields, edge cases.
  */
 import { test, expect } from "@playwright/test";
-import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, APP_URL } from "./_helpers";
+import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, APP_URL } from "./_helpers";
 
 test.describe("Order placement — validation errors", () => {
   test("empty cartItems returns 400", async () => {
@@ -202,7 +202,7 @@ test.describe("OTP validation edge cases", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "123456" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "123456" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
@@ -219,7 +219,7 @@ test.describe("OTP validation edge cases", () => {
     const canteenId = await getCanteen1Id();
     const db = adminClient();
     const { data: order } = await db.from("orders")
-      .insert({ canteen_id: canteenId, status: "placed_in_bin", total_amount: 80, otp: "654321" })
+      .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin", total_amount: 80, otp: "654321" })
       .select("id").single();
     if (!order) { test.skip(); return; }
 
