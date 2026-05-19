@@ -863,6 +863,13 @@ function LoginContent() {
           <a href="/terms" style={{ color: "var(--orange)" }}>Terms</a> &amp;{" "}
           <a href="/privacy" style={{ color: "var(--orange)" }}>Privacy Policy</a>
         </p>
+        {/* All 5 legal pages must be reachable from a public URL so the
+            Razorpay KYC reviewer can verify them during onboarding. */}
+        <div style={{ textAlign: "center", fontSize: "0.7rem", color: "var(--ink-3)", marginTop: "0.5rem", display: "flex", gap: "0.85rem", justifyContent: "center", flexWrap: "wrap" }}>
+          <a href="/refund"   style={{ color: "var(--ink-3)" }}>Refund Policy</a>
+          <a href="/shipping" style={{ color: "var(--ink-3)" }}>Shipping &amp; Delivery</a>
+          <a href="/contact"  style={{ color: "var(--ink-3)" }}>Contact Us</a>
+        </div>
       </div>
     </div>
   );
