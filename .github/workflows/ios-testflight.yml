@@ -47,6 +47,22 @@ jobs:
       - name: Add iOS Capacitor platform
         run: npx cap add ios || true   # idempotent — no-op if ios/ already exists
 
+      # Apply the NoQx-specific scaffold overrides AFTER cap add ios generates
+      # the base Xcode project. ios-overrides/ holds files we want to override
+      # the Capacitor defaults with (Info.plist with our bundle ID, status-bar
+      # config, brand-color launch screen, NoQx app icons). Done BEFORE cap sync
+      # so sync picks up our values.
+      - name: Apply ios-overrides/ on top of fresh Capacitor scaffold
+        run: |
+          if [ -d "ios-overrides" ] && [ -d "ios/App/App" ]; then
+            cp ios-overrides/Info.plist ios/App/App/Info.plist
+            mkdir -p ios/App/App/Assets.xcassets/AppIcon.appiconset
+            cp -r ios-overrides/AppIcon.appiconset/* ios/App/App/Assets.xcassets/AppIcon.appiconset/
+            echo "✓ Applied iOS overrides (Info.plist + AppIcon)"
+          else
+            echo "::warning::ios-overrides/ or ios/App/App not found — skipping override step"
+          fi
+
       - name: Sync Capacitor assets + plugins
         run: npx cap sync ios
 
@@ -79,19 +95,39 @@ jobs:
             > ~/Library/MobileDevice/Provisioning\ Profiles/noqx-student.mobileprovision
 
       # ── Build ────────────────────────────────────────────────────────────────
-      - name: Build & archive
+      # If we have BOTH cert + profile + team ID: do a real signed archive
+      # ready for App Store. Otherwise just run an unsigned build to verify
+      # the project compiles — no .ipa artifact in that case, but the run
+      # succeeds and we know Capacitor + our config produce buildable code.
+      - name: Build & archive (signed) OR compile-check (unsigned)
         working-directory: ios/App
+        shell: bash {0}
         run: |
-          xcodebuild \
-            -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -archivePath build/NoQxStudent.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${{ secrets.IOS_TEAM_ID }}" \
-            archive
+          if [ "${HAS_CERT}" = "true" ] && [ "${HAS_PROFILE}" = "true" ] && [ -n "${{ secrets.IOS_TEAM_ID }}" ]; then
+            echo "→ Signed archive path"
+            xcodebuild \
+              -workspace App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -archivePath build/NoQxStudent.xcarchive \
+              CODE_SIGN_STYLE=Manual \
+              DEVELOPMENT_TEAM="${{ secrets.IOS_TEAM_ID }}" \
+              archive
+          else
+            echo "::warning::No iOS signing material in repo secrets — running unsigned compile check only. No .ipa will be produced. Populate IOS_DIST_CERT_P12_BASE64 + IOS_PROVISIONING_PROFILE_BASE64 + IOS_TEAM_ID to ship."
+            xcodebuild \
+              -workspace App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -derivedDataPath build/compile-check \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              clean build
+          fi
 
       - name: Export IPA
+        if: env.HAS_CERT == 'true' && env.HAS_PROFILE == 'true'
         working-directory: ios/App
         run: |
           cat > ExportOptions.plist << 'PLIST'
@@ -110,6 +146,7 @@ jobs:
             -exportPath build/ipa
 
       - name: Upload IPA artifact
+        if: env.HAS_CERT == 'true' && env.HAS_PROFILE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: noqx-student.ipa
