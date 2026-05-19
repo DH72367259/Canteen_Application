@@ -22,6 +22,22 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // After removing @capacitor/push-notifications (which transitively pulled
+    // Firebase + kotlin-stdlib 1.8.22), the Capacitor core modules still drag
+    // in kotlin-stdlib-jdk7/jdk8 1.6.21 from older transitive deps. That
+    // conflicts with kotlin-stdlib 1.8.22 and breaks the build with:
+    //   "Execution failed for task ':app:checkDebugDuplicateClasses'.
+    //    Duplicate class kotlin.collections.jdk8.CollectionsJDK8Kt ..."
+    // Forcing every config to use 1.8.22 stdlib + jdk7/jdk8 unifies the
+    // bytecode (1.8+ merges jdk7/jdk8 back into the main stdlib jar).
+    configurations.all {
+        resolutionStrategy {
+            force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+        }
+    }
 }
 
 task clean(type: Delete) {

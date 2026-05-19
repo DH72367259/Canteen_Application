@@ -70,6 +70,32 @@ jobs:
       - name: Generate app icon + splash from web icon
         run: npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#1f2937' --splashBackgroundColor '#2563eb' --splashBackgroundColorDark '#1e3a8a'
 
+      # Force Kotlin stdlib 1.8.22 to resolve duplicate-class errors between
+      # 1.6.21 jdk7/jdk8 stdlibs and 1.8.22 main stdlib. See android/build.gradle
+      # in the student workspace for the same fix and full reasoning.
+      - name: Force Kotlin stdlib version (avoid duplicate-class build error)
+        working-directory: mobile-worker/android
+        run: |
+          if ! grep -q "kotlin-stdlib:1.8.22" build.gradle; then
+            python3 -c "
+          import re
+          p = open('build.gradle').read()
+          inject = '''
+              configurations.all {
+                  resolutionStrategy {
+                      force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+                  }
+              }
+          '''
+          # Insert before the closing brace of the 'allprojects {' block.
+          p = re.sub(r'(allprojects \\{[^}]*?repositories \\{[^}]*?\\})\\s*(\\})', r'\1' + inject + r'\2', p, count=1, flags=re.DOTALL)
+          open('build.gradle','w').write(p)
+          "
+            echo '✓ Kotlin stdlib 1.8.22 forced in mobile-worker/android/build.gradle'
+          fi
+
       # Worker app scans QRs from inside the WebView via getUserMedia().
       # On Android, BridgeWebChromeClient only grants the WebView camera
       # access if the host AndroidManifest declares CAMERA. Without this
