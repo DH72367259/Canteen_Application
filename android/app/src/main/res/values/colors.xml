@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash_background">#FF6B35</color>
-    <color name="ic_launcher_background">#FF6B35</color>
+    <!-- Splash background: NoQx purple brand (matches capacitor.config.ts SplashScreen.backgroundColor) -->
+    <color name="splash_background">#7c3aed</color>
+    <!-- Adaptive-icon background: dark purple from the logo's starfield, so launcher mask
+         shows the logo on its own field instead of the wrong brand color. -->
+    <color name="ic_launcher_background">#1a1530</color>
 </resources>
