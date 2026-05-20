@@ -773,6 +773,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', email, { role, displayName: name, hasPassword: true }))
       return
     }
+    // See signInWithIdentifier for why we clear cache on explicit login.
+    clearProfileCache()
     const { error } = await withTimeout(
       supabase.auth.signInWithPassword({ email, password })
     )
@@ -791,6 +793,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(buildAuthUser('demo-user', id.includes('@') ? id : undefined, { role, displayName: name, hasPassword: true }))
       return
     }
+    // Invalidate any stale profile cache from a previous user/role on this browser.
+    // Without this, logging in with admin@noqx.co.in (now super_admin) hits the
+    // cached "user" role from when this account was a student, causing the auth
+    // provider to redirect to /dashboard first, then re-redirect to /admin/dashboard
+    // once the background refresh upgrades the role — visible as a UI flicker.
+    clearProfileCache()
     // Strip leading @ if user typed @username
     const id = identifier.trim().replace(/^@/, '')
     const isPhone = /^\+?[\d\s\-()]{7,}$/.test(id) && !id.includes('@')

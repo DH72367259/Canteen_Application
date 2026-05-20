@@ -373,6 +373,20 @@ export default function UserHomePage() {
     ? (showAll ? "All campuses" : selectedLocation)
     : "Set location";
 
+  // Don't render the student UI for privileged roles — the role-check useEffect
+  // above will redirect them within one tick, but without this guard the student
+  // home page flashes for one paint cycle (visible as a "wrong dashboard then
+  // correct dashboard" flicker after admin/vendor/worker login). Show a neutral
+  // spinner instead until the redirect lands.
+  const isPrivileged = user && (
+    user.role === "super_admin" || user.role === "co_admin" ||
+    user.role === "vendor"      || user.role === "canteen_admin" ||
+    user.role === "worker"
+  );
+  if (isPrivileged) {
+    return <div className="loading-screen"><div className="spinner" /></div>;
+  }
+
   return (
     // Force column layout: the global .app-shell becomes flex-direction:row
     // on desktop (for sidebar layouts), which would lay out every top-level

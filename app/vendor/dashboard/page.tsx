@@ -575,8 +575,13 @@ export default function VendorDashboard() {
 
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
 
-  // Show spinner while auth loads or while redirecting
+  // Show spinner while auth loads or while redirecting. Also block render for
+  // non-vendor roles to prevent the vendor UI flashing before the role-check
+  // useEffect redirects them.
   if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (user.role !== "vendor" && user.role !== "canteen_admin") {
+    return <div className="loading-screen"><div className="spinner" /></div>;
+  }
 
   // Group active bins by slot label for slot-by-slot section rendering.
   // Pending = order placed but bin not yet assigned (slot start time not reached).

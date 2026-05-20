@@ -74,8 +74,13 @@ export default function SuperAdminDashboard() {
 
   const handleLogout = async () => { try { await logout(); } catch { /* ignore */ } router.replace("/login"); };
 
-  // Show spinner while auth loads or while redirecting
+  // Show spinner while auth loads or while redirecting. Also block render for
+  // non-admin roles to prevent the admin UI flashing before the role-check
+  // useEffect redirects them to their correct dashboard.
   if (loading || !user) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (user.role !== "super_admin" && user.role !== "co_admin") {
+    return <div className="loading-screen"><div className="spinner" /></div>;
+  }
 
   return (
     <div className="web-shell">
