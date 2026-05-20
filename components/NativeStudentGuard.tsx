@@ -67,7 +67,7 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
         <div style={{ fontSize: "72px", marginBottom: "8px", lineHeight: 1 }}>🎓</div>
 
         {/* Brand */}
-        <div style={{ fontSize: "28px", fontWeight: "800", color: "#ff6b35", marginBottom: "4px" }}>
+        <div style={{ fontSize: "28px", fontWeight: "800", color: "#7c3aed", marginBottom: "4px" }}>
           NoQx Student
         </div>
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px", letterSpacing: "0.5px" }}>
@@ -76,7 +76,7 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
 
         {/* Message */}
         <div style={{
-          background: "#fff3ee", border: "1px solid #ffd4c0",
+          background: "#f5f3ff", border: "1px solid #ddd6fe",
           borderRadius: "16px", padding: "20px 24px", marginBottom: "32px",
           maxWidth: "320px",
         }}>
@@ -92,7 +92,7 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
         {/* URL hint */}
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px" }}>
           Staff portal:{" "}
-          <span style={{ color: "#ff6b35", fontWeight: "600" }}>noqx.up.railway.app</span>
+          <span style={{ color: "#7c3aed", fontWeight: "600" }}>noqx.up.railway.app</span>
         </div>
 
         {/* Back to login button */}
@@ -102,10 +102,10 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
             window.location.href = "/login";
           }}
           style={{
-            background: "#ff6b35", color: "#fff", border: "none",
+            background: "#7c3aed", color: "#fff", border: "none",
             borderRadius: "14px", padding: "16px 40px",
             fontSize: "16px", fontWeight: "700", cursor: "pointer",
-            boxShadow: "0 4px 20px rgba(255,107,53,0.35)",
+            boxShadow: "0 4px 20px rgba(124,58,237,0.35)",
             letterSpacing: "0.3px",
           }}
         >

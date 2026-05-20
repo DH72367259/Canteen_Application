@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 /* ─────────────────── NoQx Design System ─────────────────── */
+/*
+ * Brand-color naming legacy: the variable is still called --orange because it
+ * was originally orange (#f97316). On 2026-05-20 the student app rebranded to
+ * purple per client request. The .app-shell override below remaps --orange to
+ * the new violet palette for student-facing pages only. Admin / vendor
+ * dashboards (which use .web-shell, not .app-shell) keep the original orange
+ * until/unless they're rebranded too.
+ */
 :root {
   --orange: #f97316;
   --orange-dark: #ea6a07;
@@ -52,8 +60,16 @@ body {
 
 /* Mobile-first app shell (user app)
    safe-area-inset-top: keeps content out from under the Android status bar
-   when running inside the Capacitor WebView (web browsers ignore this var). */
+   when running inside the Capacitor WebView (web browsers ignore this var).
+
+   Student-app brand override (2026-05-20): every page wrapped in .app-shell
+   inherits the violet palette via these scoped --orange overrides. Admin /
+   vendor dashboards use .web-shell instead so they're unaffected. */
 .app-shell {
+  --orange:       #7c3aed;   /* Tailwind violet-600 — new primary */
+  --orange-dark:  #6d28d9;   /* Tailwind violet-700 — hover/pressed */
+  --orange-light: #f5f3ff;   /* Tailwind violet-50  — backgrounds/tints */
+
   max-width: 430px;
   margin: 0 auto;
   min-height: 100vh;

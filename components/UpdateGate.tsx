@@ -16,8 +16,8 @@ export function UpdateBanner() {
   return (
     <div
       style={{
-        background: 'linear-gradient(90deg, #ff6b35, #f7c59f)',
-        color: '#1a1a1a',
+        background: 'linear-gradient(90deg, #7c3aed, #c4b5fd)',
+        color: '#ffffff',
         padding: '10px 16px',
         display: 'flex',
         alignItems: 'center',
@@ -109,7 +109,7 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
           target="_blank"
           rel="noreferrer"
           style={{
-            background: '#ff6b35',
+            background: '#7c3aed',
             color: '#fff',
             padding: '14px 32px',
             borderRadius: 30,
