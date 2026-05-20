@@ -18,6 +18,15 @@ name: android-worker-internal
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which Railway env should the APK point at?"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
   push:
     branches: ['release/worker-1.0']
     tags:     ['worker-v*']
@@ -34,6 +43,9 @@ jobs:
       KEY_PASSWORD:      ${{ secrets.WORKER_ANDROID_KEY_PASSWORD }}
       HAS_KEYSTORE:      ${{ secrets.WORKER_ANDROID_KEYSTORE_BASE64 != '' }}
       HAS_PLAY_KEY:      ${{ secrets.WORKER_PLAY_STORE_JSON_KEY != '' }}
+      TARGET_ENV: ${{ inputs.environment || (github.event_name == 'push' && 'production') || 'staging' }}
+      # Worker starts on /worker/login (per capacitor.config.ts default).
+      CAPACITOR_SERVER_URL: ${{ (inputs.environment == 'production' || github.event_name == 'push') && 'https://noqx.co.in/worker/login' || 'https://canteenapplication-staging.up.railway.app/worker/login' }}
 
     defaults:
       run:
@@ -149,9 +161,14 @@ jobs:
         working-directory: mobile-worker/android
         run: |
           set +e
+          # See student workflow comment — AGP resolves store.file relative to
+          # the app module, so we pass an absolute path. (Worker happens to work
+          # with the relative form today because cap-add-ios generates a newer
+          # AGP config; absolute is defensive consistency.)
+          KEYSTORE_ABS_PATH="$(pwd)/app/upload.jks"
           if [ "${HAS_KEYSTORE}" = "true" ]; then
             ./gradlew bundleRelease \
-              -Pandroid.injected.signing.store.file=app/upload.jks \
+              -Pandroid.injected.signing.store.file="${KEYSTORE_ABS_PATH}" \
               -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
               -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
               -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
@@ -178,7 +195,7 @@ jobs:
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: noqx-worker-release.aab
+          name: noqx-worker-${{ env.TARGET_ENV }}-release.aab
           path: mobile-worker/android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: warn
           retention-days: 14
@@ -186,7 +203,7 @@ jobs:
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: noqx-worker-debug.apk
+          name: noqx-worker-${{ env.TARGET_ENV }}-debug.apk
           path: mobile-worker/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 

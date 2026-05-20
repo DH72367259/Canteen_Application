@@ -14,6 +14,15 @@ name: android-internal
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which Railway env should the APK point at?"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
   push:
     branches: ['release/1.0']
     tags:     ['v*']
@@ -30,6 +39,12 @@ jobs:
       KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
       HAS_KEYSTORE:      ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
       HAS_PLAY_KEY:      ${{ secrets.PLAY_STORE_JSON_KEY != '' }}
+      # tag/release pushes default to production; workflow_dispatch honors the
+      # `environment` input (default: staging). The Capacitor config reads
+      # CAPACITOR_SERVER_URL during `cap sync`, so this single env var swaps
+      # whether the resulting APK loads staging or production.
+      TARGET_ENV: ${{ inputs.environment || (github.event_name == 'push' && 'production') || 'staging' }}
+      CAPACITOR_SERVER_URL: ${{ (inputs.environment == 'production' || github.event_name == 'push') && 'https://noqx.co.in' || 'https://canteenapplication-staging.up.railway.app' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,9 +112,14 @@ jobs:
         shell: bash {0}    # disable default `set -e -o pipefail`; we handle errors explicitly below
         run: |
           SIGNED=0
+          # IMPORTANT: AGP resolves -Pandroid.injected.signing.store.file
+          # relative to the APP MODULE root (android/app/), not the project
+          # root. Using a relative path like `app/upload.jks` would resolve
+          # to `android/app/app/upload.jks` and fail. Use an absolute path.
+          KEYSTORE_ABS_PATH="$(pwd)/app/upload.jks"
           if [ "${HAS_KEYSTORE}" = "true" ]; then
             ./gradlew bundleRelease \
-              -Pandroid.injected.signing.store.file=app/upload.jks \
+              -Pandroid.injected.signing.store.file="${KEYSTORE_ABS_PATH}" \
               -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
               -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
               -Pandroid.injected.signing.key.password="${KEY_PASSWORD}" \
@@ -135,7 +155,7 @@ jobs:
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: noqx-student-release.aab
+          name: noqx-student-${{ env.TARGET_ENV }}-release.aab
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: warn
           retention-days: 14
@@ -143,7 +163,7 @@ jobs:
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: noqx-student-debug.apk
+          name: noqx-student-${{ env.TARGET_ENV }}-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
