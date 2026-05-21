@@ -1,7 +1,7 @@
 # NoQx Worker — Android App
 
 A Capacitor shell that wraps the live Next.js `/worker` routes from
-`https://noqx.up.railway.app` into an installable Android app for canteen staff.
+`https://noqx.co.in` into an installable Android app for canteen staff.
 
 The app does NOT contain its own UI — it loads the production web app
 inside a WebView. Updating the web app (push to dev → Railway redeploy)

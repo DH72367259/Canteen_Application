@@ -41,7 +41,7 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li><strong>Device info:</strong> user-agent string truncated to 120 chars (no fingerprinting).</li>
           <li><strong>IP address:</strong> never stored raw — only a 16-char SHA-256 hash, used to detect fraud + concurrent-session abuse.</li>
-          <li><strong>Push device token:</strong> if you allow notifications, we store the FCM/APNs token so we can ping your phone when an order is ready. Tokens are deleted within 30 days of inactivity.</li>
+          <li><strong>Push device token:</strong> if you allow notifications, we will store an FCM/APNs token so we can ping your phone when an order is ready. Tokens are deleted within 30 days of inactivity. (Push delivery is currently disabled at the app level — no tokens are being collected as of the date above.)</li>
         </ul>
         <h3>1.3 From payment partners</h3>
         <ul>
@@ -68,8 +68,10 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li><strong>Supabase Inc.</strong> — Postgres database + authentication. Hosted on AWS Mumbai.</li>
           <li><strong>Razorpay Software Pvt. Ltd.</strong> — payment gateway and refund processing.</li>
-          <li><strong>Twilio Inc.</strong> — SMS / WhatsApp OTP delivery.</li>
-          <li><strong>Firebase Cloud Messaging / Apple Push Notification service</strong> — push notification delivery (token only, no payload contents persisted).</li>
+          <li><strong>Resend, Inc.</strong> — transactional email delivery (password resets, order confirmations, refund notifications). Receives recipient email + message contents at send time; does not retain after delivery.</li>
+          <li><strong>Twilio Inc.</strong> — SMS / WhatsApp OTP delivery, when you choose those channels for verification.</li>
+          <li><strong>Cloudflare, Inc.</strong> — DNS, CDN proxy, inbound email routing. Sees encrypted (TLS) request metadata only; no decrypted request bodies are retained.</li>
+          <li><strong>Firebase Cloud Messaging / Apple Push Notification service</strong> — push notification delivery, only if you grant notification permission (push is currently disabled pending FCM configuration).</li>
           <li><strong>Railway Corp.</strong> — application hosting (no data stored at rest).</li>
           <li><strong>Canteen operators</strong> — receive your name, order items, slot, bin assignment and OTP only. They cannot access your payment details, phone number, or order history with other canteens.</li>
           <li><strong>Law-enforcement agencies</strong> — only on receipt of a legally valid summons under Indian law.</li>

@@ -1,6 +1,6 @@
 # NoQx — Mobile (iOS + Android) shell
 
-The web app at https://noqx.up.railway.app is the source of truth. The
+The web app at https://noqx.co.in is the source of truth. The
 iOS and Android apps are thin Capacitor wrappers around that production
 URL — same Next.js codebase, same Razorpay flow, same Supabase auth — plus
 native push notifications, status-bar styling, and Keychain/Encrypted
@@ -35,7 +35,7 @@ npm run cap:open:android     # opens Android Studio → Run on emulator/device
 
 ## Pointing at a different backend
 
-By default the apps load `https://noqx.up.railway.app`. To run against
+By default the apps load `https://noqx.co.in`. To run against
 localhost (e.g. for plugin debugging):
 
 ```bash

@@ -1,6 +1,6 @@
 # NoQx — Smart Institutional Dining
 
-> **Live URL** → https://canteenapplication-production.up.railway.app
+> **Live URL** → https://noqx.co.in
 
 Cashless, queue-free canteen ordering for universities and colleges.
 Students order on their phone, pay via Razorpay (UPI / Card / Wallet), and pick up at an
@@ -471,7 +471,7 @@ npx playwright test tests/e2e-browser/campus-scale-load.spec.ts --reporter=line
 
 | Surface | URL |
 |---------|-----|
-| Web App (Production) | https://canteenapplication-production.up.railway.app |
+| Web App (Production) | https://noqx.co.in |
 | GitHub Repository | https://github.com/DH72367259/Canteen_Application |
 | Railway Dashboard | https://railway.com/project/9ecacfbc-a63e-4962-b2e7-69565b15b131 |
 
@@ -1016,8 +1016,8 @@ values (2.00, 0.00, 18.00);
 ### Step 5 — Configure Auth
 
 1. **Authentication → URL Configuration**:
-   - Site URL: `https://canteenapplication-production.up.railway.app`
-   - Redirect URLs: `https://canteenapplication-production.up.railway.app/**`
+   - Site URL: `https://noqx.co.in`
+   - Redirect URLs: `https://noqx.co.in/**`
 3. **Authentication → Settings → Email**:
    - OTP Expiry: `3600` (1 hour — default is fine)
    - Enable email confirmations: on (required for email OTP)
@@ -1120,7 +1120,7 @@ The admin table shows a `📍 lat, lng` chip for each canteen that links to Goog
 ### Step 3 - Set up Webhook
 
 1. **Settings -> Webhooks -> Add New Webhook**
-2. Webhook URL: `https://canteenapplication-production.up.railway.app/api/payments/razorpay-webhook`
+2. Webhook URL: `https://noqx.co.in/api/payments/razorpay-webhook`
 3. Secret: generate a strong random string (e.g. `openssl rand -hex 32`) -> `RAZORPAY_WEBHOOK_SECRET`
 4. Enable these events:
    - payment.captured
@@ -1169,7 +1169,7 @@ TWILIO_VERIFY_SERVICE_SID=VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_WHATSAPP_ENABLED=false
 
 # App URL (used for auth redirects - must match your Railway domain)
-NEXT_PUBLIC_APP_URL=https://canteenapplication-production.up.railway.app
+NEXT_PUBLIC_APP_URL=https://noqx.co.in
 ```
 
 Never commit `.env.local` to Git. The `.env.example` file in this repo shows all keys with inline setup instructions.
@@ -1217,7 +1217,7 @@ railway variables set RAZORPAY_WEBHOOK_SECRET=xxx
 railway variables set NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 railway variables set NEXT_PUBLIC_SUPABASE_ANON_KEY=xxx
 railway variables set SUPABASE_SERVICE_ROLE_KEY=xxx
-railway variables set NEXT_PUBLIC_APP_URL=https://canteenapplication-production.up.railway.app
+railway variables set NEXT_PUBLIC_APP_URL=https://noqx.co.in
 ```
 
 ### Custom domain
@@ -1236,7 +1236,7 @@ like a native app - no App Store approval needed for internal/college deployment
 
 ### Install on iOS (Safari)
 
-1. Open https://canteenapplication-production.up.railway.app in **Safari** (not Chrome)
+1. Open https://noqx.co.in in **Safari** (not Chrome)
 2. Tap the **Share** button (square with arrow pointing up)
 3. Scroll down and tap **Add to Home Screen**
 4. Tap **Add** - the Canteen-Application icon appears on the home screen
@@ -1244,7 +1244,7 @@ like a native app - no App Store approval needed for internal/college deployment
 
 ### Install on Android (Chrome)
 
-1. Open https://canteenapplication-production.up.railway.app in **Chrome**
+1. Open https://noqx.co.in in **Chrome**
 2. Tap the three-dot menu (top right)
 3. Tap **Add to Home Screen** or **Install App**
 4. Tap **Install** - Canteen-Application icon appears on home screen
@@ -1261,7 +1261,7 @@ The simplest deployment for 110,000 students:
 
 Use PWABuilder (free, no native code needed):
 1. Go to https://www.pwabuilder.com
-2. Enter: `https://canteenapplication-production.up.railway.app`
+2. Enter: `https://noqx.co.in`
 3. Click Build -> Android -> Download APK/AAB
 4. Sign the bundle using Android Studio or `jarsigner`
 5. Upload to https://play.google.com/console
@@ -1271,7 +1271,7 @@ Use PWABuilder (free, no native code needed):
 ### Publish to Apple App Store
 
 1. Go to https://www.pwabuilder.com
-2. Enter: `https://canteenapplication-production.up.railway.app`
+2. Enter: `https://noqx.co.in`
 3. Choose iOS -> download the Xcode project
 4. Open in Xcode, set your Apple Developer Team ID
 5. Build -> Archive -> Upload to App Store Connect (https://appstoreconnect.apple.com)
@@ -1334,7 +1334,7 @@ Access control:
 ### Student Orders Food
 
 ```
-1.  Open app at https://canteenapplication-production.up.railway.app
+1.  Open app at https://noqx.co.in
 2.  Tap "Login" -> enter phone -> receive OTP via SMS (or WhatsApp if enabled)
     -> enter OTP to sign in
 3.  On first visit: choose your campus area or tap "Use My Location" for GPS
@@ -1602,7 +1602,7 @@ git push origin main   # Deploy to Railway (triggers auto-build)
 
 | Resource | URL |
 |----------|-----|
-| Web App | https://canteenapplication-production.up.railway.app |
+| Web App | https://noqx.co.in |
 | GitHub | https://github.com/DH72367259/Canteen_Application |
 | Railway Dashboard | https://railway.com/project/9ecacfbc-a63e-4962-b2e7-69565b15b131 |
 | Supabase | https://supabase.com (create your project here) |

@@ -85,7 +85,7 @@ export function NativeWorkerGuard({ children }: { children: React.ReactNode }) {
 
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px" }}>
           Other portals:{" "}
-          <span style={{ color: "#2563eb", fontWeight: "600" }}>noqx.up.railway.app</span>
+          <span style={{ color: "#2563eb", fontWeight: "600" }}>noqx.co.in</span>
         </div>
 
         <button

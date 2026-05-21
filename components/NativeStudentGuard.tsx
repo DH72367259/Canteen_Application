@@ -92,7 +92,7 @@ export function NativeStudentGuard({ children }: { children: React.ReactNode }) 
         {/* URL hint */}
         <div style={{ fontSize: "13px", color: "#999", marginBottom: "32px" }}>
           Staff portal:{" "}
-          <span style={{ color: "#7c3aed", fontWeight: "600" }}>noqx.up.railway.app</span>
+          <span style={{ color: "#7c3aed", fontWeight: "600" }}>noqx.co.in</span>
         </div>
 
         {/* Back to login button */}

@@ -8,7 +8,7 @@ Three apps, two stores:
 | NoQx Student | Android (Play Store) | [android-internal.yml](.github/workflows/android-internal.yml) | com.noqx.student |
 | NoQx Worker | Android only (Play Store) | [android-worker-internal.yml](.github/workflows/android-worker-internal.yml) | com.noqx.worker |
 
-Both apps wrap the existing Next.js codebase served from `https://noqx.up.railway.app`
+Both apps wrap the existing Next.js codebase served from `https://noqx.co.in`
 inside a native WebView (Capacitor). **No duplicate code.** Update the web app → app
 behavior updates automatically. Only re-submit to stores when the native shell
 itself changes (plugins, signing, icons, splash, native config).
@@ -62,7 +62,7 @@ Play Store. Google does not help recover lost upload keystores.
 2. **App → Create app:**
    - First app: package `com.noqx.student`, name "NoQx Student"
    - Second app: package `com.noqx.worker`, name "NoQx Worker"
-3. Fill: privacy policy URL (link to your `/privacy` page on noqx.up.railway.app),
+3. Fill: privacy policy URL (link to your `/privacy` page on noqx.co.in),
    content rating, target audience, data safety, app category (Food & Drink),
    icon (512×512), feature graphic (1024×500), 2-8 phone screenshots per app.
 4. **Internal testing track → Testers → add tester emails.** Internal track is
@@ -177,5 +177,5 @@ Then `adb install -r path/to/app-debug.apk` to a real device.
 - Deep links / universal links (not configured — orders are seen in-app via the
   web routes that the WebView already loads, so no deep links needed for v1)
 - App updates strategy (over-the-air for web content happens automatically because
-  the WebView reloads `noqx.up.railway.app` on each launch; only re-submit to
+  the WebView reloads `noqx.co.in` on each launch; only re-submit to
   stores when the native shell changes)
