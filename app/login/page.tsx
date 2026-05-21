@@ -82,12 +82,24 @@ function LoginContent() {
   // When running inside the native student app (com.noqx.student), the
   // "Canteen Login" tab must be hidden — students should never see staff
   // login UI on their phone. We force them onto the student tab and remove
-  // the switcher entirely. Web + non-student builds keep both tabs.
+  // the switcher + the worker link entirely. Web + non-student builds
+  // keep both tabs.
+  //
+  // Defensive: if Capacitor is native but App.getInfo() fails (plugin
+  // missing in an older APK, transient error, etc.), assume student app
+  // since /login is the student app's landing URL — worker app boots
+  // straight into /worker/login and never hits this page in normal flow.
   const [isStudentNativeApp, setIsStudentNativeApp] = useState(false);
   useEffect(() => {
     (async () => {
-      const appId = await getNativeAppId();
-      if (appId === "com.noqx.student") {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+      } catch { return; }
+      let appId: string | null = null;
+      try { appId = await getNativeAppId(); } catch { /* fall through */ }
+      const isStudent = appId === "com.noqx.student" || appId === null;
+      if (isStudent) {
         setIsStudentNativeApp(true);
         setTab(prev => (prev === "password" ? "student" : prev));
       }
@@ -792,14 +804,16 @@ function LoginContent() {
             <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
               🔐 First-time login? Use the password your super admin shared. Contact your admin to reset it if needed.
             </p>
-            <div style={{ textAlign: "center", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid var(--line-2)" }}>
-              <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>
-                Canteen worker?{" "}
-                <a href="/worker/login" style={{ color: "var(--orange)", fontWeight: 600, textDecoration: "none" }}>
-                  Sign in here →
-                </a>
-              </p>
-            </div>
+            {!isStudentNativeApp && (
+              <div style={{ textAlign: "center", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid var(--line-2)" }}>
+                <p style={{ fontSize: "0.78rem", color: "var(--ink-3)", margin: 0 }}>
+                  Canteen worker?{" "}
+                  <a href="/worker/login" style={{ color: "var(--orange)", fontWeight: 600, textDecoration: "none" }}>
+                    Sign in here →
+                  </a>
+                </p>
+              </div>
+            )}
           </div>
         )}
 

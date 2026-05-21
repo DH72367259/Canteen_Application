@@ -63,14 +63,16 @@ android_buckets = {
     "xxxhdpi": 192,
 }
 # Adaptive-icon safe zone is the center 66dp of a 108dp canvas (~61%).
-# To guarantee the NQX letters never clip under any launcher mask (round,
-# rounded-square, teardrop, etc.) we shrink the source so it occupies
-# only the center INNER_RATIO of the foreground canvas, with the
-# launcher's adaptive BACKGROUND (#1a1530 dark purple) filling the rest.
-# At INNER_RATIO=0.62 the letters are at ~37% of canvas (very safe) and
-# the source's outer glittering reaches the safe-zone edge — visible
-# under typical round masks, partially clipped at extreme corners.
-INNER_RATIO = 0.62
+# We composite the source at INNER_RATIO of the foreground canvas with
+# the dark-purple background filling the rest, so the launcher's adaptive
+# mask only crops the (mostly empty) outer ring.
+#
+# Tuning: the source has letters at ~60% of its own canvas, so letters
+# at INNER_RATIO * 60% of foreground canvas. INNER_RATIO=0.78 puts
+# letters at ~47% of canvas (well inside the 61% safe zone with margin),
+# while still leaving the icon looking PROPERLY SIZED on the home
+# screen — not a tiny logo in a sea of dark.
+INNER_RATIO = 0.78
 for density, base_size in android_buckets.items():
     res_dir = ROOT / "android" / "app" / "src" / "main" / "res" / f"mipmap-{density}"
     res_dir.mkdir(parents=True, exist_ok=True)
