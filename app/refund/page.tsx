@@ -31,7 +31,7 @@ export default function RefundPolicyPage() {
           <li>Pick a reason (cancellation, duplicate payment, OTP dispute, food quality, late preparation, etc.).</li>
           <li>Our support team responds within 4 working hours during canteen operating hours.</li>
         </ol>
-        <p>Or write directly to <strong>support@noqx.app</strong> with your order ID and Razorpay payment ID (visible in the order receipt).</p>
+        <p>Or write directly to <strong>joshuajoejj11@gmail.com</strong> with your order ID and Razorpay payment ID (visible in the order receipt).</p>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
@@ -138,8 +138,8 @@ export default function RefundPolicyPage() {
 
       <section style={{ marginBottom: "2rem" }}>
         <h2>11. Contact</h2>
-        <p><strong>Support:</strong> support@noqx.app</p>
-        <p><strong>Grievance Officer (DPDP Act compliance):</strong> grievance@noqx.app</p>
+        <p><strong>Support:</strong> joshuajoejj11@gmail.com</p>
+        <p><strong>Grievance Officer (DPDP Act compliance):</strong> joshuajoejj11@gmail.com</p>
         <p><strong>Address:</strong> NoQx Technologies, Bengaluru, Karnataka, India</p>
         <p style={{ fontSize: "0.85rem", color: "var(--ink-3)" }}>We acknowledge refund requests within 4 working hours and resolve within 7 working days.</p>
       </section>
