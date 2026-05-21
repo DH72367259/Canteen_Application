@@ -10,13 +10,13 @@ import { NativeWorkerGuard } from "@/components/NativeWorkerGuard";
 import { StuckLoadingRecovery } from "@/components/StuckLoadingRecovery";
 
 export const metadata: Metadata = {
-  title: "Canteen-Application",
-  description: "Skip the queue. Order food from your college canteen.",
+  title: "NoQx — Skip the Canteen Queue",
+  description: "Pre-order canteen meals. Pick up when ready. No queues, no waiting.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Canteen-Application",
+    title: "NoQx",
   },
   icons: {
     icon: [
@@ -50,7 +50,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Canteen-Application" />
+        <meta name="apple-mobile-web-app-title" content="NoQx" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="apple-touch-startup-image" href="/icons/icon-512.png" />
         {/* Establish connection to Supabase before any JS runs — cuts ~200-400ms on cold loads */}

@@ -484,7 +484,7 @@ function LoginContent() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page app-shell">
       <div className="login-card">
         {/* Password-expired warning */}
         {pwExpired && (
@@ -499,9 +499,13 @@ function LoginContent() {
 
         {/* Logo */}
         <div className="login-logo">
-          <span style={{ width: 48, height: 48, background: "var(--orange)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", margin: "0 auto 0.5rem" }}>🍽️</span>
-          <h1>Canteen-Application</h1>
-          <p>Smart Institutional Dining</p>
+          <img
+            src="/icons/icon-192.png"
+            alt="NoQx"
+            style={{ width: 64, height: 64, borderRadius: 16, display: "block", margin: "0 auto 0.5rem", objectFit: "cover" }}
+          />
+          <h1>NoQx</h1>
+          <p>Skip the queue. Pre-order. Pickup.</p>
         </div>
 
         {/* Tab switcher — hidden during account setup OR forgot-password flow */}
