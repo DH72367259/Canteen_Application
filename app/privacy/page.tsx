@@ -153,8 +153,8 @@ export default function PrivacyPolicyPage() {
         <h2>11. Grievance Officer & Contact</h2>
         <p>In compliance with Sec. 10 of the DPDP Act and the IT Rules 2011:</p>
         <p><strong>Grievance Officer:</strong> Operations Lead, NoQx</p>
-        <p><strong>Privacy &amp; data requests:</strong> joshuajoejj11@gmail.com</p>
-        <p><strong>General support:</strong> joshuajoejj11@gmail.com</p>
+        <p><strong>Privacy &amp; data requests:</strong> privacy@noqx.co.in</p>
+        <p><strong>General support:</strong> support@noqx.co.in</p>
         <p><strong>Address:</strong> NoQx Technologies, Bengaluru, Karnataka, India</p>
         <p style={{ fontSize: "0.85rem", color: "var(--ink-3)" }}>We acknowledge every privacy request within 48 hours and respond fully within 7 working days.</p>
       </section>

@@ -11,8 +11,8 @@ export const metadata = {
   description: "Get in touch with the Canteen-Application team — support, partnerships, refunds, and grievances.",
 };
 
-const SUPPORT_EMAIL    = "joshuajoejj11@gmail.com";
-const GRIEVANCE_EMAIL  = "joshuajoejj11@gmail.com";
+const SUPPORT_EMAIL    = "support@noqx.co.in";
+const GRIEVANCE_EMAIL  = "grievance@noqx.co.in";
 const SUPPORT_PHONE    = "+91 70199 86046";
 const COMPANY_NAME     = "NoQx Technologies";
 const COMPANY_ADDRESS  = "Bengaluru, Karnataka, India";
