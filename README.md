@@ -1,6 +1,7 @@
-# NoQx — Smart Institutional Dining
+# NoQx — Skip the Canteen Queue
 
 > **Live URL** → https://noqx.co.in
+> **Launch status (2026-05-21):** 🟡 Ready pending operator action — Razorpay live keys, Apple/Play accounts, Supabase Pro backups, FSSAI license. See [docs/OPERATOR_CHEAT_SHEET.md](docs/OPERATOR_CHEAT_SHEET.md).
 
 Cashless, queue-free canteen ordering for universities and colleges.
 Students order on their phone, pay via Razorpay (UPI / Card / Wallet), and pick up at an
@@ -8,6 +9,21 @@ assigned **bin** using a 4-digit OTP displayed in-app. No cash, no queue, no was
 
 A **NoQx Pro** monthly subscription (₹69/month) lets students skip the ₹4 per-order
 convenience fee and get priority pickup — every order, every day.
+
+## Quick Orientation
+
+| If you need to… | Read |
+|---|---|
+| Find a dashboard URL / env var / login | [docs/OPERATOR_CHEAT_SHEET.md](docs/OPERATOR_CHEAT_SHEET.md) |
+| Flip production live on launch day | [docs/LAUNCH_DAY_RUNBOOK.md](docs/LAUNCH_DAY_RUNBOOK.md) |
+| Roll back a bad deploy | [docs/ROLLBACK_RUNBOOK.md](docs/ROLLBACK_RUNBOOK.md) |
+| Triage a live incident | [docs/ON_CALL_RUNBOOK.md](docs/ON_CALL_RUNBOOK.md) |
+| Ship a new mobile build | [docs/CAPACITOR_PRODUCTION_FLIP.md](docs/CAPACITOR_PRODUCTION_FLIP.md) |
+| Re-enable push notifications | [docs/FCM_REENABLEMENT.md](docs/FCM_REENABLEMENT.md) |
+| Install the APK on a phone | [docs/APK_SIDELOAD_GUIDE.md](docs/APK_SIDELOAD_GUIDE.md) |
+| Smoke-test production | `node scripts/smoke-test-prod.mjs` (19 checks) |
+| Verify Razorpay plumbing | `node scripts/verify-razorpay-flow.mjs` (5 checks) |
+| Watch live metrics | `SERVICE_ROLE=... node scripts/launch-day-stats.mjs` |
 
 ---
 
