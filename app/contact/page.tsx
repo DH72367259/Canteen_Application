@@ -13,7 +13,7 @@ export const metadata = {
 
 const SUPPORT_EMAIL    = "support@noqx.co.in";
 const GRIEVANCE_EMAIL  = "grievance@noqx.co.in";
-const SUPPORT_PHONE    = "+91 90000 00000";
+const SUPPORT_PHONE    = "+91 70199 86046";
 const COMPANY_NAME     = "NoQx Technologies";
 const COMPANY_ADDRESS  = "Bengaluru, Karnataka, India";
 
