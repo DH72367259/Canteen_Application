@@ -34,12 +34,22 @@ export function useCapacitorBootstrap() {
         const { Capacitor } = await import("@capacitor/core");
         if (!Capacitor.isNativePlatform()) return;
 
-        // Status bar — match the orange brand
+        // Status bar — match the brand, and CRITICALLY push the WebView
+        // BELOW the status bar so headers (e.g. worker app's sticky
+        // Orders | time | Logout bar) aren't clipped by the notch/punch-hole.
+        // setOverlaysWebView(false) means the status bar gets its own
+        // background color and the WebView starts beneath it.
         try {
           const { StatusBar, Style } = await import("@capacitor/status-bar");
-          await StatusBar.setStyle({ style: Style.Dark });
           if (Capacitor.getPlatform() === "android") {
-            await StatusBar.setBackgroundColor({ color: "#ffffff" });
+            await StatusBar.setOverlaysWebView({ overlay: false });
+            // Worker app has a dark slate header; student app has a light
+            // background up top. Status bar bg = dark slate either way so
+            // both apps get a coherent dark top strip with light icons.
+            await StatusBar.setStyle({ style: Style.Dark });
+            await StatusBar.setBackgroundColor({ color: "#1e293b" });
+          } else {
+            await StatusBar.setStyle({ style: Style.Dark });
           }
         } catch { /* plugin not installed in this build */ }
       } catch {

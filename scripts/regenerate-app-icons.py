@@ -62,20 +62,36 @@ android_buckets = {
     "xxhdpi":  144,
     "xxxhdpi": 192,
 }
+# Adaptive-icon safe zone is the center 66dp of a 108dp canvas (~61%).
+# To guarantee the NQX letters never clip under any launcher mask (round,
+# rounded-square, teardrop, etc.) we shrink the source so it occupies
+# only the center INNER_RATIO of the foreground canvas, with the
+# launcher's adaptive BACKGROUND (#1a1530 dark purple) filling the rest.
+# At INNER_RATIO=0.62 the letters are at ~37% of canvas (very safe) and
+# the source's outer glittering reaches the safe-zone edge — visible
+# under typical round masks, partially clipped at extreme corners.
+INNER_RATIO = 0.62
 for density, base_size in android_buckets.items():
     res_dir = ROOT / "android" / "app" / "src" / "main" / "res" / f"mipmap-{density}"
     res_dir.mkdir(parents=True, exist_ok=True)
 
-    # Legacy (square) launcher
+    # Legacy (square) launcher — pre-API 26 phones + some launchers + the
+    # task-switcher thumbnail. No mask applied, so source at full canvas.
     square(src, base_size).save(res_dir / "ic_launcher.png", "PNG")
-    # Round (Android applies round mask client-side, image is still square)
+    # Round launcher — Android applies the round mask itself.
     square(src, base_size).save(res_dir / "ic_launcher_round.png", "PNG")
-    # Adaptive foreground — must be 108dp × 108dp at the density's px ratio.
-    # 108/48 = 2.25x bigger than base. We use the source at this larger size
-    # so the foreground content (logo + glittering) fills the foreground layer.
+    # Adaptive foreground — 108dp × 108dp at the density's px ratio
+    # (2.25× base_size). Source is composited at INNER_RATIO of canvas
+    # on the dark-purple background so the launcher's runtime mask can
+    # crop the empty edges without touching the letters or most glittering.
     fg_size = int(base_size * 2.25)
-    square(src, fg_size).save(res_dir / "ic_launcher_foreground.png", "PNG")
-print(f"wrote 5 densities × 3 variants in android/app/src/main/res/mipmap-*")
+    inner_size = int(fg_size * INNER_RATIO)
+    fg = Image.new("RGBA", (fg_size, fg_size), PURPLE_DARK + (255,))
+    inner = src.resize((inner_size, inner_size), Image.LANCZOS)
+    offset = (fg_size - inner_size) // 2
+    fg.paste(inner, (offset, offset), inner)
+    fg.save(res_dir / "ic_launcher_foreground.png", "PNG")
+print(f"wrote 5 densities × 3 variants in android/app/src/main/res/mipmap-* (foreground at {int(INNER_RATIO*100)}% safe-zone)")
 
 # ── 4. iOS app icons ──
 ios_sizes = [20, 29, 40, 58, 60, 76, 80, 87, 120, 152, 167, 180, 1024]

@@ -413,6 +413,11 @@ export default function WorkerOrdersPage() {
               ←
             </button>
           )}
+          <img
+            src="/icons/icon-192.png"
+            alt=""
+            style={{ width: 28, height: 28, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
+          />
           <div style={{ fontWeight: 700, fontSize: "1rem" }}>
             {tab === "orders" ? "Orders" : tab === "prep" ? "Prep Plan" : "Late Pickup"}
           </div>

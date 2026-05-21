@@ -80,7 +80,7 @@ jobs:
       # (the same orange noqx logo used on the web). @capacitor/assets writes
       # all mipmap-*dpi resources and the adaptive-icon XML in one shot.
       - name: Generate app icon + splash from web icon
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#1f2937' --splashBackgroundColor '#2563eb' --splashBackgroundColorDark '#1e3a8a'
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#1a1530' --iconBackgroundColorDark '#1a1530' --splashBackgroundColor '#2563eb' --splashBackgroundColorDark '#1e3a8a'
 
       # Force Kotlin stdlib 1.8.22 to resolve duplicate-class errors between
       # 1.6.21 jdk7/jdk8 stdlibs and 1.8.22 main stdlib. See android/build.gradle

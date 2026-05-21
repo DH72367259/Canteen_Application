@@ -94,15 +94,15 @@ export default function WorkerLoginPage() {
     }}>
       {/* Logo / Header */}
       <div style={{ marginBottom: "2rem", textAlign: "center" }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: 18,
-          background: "linear-gradient(135deg, #f97316, #ea6a07)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "2rem", margin: "0 auto 1rem",
-          boxShadow: "0 8px 24px rgba(249,115,22,0.35)",
-        }}>
-          🧑‍🍳
-        </div>
+        <img
+          src="/icons/icon-192.png"
+          alt="NoQx Worker"
+          style={{
+            width: 72, height: 72, borderRadius: 18,
+            margin: "0 auto 1rem", display: "block", objectFit: "cover",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          }}
+        />
         <h1 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>
           Worker Portal
         </h1>
