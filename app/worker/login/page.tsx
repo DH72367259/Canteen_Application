@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { getNativeAppId } from "@/lib/nativeAppId";
 
 export default function WorkerLoginPage() {
   const router = useRouter();
@@ -11,6 +12,18 @@ export default function WorkerLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // When running inside the native worker app (com.noqx.worker), hide the
+  // "Forgot Password" link (which routes to /login — student territory) and
+  // the "Go to main login" link. Workers in the native shell must NEVER be
+  // able to navigate to student/canteen login screens.
+  const [isWorkerNativeApp, setIsWorkerNativeApp] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const appId = await getNativeAppId();
+      if (appId === "com.noqx.worker") setIsWorkerNativeApp(true);
+    })();
+  }, []);
 
   // Redirect if already logged in as worker
   useEffect(() => {
@@ -176,29 +189,39 @@ export default function WorkerLoginPage() {
           {busy ? "Signing in…" : "Sign In"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => router.push("/login?forgot=1")}
-          style={{
-            marginTop: "0.75rem", width: "100%",
-            background: "none", border: "none",
-            color: "#f97316", fontWeight: 600, fontSize: "0.85rem",
-            cursor: "pointer", padding: "0.4rem",
-          }}
-        >
-          Forgot Password?
-        </button>
-
-        <p style={{ marginTop: "1.25rem", textAlign: "center", fontSize: "0.78rem", color: "#94a3b8" }}>
-          Not a worker?{" "}
+        {!isWorkerNativeApp && (
           <button
             type="button"
-            onClick={() => router.push("/login")}
-            style={{ background: "none", border: "none", color: "#f97316", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem" }}
+            onClick={() => router.push("/login?forgot=1")}
+            style={{
+              marginTop: "0.75rem", width: "100%",
+              background: "none", border: "none",
+              color: "#f97316", fontWeight: 600, fontSize: "0.85rem",
+              cursor: "pointer", padding: "0.4rem",
+            }}
           >
-            Go to main login
+            Forgot Password?
           </button>
-        </p>
+        )}
+
+        {!isWorkerNativeApp && (
+          <p style={{ marginTop: "1.25rem", textAlign: "center", fontSize: "0.78rem", color: "#94a3b8" }}>
+            Not a worker?{" "}
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              style={{ background: "none", border: "none", color: "#f97316", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem" }}
+            >
+              Go to main login
+            </button>
+          </p>
+        )}
+
+        {isWorkerNativeApp && (
+          <p style={{ marginTop: "1.25rem", textAlign: "center", fontSize: "0.75rem", color: "#94a3b8" }}>
+            Forgot password? Ask your canteen manager to reset it from the staff dashboard.
+          </p>
+        )}
       </form>
     </div>
   );

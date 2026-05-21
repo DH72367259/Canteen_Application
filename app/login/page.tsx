@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getSupabaseClient } from "@/lib/supabase-client";
+import { getNativeAppId } from "@/lib/nativeAppId";
 
 /* ─── OTP digit boxes ───────────────────────────────────────────────────── */
 function OtpInput({ value, onChange, length = 6 }: { value: string; onChange: (v: string) => void; length?: number }) {
@@ -77,6 +78,21 @@ function LoginContent() {
   const [tab, setTab] = useState<Tab>(
     forgotParam ? "forgot" : roleParam === "user" ? "student" : "password"
   );
+
+  // When running inside the native student app (com.noqx.student), the
+  // "Canteen Login" tab must be hidden — students should never see staff
+  // login UI on their phone. We force them onto the student tab and remove
+  // the switcher entirely. Web + non-student builds keep both tabs.
+  const [isStudentNativeApp, setIsStudentNativeApp] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const appId = await getNativeAppId();
+      if (appId === "com.noqx.student") {
+        setIsStudentNativeApp(true);
+        setTab(prev => (prev === "password" ? "student" : prev));
+      }
+    })();
+  }, []);
 
   // ── Common state ──────────────────────────────────────────────────────────
   const [email,      setEmail]     = useState("");
@@ -508,8 +524,9 @@ function LoginContent() {
           <p>Skip the queue. Pre-order. Pickup.</p>
         </div>
 
-        {/* Tab switcher — hidden during account setup OR forgot-password flow */}
-        {!showSetup && tab !== "forgot" && (
+        {/* Tab switcher — hidden during account setup, forgot-password, or when
+            running in the native student app (which is student-only by design). */}
+        {!showSetup && tab !== "forgot" && !isStudentNativeApp && (
           <div style={{ display: "flex", border: "1.5px solid var(--border)", borderRadius: 14, overflow: "hidden", fontSize: "0.78rem" }}>
             {(["student", "password"] as Tab[]).map(t => (
               <button
