@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getSupabaseClient } from "@/lib/supabase-client";
-import { getNativeAppId } from "@/lib/nativeAppId";
 
 /* ─── OTP digit boxes ───────────────────────────────────────────────────── */
 function OtpInput({ value, onChange, length = 6 }: { value: string; onChange: (v: string) => void; length?: number }) {
@@ -79,31 +78,24 @@ function LoginContent() {
     forgotParam ? "forgot" : roleParam === "user" ? "student" : "password"
   );
 
-  // When running inside the native student app (com.noqx.student), the
-  // "Canteen Login" tab must be hidden — students should never see staff
-  // login UI on their phone. We force them onto the student tab and remove
-  // the switcher + the worker link entirely. Web + non-student builds
-  // keep both tabs.
+  // Hide ALL canteen-login UI when running inside any native Capacitor
+  // shell on the student route. Detection is SYNCHRONOUS via
+  // window.Capacitor (injected before any user JS runs) — the previous
+  // async App.getInfo() check was racing with the first paint and
+  // leaking the tab switcher + "Canteen worker?" link briefly OR not
+  // firing at all if the @capacitor/app plugin failed to register.
   //
-  // Defensive: if Capacitor is native but App.getInfo() fails (plugin
-  // missing in an older APK, transient error, etc.), assume student app
-  // since /login is the student app's landing URL — worker app boots
-  // straight into /worker/login and never hits this page in normal flow.
+  // Heuristic: if we're native AND not on a /worker/* path, we're the
+  // student APK. Worker APK boots straight into /worker/login and never
+  // reaches this component in normal flow.
   const [isStudentNativeApp, setIsStudentNativeApp] = useState(false);
   useEffect(() => {
-    (async () => {
-      try {
-        const { Capacitor } = await import("@capacitor/core");
-        if (!Capacitor.isNativePlatform()) return;
-      } catch { return; }
-      let appId: string | null = null;
-      try { appId = await getNativeAppId(); } catch { /* fall through */ }
-      const isStudent = appId === "com.noqx.student" || appId === null;
-      if (isStudent) {
-        setIsStudentNativeApp(true);
-        setTab(prev => (prev === "password" ? "student" : prev));
-      }
-    })();
+    if (typeof window === "undefined") return;
+    const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+    if (!cap?.isNativePlatform?.()) return;
+    if (window.location.pathname.startsWith("/worker")) return;
+    setIsStudentNativeApp(true);
+    setTab(prev => (prev === "password" ? "student" : prev));
   }, []);
 
   // ── Common state ──────────────────────────────────────────────────────────

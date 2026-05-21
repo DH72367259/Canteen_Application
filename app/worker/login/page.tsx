@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getNativeAppId } from "@/lib/nativeAppId";
 
 export default function WorkerLoginPage() {
   const router = useRouter();
@@ -13,16 +12,18 @@ export default function WorkerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // When running inside the native worker app (com.noqx.worker), hide the
-  // "Forgot Password" link (which routes to /login — student territory) and
-  // the "Go to main login" link. Workers in the native shell must NEVER be
-  // able to navigate to student/canteen login screens.
+  // Hide cross-role links when running inside the native worker app.
+  // Synchronous window.Capacitor check (no async race / no plugin
+  // dependency). Worker APK loads /worker/login as its entry point, so
+  // any native session on /worker/* is the worker app.
   const [isWorkerNativeApp, setIsWorkerNativeApp] = useState(false);
   useEffect(() => {
-    (async () => {
-      const appId = await getNativeAppId();
-      if (appId === "com.noqx.worker") setIsWorkerNativeApp(true);
-    })();
+    if (typeof window === "undefined") return;
+    const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+    if (!cap?.isNativePlatform?.()) return;
+    if (window.location.pathname.startsWith("/worker")) {
+      setIsWorkerNativeApp(true);
+    }
   }, []);
 
   // Redirect if already logged in as worker
