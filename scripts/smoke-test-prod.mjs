@@ -12,9 +12,13 @@
  * Designed to be safe to run against production at any time.
  *
  * Usage: node scripts/smoke-test-prod.mjs [https://your-prod-url]
- *   Defaults to canteenapplication-production.up.railway.app
+ *   Defaults to https://noqx.co.in
  */
-const BASE = (process.argv[2] || "https://canteenapplication-production.up.railway.app").replace(/\/$/, "");
+const BASE = (process.argv[2] || "https://noqx.co.in").replace(/\/$/, "");
+
+// Seeded production canteen — see launch_readiness §1 Production data seed.
+// Replace this constant if the seeded canteen is rotated.
+const SEEDED_CANTEEN_ID = "7e431e40-44e8-4c66-ac6a-d60f47f343c4";
 
 console.log("");
 console.log("┌──────────────────────────────────────────────────────────────────────");
@@ -60,6 +64,17 @@ await check("Refund Policy page",         `${BASE}/refund`,   { status: 200, con
 await check("Shipping & Delivery page",   `${BASE}/shipping`, { status: 200, contains: "Shipping" });
 await check("Contact Us page",            `${BASE}/contact`,  { status: 200, contains: "Contact" });
 
+// ── 2b. Brand + contact regression ──
+// Catches "Canteen-Application" placeholder text leaking back into legal pages.
+// Note: emails are rewritten by Cloudflare Email Obfuscation (Scrape Shield)
+// into <a class="__cf_email__"...> tokens, so we check for the obfuscation
+// marker as a proxy for "an email is rendered here" — verifies the legal
+// pages still render their contact blocks.
+await check("Contact page has real phone",   `${BASE}/contact`,  { status: 200, contains: "70199 86046" });
+await check("Contact uses NoQx brand",       `${BASE}/contact`,  { status: 200, contains: "NoQx" });
+await check("Privacy page renders emails",   `${BASE}/privacy`,  { status: 200, contains: "__cf_email__" });
+await check("Refund page renders emails",    `${BASE}/refund`,   { status: 200, contains: "__cf_email__" });
+
 // ── 3. Service worker (cache busting) ──
 await check("Service worker exists",      `${BASE}/sw.js`,    { status: 200, contains: "CACHE_NAME" });
 
@@ -69,6 +84,23 @@ await check("PWA manifest",               `${BASE}/manifest.json`);
 // ── 5. Public APIs that should respond without auth ──
 // /api/canteens/colleges — used by student app landing
 await check("/api/canteens/colleges 200", `${BASE}/api/canteens/colleges`);
+
+// ── 5b. Seeded production data exists ──
+// The launch-seed canteen + its menu items must be visible via the public
+// menu API. If this fails, students will land on an empty app.
+{
+  const r = await fetch(`${BASE}/api/canteens/${SEEDED_CANTEEN_ID}/menu`);
+  const body = await r.json().catch(() => null);
+  const itemCount = Array.isArray(body?.items) ? body.items.length : 0;
+  const ok = r.status === 200 && itemCount >= 1;
+  checks.push({
+    label: `Seeded canteen has ≥1 menu item (got ${itemCount})`,
+    url: `/api/canteens/${SEEDED_CANTEEN_ID}/menu`,
+    status: r.status, ms: 0, passed: ok,
+    note: ok ? "" : `status=${r.status}, items=${itemCount}`,
+  });
+  console.log(`  ${ok ? "✓" : "✘"}  ${(`Seeded canteen has ≥1 menu item (got ${itemCount})`).padEnd(45)} ${r.status}`);
+}
 
 // /api/payments/razorpay-webhook should refuse non-POST (or unsigned POST)
 // — we expect 4xx, not 5xx.
