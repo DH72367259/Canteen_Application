@@ -188,7 +188,7 @@ export default function WorkerOrdersPage() {
   const prevLateCountRef    = useRef(0);
 
   useEffect(() => {
-    if (!loading && !user) router.push("/login");
+    if (!loading && !user) router.push("/worker/login");
     // Only redirect if role is fully resolved — prevents flicker during auth
     if (!loading && user && user.role && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
@@ -430,7 +430,7 @@ export default function WorkerOrdersPage() {
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", fontSize: "0.82rem" }}>
           <span style={{ color: "#94a3b8" }}>{new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
           <button
-            onClick={() => logout().then(() => router.push("/login"))}
+            onClick={() => logout().then(() => router.push("/worker/login"))}
             style={{ background: "none", border: "1px solid #475569", color: "#94a3b8", borderRadius: 8, padding: "0.35rem 0.65rem", cursor: "pointer", fontSize: "0.78rem" }}
           >
             Logout

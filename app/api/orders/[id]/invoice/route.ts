@@ -44,10 +44,35 @@ export async function GET(
     };
   });
 
-  const subtotal        = items.reduce((s: number, i: { taxable_amount: number }) => s + i.taxable_amount, 0);
-  const total_cgst      = items.reduce((s: number, i: { cgst_2_5: number })       => s + i.cgst_2_5, 0);
-  const total_sgst      = items.reduce((s: number, i: { sgst_2_5: number })       => s + i.sgst_2_5, 0);
-  const grand_total     = Math.round((subtotal + total_cgst + total_sgst) * 100) / 100;
+  // Compute totals from per-item math when item rows exist. For older
+  // orders predating the order_items table (pre-2026-05-20 in this
+  // codebase), the items array is empty but order.total_amount is the
+  // authoritative figure — fall back to that and reverse-derive the GST
+  // split (the stored total INCLUDES 5% GST unless DISABLE_GST was true).
+  let subtotal: number;
+  let total_cgst: number;
+  let total_sgst: number;
+  let grand_total: number;
+
+  if (items.length > 0) {
+    subtotal    = items.reduce((s: number, i: { taxable_amount: number }) => s + i.taxable_amount, 0);
+    total_cgst  = items.reduce((s: number, i: { cgst_2_5: number })       => s + i.cgst_2_5, 0);
+    total_sgst  = items.reduce((s: number, i: { sgst_2_5: number })       => s + i.sgst_2_5, 0);
+    grand_total = Math.round((subtotal + total_cgst + total_sgst) * 100) / 100;
+  } else {
+    grand_total = Number(order.total_amount ?? 0);
+    const gstDisabled = process.env.DISABLE_GST === "true";
+    if (gstDisabled) {
+      subtotal   = grand_total;
+      total_cgst = 0;
+      total_sgst = 0;
+    } else {
+      subtotal   = Math.round((grand_total / 1.05) * 100) / 100;
+      const gst  = Math.round((grand_total - subtotal) * 100) / 100;
+      total_cgst = Math.round((gst / 2) * 100) / 100;
+      total_sgst = Math.round((gst - total_cgst) * 100) / 100;
+    }
+  }
 
   const invoiceDate = new Date(order.created_at);
   const invoiceNumber = `NOQX-${invoiceDate.getFullYear()}${String(invoiceDate.getMonth() + 1).padStart(2, "0")}${String(invoiceDate.getDate()).padStart(2, "0")}-${orderId.slice(-6).toUpperCase()}`;

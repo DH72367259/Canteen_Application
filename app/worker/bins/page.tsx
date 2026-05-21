@@ -30,7 +30,7 @@ export default function WorkerBinsPage() {
   const [msg, setMsg]           = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) router.push("/login");
+    if (!loading && !user) router.push("/worker/login");
     if (!loading && user && user.role !== "worker") router.push("/worker/login");
   }, [user, loading, router]);
 
