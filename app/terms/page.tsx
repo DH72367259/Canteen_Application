@@ -24,7 +24,7 @@ export default function TermsOfServicePage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>1. Acceptance of Terms</h2>
         <p>
-          By accessing or using the Canteen-Application platform (&quot;Platform&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), you agree to be bound by these Terms of Service (&quot;Terms&quot;). If you do not agree to these Terms, please do not use the Platform.
+          By accessing or using the NoQx platform (&quot;Platform&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), you agree to be bound by these Terms of Service (&quot;Terms&quot;). If you do not agree to these Terms, please do not use the Platform.
         </p>
         <p>
           These Terms apply to all users of the Platform including students, faculty, canteen staff, administrators, and visitors.
@@ -34,7 +34,7 @@ export default function TermsOfServicePage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>2. Eligibility</h2>
         <ul>
-          <li>You must be a registered student or authorised staff member of an institution partnered with Canteen-Application.</li>
+          <li>You must be a registered student or authorised staff member of an institution partnered with NoQx.</li>
           <li>You must be at least 13 years of age to create an account.</li>
           <li>You must provide accurate, current, and complete information during registration.</li>
           <li>One account per person. Creating multiple accounts to abuse offers or promotions is prohibited.</li>
@@ -103,7 +103,7 @@ export default function TermsOfServicePage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>8. Intellectual Property</h2>
         <p>
-          All content on the Platform — including logos, text, graphics, interfaces, and software — is the property of Canteen-Application or its licensors and is protected by applicable intellectual property laws. You may not reproduce, distribute, or create derivative works without our written permission.
+          All content on the Platform — including logos, text, graphics, interfaces, and software — is the property of NoQx or its licensors and is protected by applicable intellectual property laws. You may not reproduce, distribute, or create derivative works without our written permission.
         </p>
       </section>
 
@@ -117,7 +117,7 @@ export default function TermsOfServicePage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>10. Limitation of Liability</h2>
         <p>
-          To the maximum extent permitted by law, Canteen-Application shall not be liable for any indirect, incidental, special, consequential, or punitive damages — including loss of data, revenue, or goodwill — arising from your use of or inability to use the Platform, even if we have been advised of the possibility of such damages.
+          To the maximum extent permitted by law, NoQx shall not be liable for any indirect, incidental, special, consequential, or punitive damages — including loss of data, revenue, or goodwill — arising from your use of or inability to use the Platform, even if we have been advised of the possibility of such damages.
         </p>
         <p>
           Our total liability to you for any claim arising out of or relating to these Terms or your use of the Platform shall not exceed the amount you paid for the specific order giving rise to the claim.

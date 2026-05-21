@@ -260,7 +260,7 @@ export default function ProfilePage() {
 
         {/* App version */}
         <div style={{ textAlign: "center", color: "var(--ink-3, #9b9b94)", fontSize: "0.72rem", marginTop: "0.25rem" }}>
-          NoQx · Smart Institutional Dining
+          NoQx · Skip the queue. Pre-order. Pickup.
         </div>
 
         {/* Sign out */}

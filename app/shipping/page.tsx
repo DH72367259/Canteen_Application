@@ -7,8 +7,8 @@ import Link from "next/link";
  * (b) make our actual fulfilment model unambiguous to users.
  */
 export const metadata = {
-  title: "Shipping & Delivery Policy · Canteen-Application",
-  description: "How orders placed on Canteen-Application are fulfilled — no shipping; orders are picked up at the canteen counter.",
+  title: "Shipping & Delivery Policy · NoQx",
+  description: "How orders placed on NoQx are fulfilled — no shipping; orders are picked up at the canteen counter.",
 };
 
 export default function ShippingPolicyPage() {
@@ -24,7 +24,7 @@ export default function ShippingPolicyPage() {
       <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "2rem" }}>
         <strong>📦 Quick Summary</strong>
         <ul style={{ marginTop: "0.5rem", marginBottom: 0 }}>
-          <li><strong>No shipping involved.</strong> Canteen-Application is an in-canteen pickup service.</li>
+          <li><strong>No shipping involved.</strong> NoQx is an in-canteen pickup service.</li>
           <li>Orders are prepared by the canteen and placed in a numbered pickup bin during your chosen slot.</li>
           <li>You collect your order yourself by sharing your OTP / QR code at the canteen.</li>
           <li>No courier, no delivery person, no shipping fee.</li>
@@ -33,7 +33,7 @@ export default function ShippingPolicyPage() {
 
       <section style={{ marginBottom: "2rem" }}>
         <h2>1. How fulfilment works</h2>
-        <p>Canteen-Application is a pre-order and pickup platform for college canteens. We do <strong>not</strong> ship or deliver food to your address. Every order follows the same path:</p>
+        <p>NoQx is a pre-order and pickup platform for college canteens. We do <strong>not</strong> ship or deliver food to your address. Every order follows the same path:</p>
         <ol>
           <li>You browse a canteen&apos;s menu in the app and add items to your cart.</li>
           <li>You pick a pickup time slot (typically a 15-minute window).</li>
@@ -61,7 +61,7 @@ export default function ShippingPolicyPage() {
 
       <section style={{ marginBottom: "2rem" }}>
         <h2>4. Geographic coverage</h2>
-        <p>Canteen-Application is available only at participating college canteens within India. The platform does not deliver to home addresses, hostels, or any location off-campus. Each canteen serves only the campus or building it is physically located in.</p>
+        <p>NoQx is available only at participating college canteens within India. The platform does not deliver to home addresses, hostels, or any location off-campus. Each canteen serves only the campus or building it is physically located in.</p>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>

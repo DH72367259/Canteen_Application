@@ -7,8 +7,8 @@ import Link from "next/link";
  * real values before Razorpay KYC review.
  */
 export const metadata = {
-  title: "Contact Us · Canteen-Application",
-  description: "Get in touch with the Canteen-Application team — support, partnerships, refunds, and grievances.",
+  title: "Contact Us · NoQx",
+  description: "Get in touch with the NoQx team — support, partnerships, refunds, and grievances.",
 };
 
 const SUPPORT_EMAIL    = "support@noqx.co.in";

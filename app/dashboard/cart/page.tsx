@@ -458,11 +458,11 @@ function CartContent() {
       key:         orderData.keyId,
       amount:      orderData.amount,
       currency:    orderData.currency,
-      name:        "Canteen-Application",
+      name:        "NoQx",
       description: `Order from ${canteenName}`,
       order_id:    orderData.orderId,
       prefill:     { name: user?.displayName || "", email: user?.email || "" },
-      theme:       { color: "#f97316" },
+      theme:       { color: "#7c3aed" },
       modal: {
         ondismiss: () => {
           setBusy(false);

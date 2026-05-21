@@ -98,7 +98,7 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
       </h1>
       <p style={{ fontSize: 16, color: '#ccc', maxWidth: 360, lineHeight: 1.6, marginBottom: 32 }}>
         {info.message ||
-          'A new version of Canteen-Application is required. Please update to continue.'}
+          'A new version of NoQx is required. Please update to continue.'}
       </p>
       <p style={{ fontSize: 13, color: '#888', marginBottom: 24 }}>
         Required version: {info.minRequiredVersion || info.currentVersion}
