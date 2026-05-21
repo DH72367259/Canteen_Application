@@ -42,7 +42,6 @@ export default function PrivacyPolicyPage() {
           <li><strong>Device info:</strong> user-agent string truncated to 120 chars (no fingerprinting).</li>
           <li><strong>IP address:</strong> never stored raw — only a 16-char SHA-256 hash, used to detect fraud + concurrent-session abuse.</li>
           <li><strong>Push device token:</strong> if you allow notifications, we store the FCM/APNs token so we can ping your phone when an order is ready. Tokens are deleted within 30 days of inactivity.</li>
-          <li><strong>Usage events:</strong> page views and feature taps for product analytics. No third-party trackers.</li>
         </ul>
         <h3>1.3 From payment partners</h3>
         <ul>
@@ -133,9 +132,10 @@ export default function PrivacyPolicyPage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2>8. Cookies & Local Storage</h2>
         <ul>
-          <li>One Supabase auth cookie (HttpOnly, Secure, SameSite=Lax) to keep you logged in.</li>
-          <li>Local-storage entries: <code>noqx_pro_active</code>, <code>noqx_pro_expires</code> (fast-path Pro indicator), and <code>vendor_slots_configured</code> (vendor onboarding flag). All can be cleared from your browser settings without affecting your account.</li>
-          <li>No third-party analytics cookies. No advertising cookies. Ever.</li>
+          <li>One Supabase auth cookie (HttpOnly, Secure, SameSite=Lax) to keep you logged in. This is <strong>strictly necessary</strong> for the service to function and is exempt from consent requirements under the DPDP Act and global cookie regulations.</li>
+          <li>Local-storage entries: <code>noqx_pro_active</code>, <code>noqx_pro_expires</code> (fast-path Pro indicator), and <code>vendor_slots_configured</code> (vendor onboarding flag). All first-party, can be cleared from your browser settings without affecting your account.</li>
+          <li>No third-party analytics cookies. No advertising cookies. No tracking pixels. Ever.</li>
+          <li>Because we use only strictly-necessary first-party cookies and no trackers, we do <strong>not</strong> display a cookie consent banner — there is nothing non-essential to consent to.</li>
         </ul>
       </section>
 
