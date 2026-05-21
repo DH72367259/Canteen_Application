@@ -25,6 +25,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- App Links: handle https://noqx.co.in/* URLs natively.
+                 autoVerify uses /.well-known/assetlinks.json on the host to
+                 confirm ownership. Without that file, Android falls back to
+                 disambiguator (user picks "Open in NoQx" vs Chrome). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="noqx.co.in" />
+                <data android:pathPrefix="/dashboard" />
+            </intent-filter>
+
         </activity>
 
         <provider

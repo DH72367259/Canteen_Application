@@ -1,0 +1,22 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.noqx.student",
+      "sha256_cert_fingerprints": [
+        "BF:A4:4B:BF:B5:27:B6:0F:C6:02:02:B0:92:6D:3E:E3:12:73:D2:30:CD:FA:E0:FC:D2:26:02:40:05:05:B6:73"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.noqx.worker",
+      "sha256_cert_fingerprints": [
+        "89:29:1B:F8:AA:CB:9B:7E:0E:3F:6D:B6:E4:A4:66:16:C1:E6:85:F4:A0:B0:58:FA:1B:CC:EF:E3:3C:63:64:ED"
+      ]
+    }
+  }
+]
