@@ -94,7 +94,7 @@ export default function WorkerLoginPage() {
           Worker Portal
         </h1>
         <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem" }}>
-          Canteen-Application · Staff Login
+          NoQx Worker · Staff Login
         </p>
       </div>
 

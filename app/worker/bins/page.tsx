@@ -79,7 +79,7 @@ export default function WorkerBinsPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       <div style={{ background: "#1e293b", color: "#fff", padding: "calc(env(safe-area-inset-top, 0) + 0.75rem) 1rem 0.75rem", fontWeight: 700, fontSize: "1rem", position: "sticky", top: 0, zIndex: 20 }}>
-        Canteen-Application · Bin Management
+        NoQx Worker · Bin Management
       </div>
 
       <div style={{ padding: "1rem", paddingBottom: "5rem" }}>
