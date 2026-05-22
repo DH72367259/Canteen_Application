@@ -29,7 +29,13 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix ".debug"
+            // applicationIdSuffix ".debug" removed 2026-05-22 so debug builds
+            // match the package name registered in google-services.json
+            // (com.noqx.student). The Firebase Gradle plugin enforces a strict
+            // package-name match. Without this removal, debug builds fail with:
+            //   No matching client found for package name 'com.noqx.student.debug'
+            // The versionNameSuffix is kept so debug builds are still visually
+            // distinguishable in the About page.
             versionNameSuffix  "-debug"
             debuggable true
         }
