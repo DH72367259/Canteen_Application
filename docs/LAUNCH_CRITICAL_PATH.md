@@ -16,17 +16,108 @@ no store accounts).
 
 ---
 
-## Cost summary (one-time + recurring)
+## Cost summary (one-time + recurring at launch)
 
 | Item | Cost | When |
 |---|---|---|
 | Apple Developer Program | **$99/yr** | Once, renew annually |
 | Google Play Console | **$25 one-time** | Once forever |
 | Supabase Pro (DB backups) | **$25/mo** | Recurring |
+| Resend Pro (50k emails) | **$20/mo** | Recurring |
 | Razorpay | Free signup + 2% per transaction | No upfront |
 | Railway Pro | $20/mo (already paying) | Recurring |
 | **Total upfront**: **$124** | | |
-| **Total monthly**: **~$45/mo** + Razorpay transaction fees | | |
+| **Total monthly at launch (~1k DAU)**: **~$65/mo** + Razorpay 2% | | |
+
+---
+
+## Scaling plan — what to upgrade as DAU grows
+
+You don't need to over-provision on day 1. Watch usage dashboards and
+upgrade as you cross these thresholds.
+
+### Railway (compute hosting)
+
+| DAU | Plan | Monthly est. | Trigger to upgrade |
+|---|---|---|---|
+| 0-1k | Pro $20 base | $20-40 | Default |
+| 1k-5k | Pro + overage | $40-80 | Railway dashboard shows >$30 usage credit consumed |
+| 5k-15k | Pro + overage OR Team | $80-150 | p95 response time degrades OR >$80/mo usage |
+| 15k-50k | Team plan + multiple replicas | $150-400 | CPU consistently >70% during peak |
+
+**At 15k DAU**: stay on Pro plan, expect bill ~$80-120/mo. Cloudflare in
+front absorbs ~70% of requests at the edge, so Railway sees ~5-7M of
+the ~15-20M monthly request total.
+
+### Supabase (database + auth)
+
+| DAU | Plan | Monthly est. | Trigger to upgrade |
+|---|---|---|---|
+| 0-1k | Pro $25 base | $25 | Default — Pro = backups + 8GB DB included |
+| 1k-5k | Pro + Small Compute | $35 ($25 + $10) | Connection pool exhaustion warnings |
+| 5k-15k | Pro + Medium Compute | $85 ($25 + $60) | p95 query time >100ms during peak |
+| 15k-50k | Pro + Large Compute | $135 ($25 + $110) | OR migrate to dedicated instance |
+
+**At 15k DAU**: expect $35-85/mo. The 8GB DB included in Pro covers
+roughly 1-2 years of order data at this scale. After year 1 watch DB
+size in Settings → Usage; budget $0.125 per GB over 8.
+
+### Resend (transactional email)
+
+Current send volume drivers (excluding push notifications which are disabled):
+- Password reset OTPs (low — only on forgot password)
+- Welcome email on signup (one-time per student)
+- Order confirmation (per order)
+- Refund notification (per cancellation, low %)
+
+Estimate: ~2 emails per active student per day average.
+
+| DAU | Plan | Monthly emails | Cost |
+|---|---|---|---|
+| 0-500 | Free | <3k | $0 |
+| 500-2.5k | Pro $20 | <50k | $20 |
+| 2.5k-10k | Business $99 | <200k | $99 |
+| 10k-50k | Scale $399 | <1M | $399 |
+
+**At 15k DAU**: ~900k emails/mo → **Scale plan $399/mo** OR aggressively
+re-enable FCM push (see `docs/FCM_REENABLEMENT.md`) to cut email
+volume by ~70% (push the order-ready notifications, keep email for
+receipts + password reset only). Push-first strategy keeps you on
+Business plan ($99/mo).
+
+### Cloudflare (DNS + CDN proxy)
+
+Free plan is sufficient up to ~50k DAU. Cloudflare has no bandwidth
+billing on Free tier. Only upgrade if you need:
+- WAF custom rules ($20/mo Pro)
+- Advanced bot protection ($200/mo Business)
+- Image optimization (separate billing)
+
+**Not needed at 15k DAU.**
+
+### Twilio SMS (OTP delivery)
+
+For India: ~$0.05-0.10 per SMS through Twilio. Alternative: Fast2SMS
+(Indian provider) at ~₹0.20/SMS (~$0.003).
+
+At 15k DAU: ~500 new signups/mo + ~200 password resets = ~700 SMS/mo.
+- Twilio: ~$50/mo
+- Fast2SMS: ~$2/mo (already integrated in `lib/fast2sms.ts`)
+
+**Recommendation**: use Fast2SMS for OTPs, Twilio only for WhatsApp.
+
+### Total monthly burn at common DAU tiers
+
+| DAU | Railway | Supabase | Resend | Cloudflare | SMS | **Total** |
+|---|---|---|---|---|---|---|
+| 1k | $20 | $25 | $20 | $0 | $5 | **~$70/mo** |
+| 5k | $50 | $35 | $99 | $0 | $20 | **~$200/mo** |
+| 15k | $100 | $85 | $399 (or $99 with FCM) | $0 | $50 | **~$630/mo (or $330 with FCM)** |
+| 50k | $300 | $135 | enterprise | $20 | $150 | **~$1000+/mo** |
+
+**Plus Razorpay 2% transaction fee** on every order — not in the above.
+At 15k DAU × ₹80 avg order = ₹1.2L/day = ₹36L/month gross revenue.
+Razorpay 2% = ₹72k/month payment processing.
 
 ---
 
