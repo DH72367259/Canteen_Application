@@ -239,7 +239,7 @@ def slide_costs_upfront():
         ["Google Play Console", "$25 once", "Required to publish on Play Store"],
         ["Razorpay account", "FREE", "2% transaction fee charged per payment"],
         ["Supabase Pro (first month)", "$25", "Database backups + larger DB quota"],
-        ["Resend Pro (first month)", "$20", "50k emails / month included"],
+        ["Resend Pro (first month)", "$20", "50k emails / month — covers up to ~15k DAU"],
         ["Railway Pro (already paying)", "$20", "Hosting infrastructure"],
         ["", "", ""],
         ["TOTAL DAY-1 OUT-OF-POCKET", "$214", "$124 one-time + $90 first month subscriptions"],
@@ -269,19 +269,18 @@ def slide_costs_monthly():
     add_header_strip(s, "Monthly costs at scale",
                      "What you'll pay each month as the app grows")
     rows = [
-        ["1,000 DAU", "$20", "$25", "$20", "$0", "$5", "$70/mo"],
-        ["5,000 DAU", "$50", "$35", "$99", "$0", "$20", "$200/mo"],
-        ["15,000 DAU", "$100", "$85", "$399", "$0", "$50", "$630/mo"],
-        ["15k w/ FCM push", "$100", "$85", "$99", "$0", "$50", "$330/mo"],
-        ["50,000 DAU", "$300", "$135", "Enterprise", "$20", "$150", "$1,000+/mo"],
+        ["1,000 DAU",   "$20",  "$25",  "$0 (Free)", "$0", "$5",   "$50/mo"],
+        ["5,000 DAU",   "$50",  "$35",  "$20",       "$0", "$20",  "$125/mo"],
+        ["15,000 DAU",  "$100", "$85",  "$20",       "$0", "$50",  "$255/mo"],
+        ["50,000 DAU",  "$300", "$135", "$99",       "$20", "$150", "$704/mo"],
     ]
     tbl = add_table(s, Inches(0.5), Inches(1.4), Inches(12.3),
                     ["Daily active students", "Railway", "Supabase", "Resend", "Cloudflare", "SMS", "Total"],
-                    rows, font_size=11, header_size=11)
+                    rows, font_size=12, header_size=12)
     tbl.columns[0].width = Inches(2.4)
     for c in range(1, 7):
         tbl.columns[c].width = Inches(1.65)
-    # Highlight 15k row
+    # Highlight 15k row (most realistic for 1-canteen launch)
     for c in range(7):
         cell = tbl.cell(3, c)
         cell.fill.solid(); cell.fill.fore_color.rgb = LIGHT_BG
@@ -289,14 +288,17 @@ def slide_costs_monthly():
             for r in p.runs:
                 r.font.bold = True
                 r.font.color.rgb = PURPLE
-    add_text(s, Inches(0.5), Inches(4.8), Inches(12.3), Inches(0.5),
-             "At 15k DAU: re-enable push notifications (FCM, currently disabled) to drop email volume by ~70% → saves ~$300/mo.",
+    add_text(s, Inches(0.5), Inches(4.4), Inches(12.3), Inches(0.5),
+             "Resend numbers are MUCH lower than first-pass estimates. We only send email for sign-up OTP + password reset",
              size=12, color=INK_DARK)
-    add_text(s, Inches(0.5), Inches(5.4), Inches(12.3), Inches(0.5),
+    add_text(s, Inches(0.5), Inches(4.85), Inches(12.3), Inches(0.5),
+             "(not order status — that uses in-app bell + FCM push). Realistic volume is ~6% of DAU/day = well within Pro tier.",
+             size=12, color=INK_DARK)
+    add_text(s, Inches(0.5), Inches(5.5), Inches(12.3), Inches(0.5),
              "PLUS Razorpay 2% fee on every order. At 15k DAU × ₹80 avg order × 30 days = ₹36L gross/mo → ₹72k Razorpay fee.",
              size=12, color=INK_DARK)
     add_text(s, Inches(0.5), Inches(6.0), Inches(12.3), Inches(0.5),
-             "All services are usage-based: you don't pay for capacity you don't use. Scale up only as you cross thresholds.",
+             "All services are usage-based: you only pay for what you use. Scale up only as you cross thresholds.",
              size=11, color=INK_3)
     add_footer(s, 5, 10)
 

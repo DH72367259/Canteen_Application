@@ -64,26 +64,30 @@ size in Settings → Usage; budget $0.125 per GB over 8.
 
 ### Resend (transactional email)
 
-Current send volume drivers (excluding push notifications which are disabled):
-- Password reset OTPs (low — only on forgot password)
-- Welcome email on signup (one-time per student)
-- Order confirmation (per order)
-- Refund notification (per cancellation, low %)
+**Correction (2026-05-22):** earlier projection assumed we email every
+order-status change. We don't — verified by codebase grep. Order status
+updates go through the in-app notification bell + FCM push (now
+enabled). Email is only used for:
 
-Estimate: ~2 emails per active student per day average.
+- Sign-up OTP (one-time per new student)
+- Password reset OTP (rare — only on forgot password)
+
+Realistic email volume drivers:
+- ~5% of DAU sign up per day → 5% × 30 = 1.5 × DAU monthly OTPs
+- ~1% of DAU password reset per month → 0.01 × DAU
+- Roughly 1.5-2 emails per DAU per month total
 
 | DAU | Plan | Monthly emails | Cost |
 |---|---|---|---|
-| 0-500 | Free | <3k | $0 |
-| 500-2.5k | Pro $20 | <50k | $20 |
-| 2.5k-10k | Business $99 | <200k | $99 |
-| 10k-50k | Scale $399 | <1M | $399 |
+| 0-1.5k | Free | <3k | $0 |
+| 1.5k-30k | Pro $20 | <50k | $20 |
+| 30k-65k | Business $99 | <100k | $99 |
+| 65k+ | Scale $399 | <500k | $399 |
 
-**At 15k DAU**: ~900k emails/mo → **Scale plan $399/mo** OR aggressively
-re-enable FCM push (see `docs/FCM_REENABLEMENT.md`) to cut email
-volume by ~70% (push the order-ready notifications, keep email for
-receipts + password reset only). Push-first strategy keeps you on
-Business plan ($99/mo).
+**At 15k DAU**: ~27k emails/mo → **Pro plan $20/mo** is plenty. FCM
+doesn't reduce this further (we don't email order updates either way),
+but FCM is still worth shipping for the UX win: students get an
+instant push when food is ready instead of having to refresh the app.
 
 ### Cloudflare (DNS + CDN proxy)
 
@@ -108,12 +112,15 @@ At 15k DAU: ~500 new signups/mo + ~200 password resets = ~700 SMS/mo.
 
 ### Total monthly burn at common DAU tiers
 
+(Corrected 2026-05-22 — initial Resend numbers were inflated by a
+wrong assumption about emailing order updates.)
+
 | DAU | Railway | Supabase | Resend | Cloudflare | SMS | **Total** |
 |---|---|---|---|---|---|---|
-| 1k | $20 | $25 | $20 | $0 | $5 | **~$70/mo** |
-| 5k | $50 | $35 | $99 | $0 | $20 | **~$200/mo** |
-| 15k | $100 | $85 | $399 (or $99 with FCM) | $0 | $50 | **~$630/mo (or $330 with FCM)** |
-| 50k | $300 | $135 | enterprise | $20 | $150 | **~$1000+/mo** |
+| 1k | $20 | $25 | $0 (Free) | $0 | $5 | **~$50/mo** |
+| 5k | $50 | $35 | $20 | $0 | $20 | **~$125/mo** |
+| 15k | $100 | $85 | $20 | $0 | $50 | **~$255/mo** |
+| 50k | $300 | $135 | $99 | $20 | $150 | **~$704/mo** |
 
 **Plus Razorpay 2% transaction fee** on every order — not in the above.
 At 15k DAU × ₹80 avg order = ₹1.2L/day = ₹36L/month gross revenue.
