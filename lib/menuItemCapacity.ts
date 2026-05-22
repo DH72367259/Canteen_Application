@@ -34,7 +34,15 @@ export async function getMenuItemUsageForToday(
     .select("id, slot_id, slot_label")
     .eq("canteen_id", canteenId)
     .gte("created_at", istDayStartIso())
-    .not("status", "in", '("cancelled","refunded")');
+    // ⚠️ "refunded" was previously listed here too, but it is NOT a value
+    // in the order_status enum. Including it makes Postgres reject the
+    // ENTIRE query with `invalid input value for enum order_status:
+    // "refunded"`. The function then returns an empty usage map and EVERY
+    // item appears at full capacity — that's why student "X left" badges
+    // and vendor inventory counts never moved. Refund state lives in the
+    // separate refund_status column; the order's status stays 'cancelled'
+    // after a refund, which IS already excluded here.
+    .not("status", "in", '("cancelled")');
   if (ordersErr || !orders || orders.length === 0) return out;
 
   const orderIds = orders.map((o) => o.id as string);
@@ -100,7 +108,15 @@ export async function getSlotAvailabilityUsage(
     .eq("canteen_id", canteenId)
     .eq("slot_label", slotLabel)
     .gte("created_at", istDayStartIso())
-    .not("status", "in", '("cancelled","refunded")');
+    // ⚠️ "refunded" was previously listed here too, but it is NOT a value
+    // in the order_status enum. Including it makes Postgres reject the
+    // ENTIRE query with `invalid input value for enum order_status:
+    // "refunded"`. The function then returns an empty usage map and EVERY
+    // item appears at full capacity — that's why student "X left" badges
+    // and vendor inventory counts never moved. Refund state lives in the
+    // separate refund_status column; the order's status stays 'cancelled'
+    // after a refund, which IS already excluded here.
+    .not("status", "in", '("cancelled")');
   if (ordersErr || !orders || orders.length === 0) return out;
 
   const orderIds = orders.map((o) => o.id as string);
