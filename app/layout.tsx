@@ -7,6 +7,7 @@ import { CapacitorBoot } from "@/components/CapacitorBoot";
 import { DisableDevTools } from "@/components/DisableDevTools";
 import { NativeStudentGuard } from "@/components/NativeStudentGuard";
 import { NativeWorkerGuard } from "@/components/NativeWorkerGuard";
+import { NativeNotificationGate } from "@/components/NativeNotificationGate";
 import { StuckLoadingRecovery } from "@/components/StuckLoadingRecovery";
 
 export const metadata: Metadata = {
@@ -62,6 +63,7 @@ export default function RootLayout({
         <ServiceWorkerRegistrar />
         <CapacitorBoot />
         <AuthProvider>
+          <NativeNotificationGate>
           <NativeStudentGuard>
             <NativeWorkerGuard>
               <ForceUpdateGate>
@@ -76,6 +78,7 @@ export default function RootLayout({
               </ForceUpdateGate>
             </NativeWorkerGuard>
           </NativeStudentGuard>
+          </NativeNotificationGate>
         </AuthProvider>
       </body>
     </html>
