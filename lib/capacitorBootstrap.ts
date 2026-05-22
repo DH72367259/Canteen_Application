@@ -44,23 +44,52 @@ export function useCapacitorBootstrap() {
         // POSTs the token to the backend so the server can target this
         // device. Inner try/catch so a missing/uninstalled plugin or a
         // user "Deny" on the permission prompt doesn't break boot.
+        //
+        // CRITICAL: the POST to /api/notifications/device-token needs a
+        // Bearer header (server endpoint uses getRequestContext which
+        // strictly requires Authorization: Bearer <jwt>). Without it the
+        // endpoint returns 401 and the token never saves — which is why
+        // we shipped FCM end-to-end but no pushes ever fired.
+        //
+        // The Capacitor registration listener can fire BEFORE the user
+        // logs in (on first cold-launch). We handle that by trying to
+        // POST immediately if a session is already cached, then falling
+        // back to an auth-state listener that retries on the next sign-in.
         try {
           const { PushNotifications } = await import("@capacitor/push-notifications");
           const perm = await PushNotifications.requestPermissions();
           if (perm.receive === "granted") {
             await PushNotifications.register();
             PushNotifications.addListener("registration", async (token) => {
-              try {
-                await fetch("/api/notifications/device-token", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify({
-                    token: token.value,
-                    platform: Capacitor.getPlatform(),
-                  }),
-                });
-              } catch { /* offline — backend will receive on next launch */ }
+              const { getSupabaseClient } = await import("@/lib/supabase-client");
+              const supabase = getSupabaseClient();
+              if (!supabase) return;
+              const platform = Capacitor.getPlatform();
+              const postToken = async (jwt: string): Promise<boolean> => {
+                try {
+                  const r = await fetch("/api/notifications/device-token", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${jwt}`,
+                    },
+                    body: JSON.stringify({ token: token.value, platform }),
+                  });
+                  return r.ok;
+                } catch { return false; }
+              };
+              // Try immediately if user is already signed in
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                if (await postToken(session.access_token)) return;
+              }
+              // Otherwise wait for sign-in, then POST + unsubscribe
+              const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+                if (s?.access_token) {
+                  const ok = await postToken(s.access_token);
+                  if (ok) sub.subscription.unsubscribe();
+                }
+              });
             });
             PushNotifications.addListener("registrationError", (err) => {
               console.warn("[push] registration error:", err);
