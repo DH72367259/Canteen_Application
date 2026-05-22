@@ -97,6 +97,74 @@ function isPrepRelevant(slotLabel: string | null | undefined): boolean {
   return isCurrent || isUpcoming;
 }
 
+// ── BINS TAB + ORDERS-SEARCH HELPERS ────────────────────────────────────
+// Additive helpers for the new Bins tab and search-by-anything box in the
+// Orders tab. Pure functions — no side effects on existing flow.
+
+type BinAssignmentFlat = {
+  orderId: string;
+  customerName: string;
+  binLabel: string;
+  binColor: string;
+  items: { name: string; quantity: number }[];
+  status: string;
+  pickupSlot: string | null;
+};
+
+function flattenBins(orders: WorkerOrder[]): BinAssignmentFlat[] {
+  const out: BinAssignmentFlat[] = [];
+  for (const o of orders) {
+    const assignments = o.bin_assignments && o.bin_assignments.length > 0
+      ? o.bin_assignments
+      : [{ binIndex: 1, binLabel: o.bin_label ?? "—", binColor: o.bin_color ?? "orange", items: o.items }];
+    for (const a of assignments) {
+      out.push({
+        orderId: o.id,
+        customerName: o.customer_name && !/^[0-9a-f]{8}-/i.test(o.customer_name)
+          ? o.customer_name
+          : `#${o.id.slice(-8).toUpperCase()}`,
+        binLabel: a.binLabel,
+        binColor: a.binColor,
+        items: a.items,
+        status: o.status,
+        pickupSlot: o.pickup_slot ?? null,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Matches an order against a free-text search query. Returns true when
+ * ANY of these contains/equals the query (case-insensitive):
+ *   - customer name (substring)
+ *   - order ID last-4 / last-8 (endsWith)
+ *   - bin label (substring)
+ *   - bin color name (substring — "red", "blue", etc.)
+ *   - any item name (substring)
+ *   - any bin-assignment label / color / item name (multi-bin orders)
+ */
+function matchesSearch(order: WorkerOrder, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (order.customer_name && order.customer_name.toLowerCase().includes(q)) return true;
+  const idLower = order.id.toLowerCase();
+  if (idLower.includes(q) || idLower.endsWith(q)) return true;
+  if (order.bin_label && order.bin_label.toLowerCase().includes(q)) return true;
+  if (order.bin_color && order.bin_color.toLowerCase().includes(q)) return true;
+  for (const it of order.items ?? []) {
+    if (it.name.toLowerCase().includes(q)) return true;
+  }
+  for (const ba of order.bin_assignments ?? []) {
+    if (ba.binLabel.toLowerCase().includes(q)) return true;
+    if (ba.binColor.toLowerCase().includes(q)) return true;
+    for (const it of ba.items ?? []) {
+      if (it.name.toLowerCase().includes(q)) return true;
+    }
+  }
+  return false;
+}
+
 function aggregateBySlot(orders: WorkerOrder[]): SlotAggregate[] {
   const bySlot = new Map<string, SlotAggregate>();
 
@@ -170,7 +238,10 @@ export default function WorkerOrdersPage() {
   const [fetching, setFetching]     = useState(true);
   const [updating, setUpdating]     = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<string>("__all__");
-  const [tab, setTab]               = useState<"orders" | "prep" | "late">("orders");
+  const [tab, setTab]               = useState<"orders" | "bins" | "prep" | "late">("orders");
+  // ── New: Bins-tab color filter + Orders-tab free-text search ─────────────
+  const [binColorFilter, setBinColorFilter] = useState<string>("__all__");
+  const [searchQuery, setSearchQuery]       = useState<string>("");
   const [otpModal, setOtpModal]     = useState<string | null>(null);
   const [otpInput, setOtpInput]     = useState("");
   const [otpSubmitting, setOtpSubmitting] = useState(false);
@@ -375,9 +446,20 @@ export default function WorkerOrdersPage() {
   // Orders tab: current slot + 60-min upcoming (never late_pickup — those go to Late tab)
   const relevantOrders = orders.filter((o) => o.status !== "late_pickup" && isOrderRelevant(o.pickup_slot));
   const slots = [...new Set(relevantOrders.map((o) => o.pickup_slot).filter((s): s is string => Boolean(s)))].sort();
-  const displayedOrders = activeSlot === "__all__"
+  const slotFilteredOrders = activeSlot === "__all__"
     ? relevantOrders
     : relevantOrders.filter((o) => o.pickup_slot === activeSlot);
+  // Apply free-text search on top of slot filter — Orders tab only.
+  const displayedOrders = slotFilteredOrders.filter((o) => matchesSearch(o, searchQuery));
+
+  // ── Bins tab: flattened per-bin view of the same relevant orders ────────
+  // Uses the SAME pool as Orders so a worker switching tabs sees consistent
+  // state. Color filter is a UI-only concern; filtering happens after flatten.
+  const flatBins = flattenBins(slotFilteredOrders);
+  const availableColors = [...new Set(flatBins.map((b) => b.binColor))].sort();
+  const filteredBins = binColorFilter === "__all__"
+    ? flatBins
+    : flatBins.filter((b) => b.binColor === binColorFilter);
 
   // Prep tab: only the immediately upcoming slot (15-min window, no past slots)
   const prepOrders = orders.filter((o) => isPrepRelevant(o.pickup_slot));
@@ -419,7 +501,7 @@ export default function WorkerOrdersPage() {
             style={{ width: 28, height: 28, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
           />
           <div style={{ fontWeight: 700, fontSize: "1rem" }}>
-            {tab === "orders" ? "Orders" : tab === "prep" ? "Prep Plan" : "Late Pickup"}
+            {tab === "orders" ? "Orders" : tab === "bins" ? "Bins" : tab === "prep" ? "Prep Plan" : "Late Pickup"}
           </div>
           {tab === "late" && autoReturnSecsLeft !== null && (
             <span style={{ fontSize: "0.7rem", color: "#94a3b8", marginLeft: "0.25rem" }}>
@@ -438,24 +520,109 @@ export default function WorkerOrdersPage() {
         </div>
       </div>
 
-      {/* Slot dropdown — orders tab only */}
+      {/* Slot dropdown + search — orders tab only */}
       {tab === "orders" && (
-        <div style={{ background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.6rem 1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <label htmlFor="slot-select" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>Slot:</label>
-          <select
-            id="slot-select"
-            value={activeSlot}
-            onChange={(e) => setActiveSlot(e.target.value)}
-            style={{ flex: 1, padding: "0.45rem 0.7rem", borderRadius: 10, border: "1.5px solid #cbd5e1", background: "#f8fafc", fontSize: "0.85rem", fontWeight: 600, color: "#0f172a", cursor: "pointer", outline: "none", appearance: "auto" }}
-          >
-            <option value="__all__">All relevant ({relevantOrders.length})</option>
-            {slots.map((slot) => (
-              <option key={slot} value={slot}>{slot} ({relevantOrders.filter((o) => o.pickup_slot === slot).length})</option>
-            ))}
-          </select>
-          {orders.length !== relevantOrders.length && (
-            <span style={{ fontSize: "0.74rem", color: "#94a3b8", whiteSpace: "nowrap" }}>{orders.length - relevantOrders.length} hidden (future)</span>
+        <div style={{ background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.55rem 1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {/* Free-text search — matches name / order ID / bin label / bin color / item name */}
+          <div style={{ position: "relative" }}>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="🔍 Search: student name, order #, bin number, color, or item"
+              style={{ width: "100%", padding: "0.5rem 0.75rem", paddingRight: searchQuery ? "2rem" : "0.75rem", borderRadius: 10, border: "1.5px solid #cbd5e1", background: "#f8fafc", fontSize: "0.85rem", color: "#0f172a", outline: "none", boxSizing: "border-box" }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1rem", lineHeight: 1, padding: "0.15rem 0.4rem" }}
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {/* Slot picker */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <label htmlFor="slot-select" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>Slot:</label>
+            <select
+              id="slot-select"
+              value={activeSlot}
+              onChange={(e) => setActiveSlot(e.target.value)}
+              style={{ flex: 1, padding: "0.45rem 0.7rem", borderRadius: 10, border: "1.5px solid #cbd5e1", background: "#f8fafc", fontSize: "0.85rem", fontWeight: 600, color: "#0f172a", cursor: "pointer", outline: "none", appearance: "auto" }}
+            >
+              <option value="__all__">All relevant ({relevantOrders.length})</option>
+              {slots.map((slot) => (
+                <option key={slot} value={slot}>{slot} ({relevantOrders.filter((o) => o.pickup_slot === slot).length})</option>
+              ))}
+            </select>
+            {orders.length !== relevantOrders.length && (
+              <span style={{ fontSize: "0.74rem", color: "#94a3b8", whiteSpace: "nowrap" }}>{orders.length - relevantOrders.length} hidden (future)</span>
+            )}
+          </div>
+          {/* Search result hint */}
+          {searchQuery && (
+            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              {displayedOrders.length} of {slotFilteredOrders.length} {slotFilteredOrders.length === 1 ? "order" : "orders"} match &quot;{searchQuery}&quot;
+            </div>
           )}
+        </div>
+      )}
+
+      {/* Color filter chips — bins tab only */}
+      {tab === "bins" && (
+        <div style={{ background: "#fff", borderBottom: "1px solid var(--border)", padding: "0.55rem 1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+            <label htmlFor="bin-slot-select" style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>Slot:</label>
+            <select
+              id="bin-slot-select"
+              value={activeSlot}
+              onChange={(e) => setActiveSlot(e.target.value)}
+              style={{ flex: 1, padding: "0.4rem 0.65rem", borderRadius: 10, border: "1.5px solid #cbd5e1", background: "#f8fafc", fontSize: "0.82rem", fontWeight: 600, color: "#0f172a", cursor: "pointer", outline: "none", appearance: "auto" }}
+            >
+              <option value="__all__">All relevant ({relevantOrders.length})</option>
+              {slots.map((slot) => (
+                <option key={slot} value={slot}>{slot} ({relevantOrders.filter((o) => o.pickup_slot === slot).length})</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: "0.4rem", overflowX: "auto", paddingBottom: "0.15rem" }}>
+            <button
+              onClick={() => setBinColorFilter("__all__")}
+              style={{
+                flex: "0 0 auto", display: "flex", alignItems: "center", gap: "0.35rem",
+                padding: "0.35rem 0.7rem", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
+                border: "1.5px solid " + (binColorFilter === "__all__" ? "#0f172a" : "#cbd5e1"),
+                background: binColorFilter === "__all__" ? "#0f172a" : "#fff",
+                color: binColorFilter === "__all__" ? "#fff" : "#0f172a", cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              All ({flatBins.length})
+            </button>
+            {availableColors.map((color) => {
+              const swatch = BIN_COLORS[color] ?? "#94a3b8";
+              const count = flatBins.filter((b) => b.binColor === color).length;
+              const active = binColorFilter === color;
+              return (
+                <button
+                  key={color}
+                  onClick={() => setBinColorFilter(color)}
+                  style={{
+                    flex: "0 0 auto", display: "flex", alignItems: "center", gap: "0.35rem",
+                    padding: "0.35rem 0.7rem", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
+                    border: `1.5px solid ${swatch}`,
+                    background: active ? swatch : "#fff",
+                    color: active ? "#fff" : "#0f172a", cursor: "pointer",
+                    whiteSpace: "nowrap", textTransform: "capitalize",
+                  }}
+                >
+                  <span style={{ width: 12, height: 12, borderRadius: 3, background: swatch, display: "inline-block", border: active ? "1px solid rgba(255,255,255,0.7)" : "none" }} />
+                  {color} ({count})
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -561,6 +728,71 @@ export default function WorkerOrdersPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── BINS TAB — grid view, filterable by color ── */}
+        {tab === "bins" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+            {filteredBins.length === 0 ? (
+              <div style={{ textAlign: "center", color: "var(--ink-3)", padding: "3rem 0", fontSize: "0.9rem" }}>
+                {flatBins.length === 0
+                  ? "No bins assigned yet for the current slot."
+                  : `No bins with ${binColorFilter} color — try a different filter.`}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.7rem" }}>
+                {filteredBins.map((bin, idx) => {
+                  const swatch = BIN_COLORS[bin.binColor] ?? "#f97316";
+                  const canVerify = bin.status === "placed_in_bin";
+                  return (
+                    <div
+                      key={`${bin.orderId}-${bin.binLabel}-${idx}`}
+                      style={{ background: "#fff", border: `2px solid ${swatch}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}
+                    >
+                      <div style={{ background: swatch, color: "#fff", padding: "0.5rem 0.6rem", textAlign: "center" }}>
+                        <div style={{ fontSize: "1.05rem", fontWeight: 900, letterSpacing: "0.02em" }}>Bin {bin.binLabel}</div>
+                        <div style={{ fontSize: "0.62rem", opacity: 0.92, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 1 }}>{bin.binColor}</div>
+                      </div>
+                      <div style={{ padding: "0.55rem 0.6rem" }}>
+                        <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0f172a", marginBottom: "0.18rem", lineHeight: 1.25 }}>
+                          {bin.customerName}
+                        </div>
+                        <div style={{ fontSize: "0.66rem", color: "#64748b", marginBottom: "0.4rem", fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                          #{bin.orderId.slice(-8).toUpperCase()}
+                        </div>
+                        <div style={{ borderTop: "1px dashed #e2e8f0", paddingTop: "0.35rem", marginBottom: canVerify ? "0.45rem" : 0 }}>
+                          {bin.items.map((it, i) => (
+                            <div key={i} style={{ fontSize: "0.74rem", fontWeight: 600, color: "#1e293b", display: "flex", justifyContent: "space-between", padding: "0.1rem 0" }}>
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{it.name}</span>
+                              <span style={{ color: "#b45309", fontWeight: 700 }}>x{it.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {canVerify && (
+                          <button
+                            onClick={() => { setOtpModal(bin.orderId); setOtpInput(""); setModalMode("otp"); }}
+                            style={{ width: "100%", background: "#dcfce7", border: "1.5px solid #86efac", color: "#166534", borderRadius: 8, padding: "0.5rem", fontSize: "0.74rem", fontWeight: 800, cursor: "pointer", lineHeight: 1.2 }}
+                          >
+                            🔐 Verify OTP / QR
+                          </button>
+                        )}
+                        {bin.status === "ready_for_pickup" && (
+                          <div style={{ fontSize: "0.7rem", textAlign: "center", color: "#1d4ed8", fontWeight: 700, padding: "0.3rem 0" }}>
+                            ✓ Collected
+                          </div>
+                        )}
+                        {(bin.status === "confirmed" || bin.status === "preparing" || bin.status === "ready_for_placement") && (
+                          <div style={{ fontSize: "0.66rem", textAlign: "center", color: "#92400e", fontWeight: 700, padding: "0.25rem 0", background: "#fffbeb", borderRadius: 6 }}>
+                            {bin.status === "preparing" ? "👨‍🍳 Preparing" : bin.status === "ready_for_placement" ? "🟡 Ready to place" : "⏳ Awaiting prep"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -710,9 +942,10 @@ export default function WorkerOrdersPage() {
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--surface,#fff)", borderTop: "1px solid var(--border,#e2e8f0)", display: "flex", zIndex: 30, paddingBottom: "env(safe-area-inset-bottom,0.5rem)", pointerEvents: "none" }}>
         {([
           { key: "orders", label: "Orders",      icon: "📦" },
+          { key: "bins",   label: "Bins",        icon: "🎨" },
           { key: "prep",   label: "Prep Plan",   icon: "📊" },
           { key: "late",   label: "Late Pickup", icon: "⚠️" },
-        ] as { key: "orders"|"prep"|"late"; label: string; icon: string }[]).map(({ key, label, icon }) => (
+        ] as { key: "orders"|"bins"|"prep"|"late"; label: string; icon: string }[]).map(({ key, label, icon }) => (
           <button key={key} onClick={() => { if (key !== "late") clearAutoReturn(); setTab(key); }}
             style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem",
