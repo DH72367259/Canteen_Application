@@ -8,6 +8,25 @@ configured.
 **Scope:** Android only for v1 — iOS push needs APNs setup which requires
 the Apple Developer Program. Add that later.
 
+## STATUS (2026-05-22)
+
+| Layer | Status | Done in |
+|---|---|---|
+| `device_tokens` DB schema | ✅ exists in SUPABASE_SETUP.sql | (already shipped) |
+| `POST /api/notifications/device-token` endpoint | ✅ exists, graceful no-op | (already shipped) |
+| Server-side FCM sender `lib/fcm.ts` | ✅ implemented, graceful no-op without env var | latest commit |
+| Wired into orders status-change handler | ✅ fires alongside insertNotification | latest commit |
+| `firebase-admin` npm package | ✅ installed v13 | latest commit |
+| `FIREBASE_ADMIN_SDK_JSON` env var on Railway | ⏳ operator action |  |
+| `google-services.json` × 2 (student + worker) | ⏳ operator action |  |
+| `@capacitor/push-notifications` plugin re-installed | ⏳ blocked on google-services.json |  |
+| Client-side registration in `lib/capacitorBootstrap.ts` | ⏳ blocked on plugin reinstall |  |
+| End-to-end test on real device | ⏳ blocked on APK rebuild |  |
+
+**Bottom line:** Server side is READY. Once the operator provides the 3
+Firebase files (next section), this becomes a 30-min "drop files +
+trigger build" finish.
+
 ---
 
 ## Why this is in a separate doc
@@ -24,17 +43,52 @@ the original crash happened because the Firebase SDK initialises in
 
 ---
 
-## Prerequisites (operator)
+## Prerequisites (operator) — the 3 files we need
 
-- [ ] Firebase project created at https://console.firebase.google.com
-- [ ] Both Android apps registered in the Firebase console:
-  - Package: `com.noqx.student` — display name: "NoQx"
-  - Package: `com.noqx.worker` — display name: "NoQx Worker"
-- [ ] `google-services.json` downloaded for BOTH apps (one file each — they
-      contain different `client_id` values)
-- [ ] FCM enabled in the Firebase project (Cloud Messaging API)
-- [ ] A Firebase Admin SDK service-account JSON downloaded (for the server
-      side — needs `firebase-admin` SDK to send pushes)
+Open https://console.firebase.google.com (sign in with any Google account).
+
+### Step 1 — Create the Firebase project (5 min)
+
+- [ ] "Create a project" → name: **NoQx** → Continue → Continue (skip
+      Google Analytics; not needed)
+- [ ] Wait for "Your new project is ready" → Continue
+
+### Step 2 — Register both Android apps (10 min)
+
+For the student app:
+- [ ] Click the **Android** icon (green robot)
+- [ ] Android package name: `com.noqx.student`
+- [ ] App nickname: `NoQx Student`
+- [ ] Skip SHA-1 for now (we'll add later if needed for Sign-In)
+- [ ] Click **Register app**
+- [ ] **Download google-services.json** → rename to
+      `student-google-services.json` (so we don't mix with worker file)
+- [ ] Continue → Next → Continue to console (skip the "Add SDK" steps —
+      we wire those manually)
+
+Repeat for worker app:
+- [ ] Project settings → Your apps → "Add app" → Android
+- [ ] Package name: `com.noqx.worker`
+- [ ] Nickname: `NoQx Worker`
+- [ ] Download `google-services.json` → rename to
+      `worker-google-services.json`
+
+### Step 3 — Generate the Admin SDK service-account JSON (2 min)
+
+- [ ] Project settings (gear icon) → **Service accounts** tab
+- [ ] "Generate new private key" → confirm → downloads a `.json` file
+- [ ] Rename to `firebase-admin-sdk.json`
+
+### Step 4 — Drop all 3 files in `~/Downloads/` and tell me
+
+You should now have these 3 files in `~/Downloads/`:
+- `student-google-services.json`
+- `worker-google-services.json`
+- `firebase-admin-sdk.json`
+
+⚠️ The first two are PUBLIC client config — safe to commit to the
+repo. The third (`firebase-admin-sdk.json`) is a SERVER SECRET — DO NOT
+commit, it goes into Railway env vars only.
 
 ---
 
@@ -130,14 +184,18 @@ Repeat in `mobile-worker/capacitor.config.ts`.
 
 ---
 
-## Step 5 — Build the `/api/notifications/device-token` endpoint
+## Step 5 — Build the `/api/notifications/device-token` endpoint (✅ ALREADY DONE)
 
-The server needs to:
-1. Receive the device token from the app
-2. Look up the user from the session cookie
-3. Upsert into a `device_tokens` table
+This endpoint already exists at `app/api/notifications/device-token/route.ts`
+and is wired up. The server:
+1. Receives the device token from the app
+2. Looks up the user from the session cookie
+3. Upserts into `device_tokens` (table already exists in
+   `SUPABASE_SETUP.sql`)
+4. Gracefully accepts and returns 202 if the table is missing in some
+   environment
 
-Create `app/api/notifications/device-token/route.ts`:
+No further work needed here. For reference, the implementation is:
 
 ```typescript
 import { NextResponse } from "next/server";

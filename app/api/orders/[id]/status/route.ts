@@ -4,6 +4,7 @@ import { canManageOrders } from "@/lib/roleChecks";
 import { createAdminClient } from "@/lib/supabase-server";
 import { findUnfulfilledSiblings } from "@/lib/pickupGuard";
 import { insertNotification } from "@/lib/notify";
+import { sendPushToUser } from "@/lib/fcm";
 
 // Raw DB statuses workers/admins may set directly.
 const STAFF_STATUSES = [
@@ -394,6 +395,15 @@ export async function PATCH(
           target_role: "user",
           created_by: auth.uid,
         }, `orders/status:${status}`);
+
+        // FCM push — same payload, OS-level notification. Best-effort:
+        // graceful no-op if FIREBASE_ADMIN_SDK_JSON isn't configured.
+        // Awaited so a slow FCM call doesn't get cut off when the
+        // serverless function exits, but errors are swallowed inside.
+        await sendPushToUser(orderRow.user_id, {
+          title, body,
+          data: { orderId, status, deepLink: `/dashboard/order-status?id=${orderId}` },
+        });
       }
     }
   }

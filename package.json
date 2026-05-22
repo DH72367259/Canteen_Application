@@ -29,6 +29,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
+    "firebase-admin": "^13.10.0",
     "html5-qrcode": "^2.3.8",
     "next": "^16.2.4",
     "qrcode": "^1.5.4",
