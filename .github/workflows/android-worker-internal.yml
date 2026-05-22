@@ -73,6 +73,15 @@ jobs:
       - name: Add Android Capacitor platform
         run: npx cap add android || true
 
+      # google-services.json is committed at mobile-worker/google-services.json
+      # (public client config, safe to commit per Firebase docs). Copy into
+      # the native android workspace AFTER `cap add` materialises the folder
+      # but BEFORE `cap sync` so the Firebase Gradle plugin sees it on the
+      # first build. Without this file, the Firebase SDK throws during
+      # MainActivity.onCreate and the worker app crashes on launch.
+      - name: Drop google-services.json into native workspace
+        run: cp google-services.json android/app/google-services.json
+
       - name: Sync Capacitor assets + plugins
         run: npx cap sync android
 

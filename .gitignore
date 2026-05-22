@@ -48,7 +48,8 @@ serviceAccountKey.json
 
 # Android secrets — never commit the upload keystore
 /android/app/upload.jks
-/android/app/google-services.json
+# google-services.json is PUBLIC client config (safe to commit per Firebase docs).
+# Kept committed so CI doesn't need a base64 secret round-trip.
 
 # Playwright
 /test-results/

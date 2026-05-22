@@ -49,9 +49,9 @@ const config: CapacitorConfig = {
     minWebViewVersion: 80,
   },
   plugins: {
-    // PushNotifications removed until FCM (google-services.json) is configured.
-    // Without FCM the Android Firebase SDK crashes during MainActivity.onCreate.
-    // See lib/capacitorBootstrap.ts for re-enable instructions.
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',

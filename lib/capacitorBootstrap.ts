@@ -2,24 +2,11 @@
  * Capacitor bootstrap — runs once, only inside the native shell.
  *
  * Safe to import from any client component; does nothing on the web.
- * Currently wires up only the status-bar style.
+ * Wires status-bar style + push-notification registration on native.
  *
- * Push notifications were intentionally removed 2026-05-19 because the
- * @capacitor/push-notifications v8 plugin requires Firebase Cloud Messaging
- * (google-services.json) at the native level. Without that config, the
- * Android Firebase SDK throws during MainActivity.onCreate and the app
- * crashes BEFORE any JS runs — try/catch here cannot save it.
- *
- * Re-add when FCM is properly set up:
- *   1. Create Firebase project, register both Android packages
- *      (com.noqx.student + com.noqx.worker)
- *   2. Download google-services.json for each app
- *   3. Commit them into android/app/ and mobile-worker/android/app/
- *      (NOT the secret API keys — just the public client config)
- *   4. Reinstate @capacitor/push-notifications in both package.json files
- *   5. Restore the registration block below (see git log for the version
- *      that previously lived here)
- *   6. Build the /api/notifications/device-token endpoint server-side
+ * FCM was disabled 2026-05-19 (crashed without google-services.json)
+ * and re-enabled 2026-05-22 once the Firebase project was set up.
+ * See docs/FCM_REENABLEMENT.md for the full lifecycle.
  */
 "use client";
 
@@ -52,6 +39,42 @@ export function useCapacitorBootstrap() {
             await StatusBar.setStyle({ style: Style.Dark });
           }
         } catch { /* plugin not installed in this build */ }
+
+        // Push notifications — requests permission, registers with FCM,
+        // POSTs the token to the backend so the server can target this
+        // device. Inner try/catch so a missing/uninstalled plugin or a
+        // user "Deny" on the permission prompt doesn't break boot.
+        try {
+          const { PushNotifications } = await import("@capacitor/push-notifications");
+          const perm = await PushNotifications.requestPermissions();
+          if (perm.receive === "granted") {
+            await PushNotifications.register();
+            PushNotifications.addListener("registration", async (token) => {
+              try {
+                await fetch("/api/notifications/device-token", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    token: token.value,
+                    platform: Capacitor.getPlatform(),
+                  }),
+                });
+              } catch { /* offline — backend will receive on next launch */ }
+            });
+            PushNotifications.addListener("registrationError", (err) => {
+              console.warn("[push] registration error:", err);
+            });
+            // Tap-to-open: when user taps a notification, route to the
+            // deep-linked screen (e.g. /dashboard/order-status?id=xxx).
+            PushNotifications.addListener("pushNotificationActionPerformed", (a) => {
+              const link = a.notification?.data?.deepLink;
+              if (typeof link === "string" && link.startsWith("/")) {
+                window.location.href = link;
+              }
+            });
+          }
+        } catch { /* plugin not installed (web build) or FCM not initialised */ }
       } catch {
         // Capacitor not present — running on plain web. No-op.
       }

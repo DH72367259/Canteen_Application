@@ -43,8 +43,9 @@ const config: CapacitorConfig = {
     minWebViewVersion: 80,
   },
   plugins: {
-    // PushNotifications removed until FCM (google-services.json) is configured.
-    // Order-ready / new-order / cancelled push will be re-enabled then.
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1056497445015",
+    "project_id": "noqx-2ce39",
+    "storage_bucket": "noqx-2ce39.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1056497445015:android:fcd3750e402a5acf10a1d2",
+        "android_client_info": {
+          "package_name": "com.noqx.student"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4Gbg4SRlfl3Qm6bhqPYvZZlnRWe615o8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
