@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getCurrentMealPeriod, categoryToMealPeriod, type MealWindows, type MealPeriod } from "@/lib/mealPeriod";
+import { getCurrentMealPeriod, itemMealPeriods, type MealWindows } from "@/lib/mealPeriod";
 import { useAuth } from "@/lib/auth-context";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
@@ -143,21 +143,40 @@ export default function CanteenMenuPage() {
   // Filtering is skipped entirely until the manager's windows arrive — that
   // way no item is incorrectly hidden based on a hardcoded default.
   const currentPeriod = mealWindows ? getCurrentMealPeriod(now, mealWindows) : null;
+
+  // Helper: is this item allowed at the current time? Uses itemMealPeriods
+  // which considers BOTH category and is_meal flag — so a "Meals" item
+  // tagged is_meal=true (e.g. biryani) is hidden during breakfast even if
+  // the user picks the "Meals" tab.
+  const isItemAllowedNow = (item: { category: string; is_meal?: boolean }) => {
+    if (!currentPeriod) return true;  // outside any meal window → canteen-open guard decides
+    const allowed = itemMealPeriods(item.category, item.is_meal);
+    return allowed.includes(currentPeriod);
+  };
+
   const mealFilteredItems = !mealWindows
     ? visibleItems
-    : visibleItems.filter((item) => {
-        const itemPeriod = categoryToMealPeriod(item.category);
-        // Snacks/packed snacks → always visible (vendor controls availability
-        // via is_available / out-of-stock; time-of-day never hides snacks).
-        if (itemPeriod === "snacks") return true;
-        // Items not tied to a specific period (Drinks, custom categories) → visible.
-        if (itemPeriod === null) return true;
-        // Outside any meal window (e.g. late night) → don't hide anything,
-        // let the canteen-open guard decide.
-        if (currentPeriod === null) return true;
-        // Otherwise show only when the item's period matches now.
-        return itemPeriod === currentPeriod;
-      });
+    : visibleItems.filter(isItemAllowedNow);
+
+  // Category tabs should also respect the current period — hide "Lunch" at
+  // breakfast time, hide "Meals" at breakfast time (since meals are
+  // lunch/dinner), etc. Compute which categories have at least one item
+  // showing right now; "All" is always available.
+  const categoriesVisibleNow = mealWindows
+    ? categories.filter(cat => cat === "All" || items.some(i => i.category === cat && isItemAllowedNow(i)))
+    : categories;
+  // If the user is sitting on a tab whose category just timed out (e.g.
+  // they were on "Lunch" at 10:59 and now it's 11:00 → lunch hides nothing
+  // but the case where they were on "Breakfast" at 10:59 → now they should
+  // see Lunch items), snap back to "All" so they don't see an empty list.
+  useEffect(() => {
+    if (!mealWindows) return;
+    if (activeCategory !== "All" && !categoriesVisibleNow.includes(activeCategory)) {
+      setActiveCategory("All");
+    }
+    // categoriesVisibleNow is derived; safe to depend on activeCategory + currentPeriod
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPeriod, mealWindows]);
 
   const CART_KEY = `menu_cart_${canteenId}`;
 
@@ -239,10 +258,11 @@ export default function CanteenMenuPage() {
           carousel) and the Stats tab already surface this. Repeating it on
           every canteen menu page was noisy. */}
 
-      {/* Category sub-tabs (driven by live menu) */}
-      {categories.length > 1 && (
+      {/* Category sub-tabs — only show tabs whose items are allowed at the
+          current meal period. "All" always shown. */}
+      {categoriesVisibleNow.length > 1 && (
         <div style={{ display: "flex", overflowX: "auto", gap: "0.4rem", padding: "0.5rem 1rem", scrollbarWidth: "none" }}>
-          {categories.map(cat => (
+          {categoriesVisibleNow.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}

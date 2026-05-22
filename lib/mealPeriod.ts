@@ -79,6 +79,41 @@ export function categoryToMealPeriod(category: string | null | undefined): MealP
   return null;
 }
 
+/**
+ * Which meal periods is an item allowed to be served in?
+ * Returns the set of periods during which the item may show on the menu.
+ * Anything outside this set should be hidden by the time-window filter.
+ *
+ * Rules (most specific wins):
+ *  - Category contains "breakfast" → ["breakfast"] only
+ *  - Category contains "lunch"     → ["lunch"]     only
+ *  - Category contains "dinner"    → ["dinner"]    only
+ *  - Category contains "snack" or "packed" → ALL periods (anytime — vendor
+ *    controls availability via is_available / sold-out)
+ *  - Category is "meals" or item is_meal=true → ["lunch", "dinner"]
+ *    (full meals like biryani / thali — typically not served at breakfast)
+ *  - No mapping → ALL periods (custom categories like Drinks / Combo
+ *    stay visible all day so we don't accidentally hide them)
+ */
+export function itemMealPeriods(
+  category: string | null | undefined,
+  isMeal?: boolean | null,
+): MealPeriod[] {
+  const explicit = categoryToMealPeriod(category);
+  if (explicit === "breakfast") return ["breakfast"];
+  if (explicit === "lunch")     return ["lunch"];
+  if (explicit === "dinner")    return ["dinner"];
+  if (explicit === "snacks")    return ["breakfast", "lunch", "snacks", "dinner"];
+
+  const norm = (category ?? "").toLowerCase();
+  // "Meals" category OR the is_meal flag → lunch + dinner. "Meal" / "Meals"
+  // colloquially means a full main course; canteens don't serve biryani /
+  // thali / dal at 7 AM.
+  if (norm.includes("meal") || isMeal === true) return ["lunch", "dinner"];
+
+  return ["breakfast", "lunch", "snacks", "dinner"];
+}
+
 export const MEAL_LABEL: Record<MealPeriod, string> = {
   breakfast: "Breakfast (7–11 AM)",
   lunch:     "Lunch (11 AM–3 PM)",
