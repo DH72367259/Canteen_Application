@@ -32,16 +32,21 @@ function init(): boolean {
   if (_initAttempted) return _initOk;
   _initAttempted = true;
   const raw = process.env.FIREBASE_ADMIN_SDK_JSON;
-  if (!raw) return false;  // graceful no-op
+  if (!raw) {
+    console.warn("[fcm] init skipped: FIREBASE_ADMIN_SDK_JSON env var is not set on this environment. Add it to Railway → Variables and redeploy.");
+    return false;
+  }
   try {
     if (admin.apps.length === 0) {
       const credential = JSON.parse(raw) as ServiceAccount;
       admin.initializeApp({ credential: admin.credential.cert(credential) });
     }
     _initOk = true;
+    console.log("[fcm] init OK — Firebase Admin SDK ready, project:",
+      (JSON.parse(raw) as { project_id?: string }).project_id ?? "(unknown)");
     return true;
   } catch (e) {
-    console.warn("[fcm] init failed — FIREBASE_ADMIN_SDK_JSON is malformed:", (e as Error).message);
+    console.warn("[fcm] init failed — FIREBASE_ADMIN_SDK_JSON parse/credential error:", (e as Error).message);
     return false;
   }
 }
@@ -64,8 +69,16 @@ export type PushPayload = {
  *     even if push fails.
  */
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
-  if (!userId) return;
-  if (!init()) return;
+  if (!userId) {
+    console.log("[fcm] sendPushToUser: no userId — skip");
+    return;
+  }
+  console.log(`[fcm] sendPushToUser user=${userId.slice(0,8)} title="${payload.title}"`);
+
+  if (!init()) {
+    // init logs its own reason
+    return;
+  }
 
   const db = createAdminClient();
   const { data: tokens, error } = await db
@@ -77,7 +90,12 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     console.warn("[fcm] device_tokens lookup failed:", error.message);
     return;
   }
-  if (!tokens || tokens.length === 0) return;
+  if (!tokens || tokens.length === 0) {
+    console.log(`[fcm] no device_tokens for user ${userId.slice(0,8)} — student hasn't opened the app yet?`);
+    return;
+  }
+
+  console.log(`[fcm] sending to ${tokens.length} token(s) for user ${userId.slice(0,8)}`);
 
   const message = {
     tokens: tokens.map(t => t.token),
@@ -93,11 +111,13 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 
   try {
     const result = await admin.messaging().sendEachForMulticast(message);
+    console.log(`[fcm] sendEachForMulticast result: success=${result.successCount} failure=${result.failureCount}`);
     // Prune tokens FCM tells us are dead so we don't keep sending to them
     const dead: string[] = [];
     result.responses.forEach((r, i) => {
       if (!r.success) {
         const code = r.error?.code ?? "";
+        console.warn(`[fcm] send failure for token ${tokens[i].token.slice(0,20)}... code=${code} msg=${r.error?.message ?? "?"}`);
         if (
           code === "messaging/invalid-registration-token" ||
           code === "messaging/registration-token-not-registered"
@@ -107,10 +127,11 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       }
     });
     if (dead.length > 0) {
+      console.log(`[fcm] pruning ${dead.length} dead token(s)`);
       await db.from("device_tokens").delete().in("token", dead);
     }
   } catch (e) {
     // Don't throw — push is best-effort
-    console.warn("[fcm] sendEachForMulticast failed:", (e as Error).message);
+    console.warn("[fcm] sendEachForMulticast threw:", (e as Error).message);
   }
 }
