@@ -6,6 +6,7 @@ import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, computeSlotCapacity, type CartLine, type SlotMode } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
 import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
+import { rollbackOrderWithRefund } from "@/lib/orderRaceRollback";
 import { insertNotification } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -345,10 +346,22 @@ export async function POST(req: NextRequest) {
       .not("status", "in", '("cancelled")');
 
     if ((slotCountAfter ?? 0) > maxOrdersPerSlot) {
-      await supabase.from("orders").delete().eq("id", order.id);
+      // Race-loss: another concurrent order filled the slot between our
+      // pre- and post-creation checks. Roll back this order + auto-refund
+      // the student's payment via Razorpay so they don't pay for a slot
+      // they can't use.
+      const refund = await rollbackOrderWithRefund(
+        supabase,
+        order.id,
+        "slot_full_at_placement",
+      );
       return Response.json({
-        error: "This time slot is full. Please select a different slot.",
+        error: refund.refund_status === "processed"
+          ? `This time slot just filled up. Your ₹${refund.refund_amount_rupees.toFixed(2)} has been refunded — it'll reflect in your account within 5–7 business days. Please pick a different slot.`
+          : "This time slot is full. Please select a different slot. (If money was debited, it will be auto-refunded within 5-7 business days.)",
         slot_full: true,
+        refund_status: refund.refund_status,
+        refund_id: refund.refund_id,
       }, { status: 409 });
     }
   }
@@ -386,12 +399,22 @@ export async function POST(req: NextRequest) {
       const overSlot = avail === "slot_based" && slotCap > 0 && slotUsedNow > slotCap;
       const overDay  = avail === "batched_prepared" && dayCap > 0 && dayUsedNow > dayCap;
       if (overSlot || overDay) {
-        await supabase.from("order_items").delete().eq("order_id", order.id);
-        await supabase.from("orders").delete().eq("id", order.id);
+        // Race-loss: this item's cap just got exhausted by a concurrent
+        // order. Roll back + auto-refund so the student gets their money
+        // back without filing a support ticket.
+        const refund = await rollbackOrderWithRefund(
+          supabase,
+          order.id,
+          `item_sold_out_at_placement:${menuItem.name}`,
+        );
         return Response.json({
-          error: `${menuItem.name} just sold out while your order was being placed. Please remove it and try again.`,
+          error: refund.refund_status === "processed"
+            ? `${menuItem.name} just sold out while your order was being placed. Your ₹${refund.refund_amount_rupees.toFixed(2)} has been refunded — it'll reflect in your account within 5–7 business days. Please remove it and try again.`
+            : `${menuItem.name} just sold out while your order was being placed. Please remove it and try again. (If money was debited, it will be auto-refunded within 5-7 business days.)`,
           item_sold_out: true,
           item_id: item.id,
+          refund_status: refund.refund_status,
+          refund_id: refund.refund_id,
         }, { status: 409 });
       }
     }
