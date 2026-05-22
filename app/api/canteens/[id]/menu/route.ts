@@ -127,6 +127,17 @@ export async function GET(
       // Mark as sold out if already flagged in DB or if capacity is exhausted
       const isSoldOut = r.is_sold_out || !isAvailable;
 
+      // Surface remaining count so the student app can show "X left" badges
+      // and feel the count tick down as other students place orders. null
+      // means "no cap configured" (vendor didn't set total_per_day or
+      // quantity_per_slot) — UI should treat as unlimited.
+      let remaining: number | null = null;
+      if (availType === "slot_based" && slotCap > 0) {
+        remaining = Math.max(0, slotCap - slotUsed);
+      } else if (availType === "batched_prepared" && dayCap > 0) {
+        remaining = Math.max(0, dayCap - dayUsed);
+      }
+
       return {
         id:                r.id,
         name:              r.name,
@@ -137,6 +148,7 @@ export async function GET(
         availability_type: r.availability_type ?? "slot_based",
         is_meal:           !!r.is_meal,
         is_sold_out:       isSoldOut,
+        remaining,
       };
     });
 
@@ -145,10 +157,11 @@ export async function GET(
   for (const it of items) categoriesSet.add(it.category);
   const categories = Array.from(categoriesSet);
 
-  // Short cache (5s) — long enough to absorb burst polling at scale, short
-  // enough that vendor edits propagate to the user app within seconds.
+  // 2-second cache (was 5s) — keeps inventory counts feeling near-real-time
+  // for the student menu as other students place orders. Cloudflare still
+  // absorbs burst polling at the edge.
   return Response.json(
     { items, categories, count: items.length },
-    { headers: { "Cache-Control": "public, max-age=5, s-maxage=5, stale-while-revalidate=30" } },
+    { headers: { "Cache-Control": "public, max-age=2, s-maxage=2, stale-while-revalidate=30" } },
   );
 }

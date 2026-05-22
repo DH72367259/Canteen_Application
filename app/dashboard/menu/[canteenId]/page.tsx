@@ -20,6 +20,9 @@ type MenuItem = {
   availability_type?: string;
   quantity_per_slot?: number | null;
   total_per_day?: number | null;
+  /** Server-computed: portions left today (or for the current slot,
+   *  whichever cap is configured). null = no cap set = unlimited. */
+  remaining?: number | null;
   image_url?: string | null;
 };
 
@@ -79,24 +82,32 @@ export default function CanteenMenuPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setMenuLoading(true);
-    fetch(`/api/canteens/${canteenId}/menu`)
-      .then(async r => {
-        if (r.ok) return r.json();
-        // Surface the actual server reason so we can debug "Failed to load
-        // menu items" complaints without needing server logs.
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error || `HTTP ${r.status}`);
-      })
-      .then((j: { items: MenuItem[]; categories: string[] }) => {
-        if (cancelled) return;
-        setItems(j.items ?? []);
-        setCategories(["All", ...(j.categories ?? [])]);
-        setMenuError(null);
-      })
-      .catch((err: Error) => { if (!cancelled) setMenuError(`Could not load menu items: ${err.message}`); })
-      .finally(() => { if (!cancelled) setMenuLoading(false); });
-    return () => { cancelled = true; };
+    const load = (showLoading: boolean) => {
+      if (showLoading) setMenuLoading(true);
+      fetch(`/api/canteens/${canteenId}/menu`)
+        .then(async r => {
+          if (r.ok) return r.json();
+          // Surface the actual server reason so we can debug "Failed to load
+          // menu items" complaints without needing server logs.
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error || `HTTP ${r.status}`);
+        })
+        .then((j: { items: MenuItem[]; categories: string[] }) => {
+          if (cancelled) return;
+          setItems(j.items ?? []);
+          setCategories(["All", ...(j.categories ?? [])]);
+          setMenuError(null);
+        })
+        .catch((err: Error) => { if (!cancelled && showLoading) setMenuError(`Could not load menu items: ${err.message}`); })
+        .finally(() => { if (!cancelled && showLoading) setMenuLoading(false); });
+    };
+    load(true);
+    // Poll every 10s so the "X left" badge ticks down as other students
+    // place orders. Cloudflare caches at the edge for 2s so the burst
+    // cost is negligible. Silent refresh — doesn't flash the loading
+    // spinner.
+    const interval = setInterval(() => load(false), 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [canteenId]);
 
   const visibleItems = activeCategory === "All"
@@ -328,6 +339,24 @@ export default function CanteenMenuPage() {
             statusBadgeTextColor = "#b91c1c";
             statusBadgeBorder = "#fca5a5";
             buttonLabel = "OUT OF STOCK";
+          } else if (typeof item.remaining === "number" && item.remaining > 0) {
+            // Live inventory count — ticks down within ~10s as other
+            // students place orders. Below 5 portions: red urgency.
+            // Below 15: amber heads-up. Otherwise: subtle green.
+            if (item.remaining <= 5) {
+              statusBadgeLabel = `⚡ Only ${item.remaining} left`;
+              statusBadgeColor = "#fef2f2";
+              statusBadgeTextColor = "#b91c1c";
+              statusBadgeBorder = "#fca5a5";
+            } else if (item.remaining <= 15) {
+              statusBadgeLabel = `${item.remaining} left today`;
+              statusBadgeColor = "#fffbeb";
+              statusBadgeTextColor = "#a16207";
+              statusBadgeBorder = "#fde68a";
+            } else {
+              statusBadgeLabel = `${item.remaining} available`;
+              // keep default green
+            }
           }
 
           return (
