@@ -141,8 +141,20 @@ export async function releaseExpiredSlotBins(
 
 /**
  * End-of-day auto-close.
- * `late_pickup` orders from previous days → collected.
- * `late_pickup_pending` orders from previous days → bins freed + collected.
+ *
+ * At every /api/orders fetch (canteen staff side), sweep yesterday's
+ * leftover orders and mark them collected:
+ *   - status='late_pickup' / 'late_pickup_pending' from previous days
+ *   - status='placed_in_bin' whose updated_at is from before today's
+ *     midnight IST (means it's been sitting in a bin overnight — student
+ *     never showed up)
+ *   - status='ready_for_pickup' likewise stale overnight
+ *
+ * Without the placed_in_bin sweep, late-pickup orders from yesterday
+ * keep appearing on today's Live Orders view because nothing ever flips
+ * their status — the worker dashboard renders them as "late" client-side
+ * via slot_label parsing, but their DB status stays placed_in_bin.
+ * Reported by operator 2026-05-24.
  */
 export async function autoCloseEodLateOrders(
   supabase: SupabaseClient,
@@ -162,7 +174,7 @@ export async function autoCloseEodLateOrders(
     .from("orders")
     .select("id")
     .eq("canteen_id", canteenId)
-    .in("status", ["late_pickup", "late_pickup_pending"])
+    .in("status", ["late_pickup", "late_pickup_pending", "placed_in_bin", "ready_for_pickup"])
     .lt("updated_at", midnightIso);
 
   if (!lateOrders?.length) return { closed: 0 };

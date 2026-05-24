@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getCurrentMealPeriod, itemMealPeriods, type MealWindows } from "@/lib/mealPeriod";
+import { getActiveMealPeriod, itemMealPeriods, type MealWindows } from "@/lib/mealPeriod";
 import { useAuth } from "@/lib/auth-context";
 
 // Canteen + menu data is loaded from Supabase per canteen — no seed data.
@@ -153,15 +153,32 @@ export default function CanteenMenuPage() {
 
   // Filtering is skipped entirely until the manager's windows arrive — that
   // way no item is incorrectly hidden based on a hardcoded default.
-  const currentPeriod = mealWindows ? getCurrentMealPeriod(now, mealWindows) : null;
+  //
+  // getActiveMealPeriod gives a 30-minute LEAD time before each window
+  // starts. e.g. with breakfast = 07:00, at 06:35 the active period is
+  // "breakfast" so students can queue an order before the canteen opens
+  // its prep batch — matches the client's "half an hour before opening"
+  // requirement.
+  const currentPeriod = mealWindows ? getActiveMealPeriod(now, mealWindows, 30) : null;
+  // When we have manager-defined windows AND the current time falls
+  // outside every window (including the 30-min lead): treat as "between
+  // meals". Snacks / unknown categories stay visible (per itemMealPeriods);
+  // breakfast/lunch/dinner items are hidden until their window opens.
+  const betweenMeals = mealWindows !== null && currentPeriod === null;
 
   // Helper: is this item allowed at the current time? Uses itemMealPeriods
   // which considers BOTH category and is_meal flag — so a "Meals" item
   // tagged is_meal=true (e.g. biryani) is hidden during breakfast even if
   // the user picks the "Meals" tab.
   const isItemAllowedNow = (item: { category: string; is_meal?: boolean }) => {
-    if (!currentPeriod) return true;  // outside any meal window → canteen-open guard decides
     const allowed = itemMealPeriods(item.category, item.is_meal);
+    if (betweenMeals) {
+      // Outside any meal window: only show items whose allowed set spans
+      // EVERY period (snacks / anytime categories). Hide lunch-only,
+      // breakfast-only, dinner-only items even though currentPeriod is null.
+      return allowed.length === 4;
+    }
+    if (!currentPeriod) return true;  // no manager windows yet — show all
     return allowed.includes(currentPeriod);
   };
 

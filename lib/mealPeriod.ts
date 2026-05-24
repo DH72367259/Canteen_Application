@@ -54,6 +54,40 @@ export function getCurrentMealPeriod(
   return null;
 }
 
+/**
+ * Like getCurrentMealPeriod but ALSO returns the UPCOMING period when we're
+ * within `leadMins` minutes of its start. Lets the student menu show
+ * breakfast items at 6:30 AM (30 min before 7:00 AM breakfast start) so
+ * students can queue an order while waiting for the canteen to open.
+ *
+ * Returns null only when we're outside ALL windows AND more than leadMins
+ * before the next one — in that case the menu hides time-bound items
+ * entirely (snacks/anytime items stay visible per itemMealPeriods).
+ */
+export function getActiveMealPeriod(
+  date: Date = new Date(),
+  windows: MealWindows = DEFAULT_WINDOWS,
+  leadMins: number = 30,
+): MealPeriod | null {
+  const current = getCurrentMealPeriod(date, windows);
+  if (current) return current;
+  const nowMin = istHourMinutes(date);
+  const order: MealPeriod[] = ["breakfast", "lunch", "snacks", "dinner"];
+  let bestPeriod: MealPeriod | null = null;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const p of order) {
+    const w = windows[p];
+    if (!w) continue;
+    const startMin = toMin(w.start);
+    const delta = startMin - nowMin;
+    if (delta > 0 && delta <= leadMins && delta < bestDelta) {
+      bestPeriod = p;
+      bestDelta = delta;
+    }
+  }
+  return bestPeriod;
+}
+
 export function mealLabel(p: MealPeriod, w: MealWindow | null): string {
   const base = { breakfast: "Breakfast", lunch: "Lunch", snacks: "Snacks", dinner: "Dinner" }[p];
   if (!w) return base;
