@@ -3280,6 +3280,7 @@ interface SlotControlState {
   canteen_id: string;
   max_bins: number;
   slot_duration_mins: number;
+  slot_visibility_window_mins?: number | null;  // 60 (Min/1h) or 120 (Max/2h)
   morning_start: string; morning_end: string;
   afternoon_start: string; afternoon_end: string;
   evening_start: string; evening_end: string;
@@ -3305,6 +3306,10 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
   const [maxBinsInput, setMaxBinsInput] = useState<string>("");
   const [duration, setDuration] = useState<string>("15");
   const [slotMode, setSlotMode] = useState<"both" | "batched_only">("both");
+  // Slot visibility: how far ahead the student picker shows slots.
+  // "60" → Min (1 hour, default) — matches the prior hardcoded behaviour.
+  // "120" → Max (2 hours) — lets students order well in advance of a slot.
+  const [slotVisibility, setSlotVisibility] = useState<string>("60");
   const [saving, setSaving] = useState(false);
   const [morningStart, setMorningStart]     = useState("07:00");
   const [morningEnd, setMorningEnd]         = useState("11:00");
@@ -3324,6 +3329,8 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
       setData(j); setMaxBinsInput(String(j.slot_control.max_bins));
       setDuration(String(j.slot_control.slot_duration_mins));
       setSlotMode(j.slot_control.slot_mode ?? "both");
+      const vw = Number(j.slot_control.slot_visibility_window_mins);
+      setSlotVisibility([60, 120].includes(vw) ? String(vw) : "60");
       setMorningStart(j.slot_control.morning_start.slice(0,5));
       setMorningEnd(j.slot_control.morning_end.slice(0,5));
       setAfternoonStart(j.slot_control.afternoon_start.slice(0,5));
@@ -3347,6 +3354,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           max_bins: Number(maxBinsInput),
           slot_duration_mins: Number(duration),
           slot_mode: slotMode,
+          slot_visibility_window_mins: Number(slotVisibility),
           morning_start:   morningStart   + ":00",
           morning_end:     morningEnd     + ":00",
           afternoon_start: afternoonStart + ":00",
@@ -3408,10 +3416,27 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
               <option value="10">10</option><option value="15">15</option><option value="20">20</option>
             </select>
           </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <span style={{ fontSize: "0.78rem", fontWeight: 600 }} title="How far ahead the student order picker shows slots">
+              Slot visibility
+            </span>
+            <select
+              value={slotVisibility}
+              onChange={e => setSlotVisibility(e.target.value)}
+              style={{ padding: "0.55rem 0.75rem", border: "1px solid #cbd5e1", borderRadius: 8 }}
+            >
+              <option value="60">Min (1 hour)</option>
+              <option value="120">Max (2 hours)</option>
+            </select>
+          </label>
           <button onClick={save} disabled={saving} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "0.6rem 1.2rem", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
+        <p style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "0.5rem", marginBottom: 0 }}>
+          💡 <strong>Slot visibility</strong> controls how many minutes into the future the student-facing slot picker shows.
+          {' '}<strong>Min (1h)</strong> keeps the picker scannable; <strong>Max (2h)</strong> lets students book well in advance.
+        </p>
 
         {/* Mode selection */}
         <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>

@@ -10,6 +10,7 @@ type SlotControlRow = {
   canteen_id: string;
   max_bins: number;
   slot_duration_mins: number;
+  slot_visibility_window_mins?: number | null;  // 60 (Min/1h) or 120 (Max/2h), default 60
   morning_start: string; morning_end: string;
   afternoon_start: string; afternoon_end: string;
   evening_start: string; evening_end: string;
@@ -125,7 +126,7 @@ export async function PATCH(request: Request) {
     "afternoon_start", "afternoon_end",
     "evening_start", "evening_end",
     "extra_bin_fee_paise", "meals_per_bin", "snacks_per_bin",
-    "slot_mode",
+    "slot_mode", "slot_visibility_window_mins",
   ];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -157,17 +158,41 @@ export async function PATCH(request: Request) {
     }
   }
 
+  if ("slot_visibility_window_mins" in updates) {
+    const v = Number(updates.slot_visibility_window_mins);
+    if (![60, 120].includes(v)) {
+      return NextResponse.json({ error: "slot_visibility_window_mins must be 60 (Min/1h) or 120 (Max/2h)." }, { status: 400 });
+    }
+    updates.slot_visibility_window_mins = v;
+  }
+
   updates.updated_at = new Date().toISOString();
 
   const supabase = createAdminClient();
   // Upsert: ensures vendors of newly-created canteens (no row yet) can save
   // their slot configuration on first attempt instead of seeing
   // "Failed to update slot control."
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("slot_control")
     .upsert({ canteen_id: canteenId, ...updates }, { onConflict: "canteen_id" })
     .select("*")
     .single();
+
+  // Backwards compat: if the slot_visibility_window_mins column doesn't
+  // exist yet (Phase 18 migration not run), retry the upsert without it
+  // so the rest of the save still goes through. The visibility window
+  // then falls back to the slots-API default (60 min).
+  if (error && /slot_visibility_window_mins/i.test(error.message) && "slot_visibility_window_mins" in updates) {
+    const { slot_visibility_window_mins: _omit, ...slim } = updates;
+    void _omit;
+    const retry = await supabase
+      .from("slot_control")
+      .upsert({ canteen_id: canteenId, ...slim }, { onConflict: "canteen_id" })
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) {
     return NextResponse.json({ error: "Failed to update slot control." }, { status: 500 });
