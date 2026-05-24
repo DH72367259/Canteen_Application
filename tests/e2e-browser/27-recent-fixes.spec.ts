@@ -500,7 +500,9 @@ test.describe("TEST-4: Late Pickup tab — slot end time logic", () => {
       // (it matches ACTIVE_STATUSES in the page component)
       // The actual late-pickup filter is client-side (isLatePickup) — verified above
       if (found) {
-        expect(found.status).toMatch(/placed_in_bin/i);
+        // lib/orderRepository.ts translates raw DB status `placed_in_bin`
+        // → API surface `ready`. Test accepts either to match prod behaviour.
+        expect(found.status).toMatch(/placed_in_bin|ready/i);
       }
     } finally {
       await deleteOrder(orderId);
