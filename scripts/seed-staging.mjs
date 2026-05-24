@@ -369,6 +369,56 @@ async function seed() {
     else ok("platform_charges: created with extra_bin_fee_paise=200 paise (₹2)");
   }
 
+  // 9.5. Seed minimal orders so tests with `if (!order) test.skip()` actually
+  //      RUN instead of skipping. CI runs cleanup-db-deep which wipes orders;
+  //      without this step, ~45 sites in 09-order-cancellation /
+  //      10-otp-complete-flow / 21-worker-complete fall back to skip.
+  //      One active order + one placed_in_bin order + one late_pickup
+  //      order covers the common patterns. Tests that need their OWN
+  //      orders still create them; this is just the "any active order"
+  //      pool getAnyActiveOrder() picks from.
+  log("\n9.5. Seeding baseline test orders…");
+  if (canteen1Id) {
+    const student1Id = await emailToUserId("student1@noqx.test");
+    const { data: items } = await db.from("menu_items").select("id, price").eq("canteen_id", canteen1Id).limit(1);
+    const itemId = items?.[0]?.id;
+    const itemPrice = Number(items?.[0]?.price ?? 50);
+    if (student1Id && itemId) {
+      // Wipe any test-seeded orders from a prior run (NOT student-created
+      // ones — those have OTPs that don't start with "seed-").
+      await db.from("orders").delete().like("otp", "seed-%");
+
+      const scenarios = [
+        { otp: "seed-active",  status: "placed",         slot_label: "09:00 AM - 09:15 AM" },
+        { otp: "seed-bin",     status: "placed_in_bin",  slot_label: "10:00 AM - 10:15 AM" },
+        { otp: "seed-late",    status: "placed_in_bin",  slot_label: "01:00 AM - 01:15 AM" }, // past slot → late pickup
+      ];
+      let createdOrders = 0;
+      for (const sc of scenarios) {
+        const { data: ord, error: ordErr } = await db.from("orders").insert({
+          canteen_id:  canteen1Id,
+          user_id:     student1Id,
+          status:      sc.status,
+          total_amount: itemPrice,
+          slot_label:  sc.slot_label,
+          otp:         sc.otp,
+        }).select("id").single();
+        if (ordErr) { warn(`order ${sc.otp} insert failed: ${ordErr.message}`); continue; }
+        const { error: itemErr } = await db.from("order_items").insert({
+          order_id:     ord.id,
+          menu_item_id: itemId,
+          quantity:     1,
+          unit_price:   itemPrice,
+        });
+        if (itemErr) warn(`order_items for ${sc.otp} failed: ${itemErr.message}`);
+        createdOrders++;
+      }
+      ok(`baseline orders: ${createdOrders} created (active, placed_in_bin, late_pickup)`);
+    } else {
+      warn("Skipping baseline orders — student1 or menu items missing");
+    }
+  }
+
   // 10. Summary
   log("\n" + "─".repeat(60));
   log("✅ Seed complete. Test accounts:\n");
