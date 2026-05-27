@@ -1640,25 +1640,9 @@ type SlotAnalyticsSlot = {
 };
 type SlotAnalyticsData = { date: string; slots: SlotAnalyticsSlot[] };
 
-type ReceiptOrder = {
-  id: string;
-  student_name: string;
-  phone: string;
-  slot_label: string;
-  bin_label: string;
-  bin_color: string | null;
-  total_amount: number;
-  status: string;
-  created_at: string;
-  items: { name: string; quantity: number; unit_price: number }[];
-};
-
 function VendorAnalyticsView({ session }: { session: Session | null }) {
-  const [subTab, setSubTab] = useState<"slots" | "receipts">("slots");
-
   // ── Slot Analytics ────────────────────────────────────────────────────────
   const [slotDate, setSlotDate] = useState(() => {
-    // Default to today in IST (YYYY-MM-DD)
     const d = new Date(Date.now() + 330 * 60_000);
     return d.toISOString().slice(0, 10);
   });
@@ -1668,7 +1652,7 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
 
   useEffect(() => {
     const token = session?.access_token;
-    if (!token || subTab !== "slots") return;
+    if (!token) return;
     setSlotLoading(true);
     setSlotData(null);
     fetch(`/api/canteen/slot-analytics?date=${slotDate}`, {
@@ -1678,32 +1662,7 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
       .then(j => { if (j) setSlotData(j); })
       .catch(() => {})
       .finally(() => setSlotLoading(false));
-  }, [session?.access_token, slotDate, subTab]);
-
-  // ── Receipts ──────────────────────────────────────────────────────────────
-  const [rcptDate, setRcptDate] = useState("");
-  const [rcptSearch, setRcptSearch] = useState("");
-  const [rcptPage, setRcptPage] = useState(0);
-  const [rcptData, setRcptData] = useState<{ total: number; orders: ReceiptOrder[] } | null>(null);
-  const [rcptLoading, setRcptLoading] = useState(false);
-  const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
-  const rcptLimit = 20;
-
-  useEffect(() => {
-    const token = session?.access_token;
-    if (!token || subTab !== "receipts") return;
-    setRcptLoading(true);
-    const params = new URLSearchParams({ page: String(rcptPage), limit: String(rcptLimit) });
-    if (rcptDate) params.set("date", rcptDate);
-    if (rcptSearch) params.set("search", rcptSearch);
-    fetch(`/api/canteen/receipts?${params}`, {
-      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
-    })
-      .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (j) setRcptData(j); })
-      .catch(() => {})
-      .finally(() => setRcptLoading(false));
-  }, [session?.access_token, subTab, rcptDate, rcptPage, rcptSearch]);
+  }, [session?.access_token, slotDate]);
 
   const COLOR_DOT: Record<string, string> = {
     red: "#ef4444", yellow: "#eab308", green: "#22c55e",
@@ -1717,20 +1676,8 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
     <div className="page-content">
       <div className="page-header"><h2>Analytics</h2></div>
 
-      {/* Sub-tab switcher */}
-      <div style={{ display: "flex", gap: "0.4rem", marginBottom: "1.25rem" }}>
-        {([["slots", "Slot Breakdown"], ["receipts", "Receipt History"]] as const).map(([id, label]) => (
-          <button key={id} onClick={() => setSubTab(id)}
-            className={`btn ${subTab === id ? "btn-primary" : "btn-ghost"}`}
-            style={{ fontSize: "0.82rem", padding: "0.4rem 1rem" }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
       {/* ── Slot Breakdown ─────────────────────────────────────────────────── */}
-      {subTab === "slots" && (
-        <div>
+      <div>
           {/* Date picker + summary */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
             <input type="date" value={slotDate} onChange={e => setSlotDate(e.target.value)}
@@ -1803,123 +1750,6 @@ function VendorAnalyticsView({ session }: { session: Session | null }) {
             </div>
           )}
         </div>
-      )}
-
-      {/* ── Receipt History ────────────────────────────────────────────────── */}
-      {subTab === "receipts" && (
-        <div>
-          {/* Filters */}
-          <div style={{ display: "flex", gap: "0.6rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
-            <input type="date" value={rcptDate} onChange={e => { setRcptDate(e.target.value); setRcptPage(0); }}
-              style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.85rem", background: "var(--surface)", color: "var(--ink-1)" }} />
-            <input type="text" placeholder="Search name / phone / order ID…" value={rcptSearch}
-              onChange={e => { setRcptSearch(e.target.value); setRcptPage(0); }}
-              style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.85rem", background: "var(--surface)", color: "var(--ink-1)", minWidth: 220, flex: 1 }} />
-            {(rcptDate || rcptSearch) && (
-              <button className="btn btn-ghost" style={{ fontSize: "0.78rem" }}
-                onClick={() => { setRcptDate(""); setRcptSearch(""); setRcptPage(0); }}>Clear</button>
-            )}
-          </div>
-
-          {rcptLoading ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>Loading…</div>
-          ) : !rcptData || rcptData.orders.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "var(--ink-3)" }}>
-              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🧾</div>
-              <p>No receipts found.</p>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", marginBottom: "0.75rem" }}>
-                Showing {rcptData.orders.length} of {rcptData.total} orders
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {rcptData.orders.map(order => (
-                  <div key={order.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <button
-                      onClick={() => setExpandedReceipt(expandedReceipt === order.id ? null : order.id)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", background: "none", border: "none", cursor: "pointer", gap: "0.5rem", textAlign: "left" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--ink-1)" }}>{order.student_name}</div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--ink-3)", marginTop: "0.1rem" }}>
-                          {order.slot_label} · Bin {order.bin_label}
-                          {order.bin_color && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: COLOR_DOT[order.bin_color] ?? "#888", marginLeft: 4, verticalAlign: "middle" }} />}
-                        </div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.05rem" }}>
-                          {new Date(order.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>₹{order.total_amount.toFixed(0)}</div>
-                        <div style={{ fontSize: "0.7rem", color: order.status === "collected" ? "#22c55e" : "var(--orange)", fontWeight: 600, textTransform: "capitalize" }}>{order.status}</div>
-                      </div>
-                    </button>
-
-                    {expandedReceipt === order.id && (
-                      <div style={{ borderTop: "1px solid var(--border)", padding: "0.75rem 1rem" }}>
-                        <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginBottom: "0.5rem" }}>
-                          Order #{order.id.slice(0, 8).toUpperCase()} · {order.phone}
-                        </div>
-                        {order.items.map((item, idx) => (
-                          <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.2rem 0" }}>
-                            <span>{item.name} × {item.quantity}</span>
-                            <span style={{ color: "var(--ink-2)" }}>₹{(item.quantity * item.unit_price).toFixed(0)}</span>
-                          </div>
-                        ))}
-                        <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
-                          <span>Total</span><span>₹{order.total_amount.toFixed(0)}</span>
-                        </div>
-                        {/* Print Receipt — disabled; code kept for future use */}
-                        <button className="btn btn-ghost" style={{ display: "none", marginTop: "0.6rem", fontSize: "0.78rem", width: "100%" }}
-                          onClick={() => {
-                            const win = window.open("", "_blank", "width=400,height=600");
-                            if (!win) return;
-                            const itemRows = order.items.map(i =>
-                              `<tr><td>${i.name}</td><td style="text-align:center">×${i.quantity}</td><td style="text-align:right">₹${(i.quantity * i.unit_price).toFixed(0)}</td></tr>`
-                            ).join("");
-                            win.document.write(`<!DOCTYPE html><html><head><title>Receipt</title>
-                              <style>body{font-family:monospace;width:302px;margin:0;padding:8px;font-size:12px}
-                              h2{text-align:center;margin:0 0 4px}p{margin:2px 0;text-align:center}
-                              table{width:100%;border-collapse:collapse}td{padding:2px 0}
-                              .total{border-top:1px dashed #000;font-weight:bold;padding-top:4px}
-                              @media print{body{width:302px}}</style></head>
-                              <body>
-                              <h2>NOQX Receipt</h2>
-                              <p>Order #${order.id.slice(0, 8).toUpperCase()}</p>
-                              <p>${new Date(order.created_at).toLocaleString("en-IN")}</p>
-                              <p>Slot: ${order.slot_label} | Bin: ${order.bin_label}</p>
-                              <p>${order.student_name} · ${order.phone}</p>
-                              <hr/>
-                              <table><tbody>${itemRows}</tbody></table>
-                              <table><tbody><tr class="total"><td colspan="2">TOTAL</td><td style="text-align:right">₹${order.total_amount.toFixed(0)}</td></tr></tbody></table>
-                              <p style="margin-top:8px;font-size:10px">Thank you!</p>
-                              </body></html>`);
-                            win.document.close();
-                            win.focus();
-                            win.print();
-                          }}>
-                          🖨️ Print Receipt
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Pagination */}
-              {rcptData.total > rcptLimit && (
-                <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "1rem", alignItems: "center" }}>
-                  <button className="btn btn-ghost" disabled={rcptPage === 0} onClick={() => setRcptPage(p => p - 1)}
-                    style={{ fontSize: "0.82rem" }}>← Prev</button>
-                  <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Page {rcptPage + 1} of {Math.ceil(rcptData.total / rcptLimit)}</span>
-                  <button className="btn btn-ghost" disabled={(rcptPage + 1) * rcptLimit >= rcptData.total} onClick={() => setRcptPage(p => p + 1)}
-                    style={{ fontSize: "0.82rem" }}>Next →</button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1972,7 +1802,18 @@ function VendorBillsView({ session }: { session: Session | null }) {
   const [data, setData]       = useState<{ total: number; orders: BillsOrder[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [printBill, setPrintBill] = useState<BillsOrder | null>(null);
+  const [canteenName, setCanteenName] = useState<string | undefined>(undefined);
   const limit = 50;
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token || canteenName !== undefined) return;
+    fetch("/api/canteen/profile", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.canteen?.name) setCanteenName(j.canteen.name); })
+      .catch(() => {});
+  }, [session?.access_token, canteenName]);
 
   useEffect(() => {
     const token = session?.access_token;
@@ -2129,8 +1970,12 @@ function VendorBillsView({ session }: { session: Session | null }) {
                     <div style={{ fontSize: "0.69rem", color: "var(--ink-3)", marginTop: "0.25rem" }}>
                       {ist.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
                     </div>
-                    {/* Print bill button — kept in code, hidden per client request */}
-                    <button style={{ display: "none" }} onClick={() => { /* print disabled */ }}>🖨️ Print Bill</button>
+                    <button
+                      onClick={() => setPrintBill(order)}
+                      style={{ marginTop: "0.65rem", padding: "0.5rem 1rem", background: "#1e293b", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}
+                    >
+                      🖨️ Print Bill
+                    </button>
                   </div>
                 )}
               </div>
@@ -2146,6 +1991,21 @@ function VendorBillsView({ session }: { session: Session | null }) {
           <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Page {page + 1} of {Math.ceil(data.total / limit)}</span>
           <button className="btn btn-ghost" disabled={(page + 1) * limit >= data.total} onClick={() => setPage(p => p + 1)} style={{ fontSize: "0.82rem" }}>Next →</button>
         </div>
+      )}
+
+      {printBill && (
+        <BillReceipt
+          orderId={printBill.id}
+          studentName={printBill.student_name}
+          studentPhone={printBill.phone}
+          canteenName={canteenName}
+          slotLabel={printBill.slot_label}
+          binLabel={printBill.bin_label}
+          items={printBill.items.map(i => ({ name: i.name, quantity: i.quantity, unitPrice: i.unit_price }))}
+          totalAmount={printBill.total_amount}
+          createdAt={printBill.created_at}
+          onClose={() => setPrintBill(null)}
+        />
       )}
     </div>
   );
