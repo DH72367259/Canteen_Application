@@ -92,6 +92,11 @@ async function deleteOrder(id: string) {
   const db = adminClient();
   await db.from("order_items").delete().eq("order_id", id).then(() => {}, () => {});
   await db.from("order_bins").delete().eq("order_id", id).then(() => {}, () => {});
+  await db
+    .from("bins")
+    .update({ is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty" })
+    .or(`current_order_id.eq.${id},assigned_order_id.eq.${id}`)
+    .then(() => {}, () => {});
   await db.from("orders").delete().eq("id", id).then(() => {}, () => {});
 }
 
@@ -392,10 +397,11 @@ test.describe("FIX-3: Deferred bin assignment resilience", () => {
     } finally {
       await db.from("order_items").delete().eq("order_id", orderId).then(() => {}, () => {});
       await db.from("order_bins").delete().eq("order_id", orderId).then(() => {}, () => {});
-      // Free any bin that was claimed for this order
+      // Free any bin that was claimed for this order.
+      // Use current_order_id (actual column name) — order_id doesn't exist in schema.
       await db.from("bins").update({
-        is_occupied: false, order_id: null, assigned_order_id: null, status: "empty",
-      }).or(`order_id.eq.${orderId},assigned_order_id.eq.${orderId}`).then(() => {}, () => {});
+        is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty",
+      }).or(`current_order_id.eq.${orderId},assigned_order_id.eq.${orderId}`).then(() => {}, () => {});
       await db.from("orders").delete().eq("id", orderId).then(() => {}, () => {});
     }
   });

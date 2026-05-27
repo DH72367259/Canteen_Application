@@ -27,6 +27,20 @@
 import { test, expect } from "@playwright/test";
 import { apiFetch, ACCOUNTS, adminClient, getCanteen1Id, getStudent1Id, APP_URL } from "./_helpers";
 
+/** Release bins and delete an order so subsequent tests see a clean slate. */
+async function deleteOrder(id: string) {
+  const db = adminClient();
+  await db.from("order_items").delete().eq("order_id", id).then(() => {}, () => {});
+  await db.from("order_bins").delete().eq("order_id", id).then(() => {}, () => {});
+  // current_order_id is the actual column name in bins — order_id does not exist.
+  await db
+    .from("bins")
+    .update({ is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty" })
+    .or(`current_order_id.eq.${id},assigned_order_id.eq.${id}`)
+    .then(() => {}, () => {});
+  await db.from("orders").delete().eq("id", id).then(() => {}, () => {});
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG 1: Worker app QR scan UI
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,7 +123,7 @@ test.describe("BUG-1 fix: Worker OTP verify page has Scan QR tab", () => {
       await expect(page.getByText(/OTP/i).first()).toBeVisible({ timeout: 3_000 });
     }
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 });
 
@@ -183,8 +197,8 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     }
 
     // Cleanup
-    await db.from("orders").delete().eq("id", orderA.id);
-    await db.from("orders").delete().eq("id", orderB.id);
+    await deleteOrder(orderA.id);
+    await deleteOrder(orderB.id);
   });
 
   test("both past-slot orders get bins assigned via GET /api/orders", async () => {
@@ -221,8 +235,8 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     expect(a?.bin_id).not.toBeNull();
     expect(b?.bin_id).not.toBeNull();
 
-    await db.from("orders").delete().eq("id", orderA.id);
-    await db.from("orders").delete().eq("id", orderB.id);
+    await deleteOrder(orderA.id);
+    await deleteOrder(orderB.id);
   });
 
   test("future-slot order is NOT assigned a bin (slot hasn't started yet)", async () => {
@@ -248,7 +262,7 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
       expect(updated?.bin_id).toBeNull();
     }
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 
   test("slot start time sorting: 8:00 AM processed before 8:30 AM", async () => {
@@ -296,8 +310,8 @@ test.describe("BUG-2 fix: Bins assigned by slot start time, not creation order",
     }
     // If neither got a bin — no free bins at all, test is inconclusive (already skipped above)
 
-    await db.from("orders").delete().eq("id", lateSlotOrder.id);
-    await db.from("orders").delete().eq("id", earlySlotOrder.id);
+    await deleteOrder(lateSlotOrder.id);
+    await deleteOrder(earlySlotOrder.id);
   });
 });
 
@@ -342,7 +356,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     // (slot is in the past, so assignDeferredBins should process it)
     expect(updated?.bin_id).not.toBeNull();
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 
   test("confirmed-status order also gets bin assigned (not only placed)", async () => {
@@ -364,7 +378,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     const { data: updated } = await db.from("orders").select("bin_id").eq("id", order.id).single();
     expect(updated?.bin_id).not.toBeNull();
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 
   test("preparing-status order gets bin assigned", async () => {
@@ -386,7 +400,7 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     const { data: updated } = await db.from("orders").select("bin_id").eq("id", order.id).single();
     expect(updated?.bin_id).not.toBeNull();
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 
   test("live-orders endpoint also triggers bin assignment independently", async () => {
@@ -416,6 +430,6 @@ test.describe("BUG-3 fix: assignDeferredBins runs independently of other lifecyc
     const { data: updated } = await db.from("orders").select("bin_id").eq("id", order.id).single();
     expect(updated?.bin_id).toBeNull(); // no slot_label → no bin assignment
 
-    await db.from("orders").delete().eq("id", order.id);
+    await deleteOrder(order.id);
   });
 });

@@ -18,8 +18,10 @@ test.describe("Admin — canteen and user management", () => {
     if (await canteensTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await canteensTab.click();
     }
-    // At least one canteen should appear
-    await expect(page.getByText(/Test Canteen/i).first()).toBeVisible({ timeout: 15_000 });
+    // At least one canteen should appear (scroll into view first to pass viewport check)
+    const canteenEl = page.getByText(/Test Canteen/i).first();
+    await canteenEl.scrollIntoViewIfNeeded();
+    await expect(canteenEl).toBeVisible({ timeout: 15_000 });
   });
 
   test("user list API returns all seeded accounts", async () => {

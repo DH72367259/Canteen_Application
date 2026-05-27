@@ -67,10 +67,13 @@ async function deleteOrder(id: string) {
   const db = adminClient();
   await db.from("order_items").delete().eq("order_id", id).then(() => {}, () => {});
   await db.from("order_bins").delete().eq("order_id", id).then(() => {}, () => {});
+  // Use current_order_id (schema column name) and assigned_order_id to release bins.
+  // The bins table has current_order_id (not order_id) — using order_id causes a
+  // silent 42703 schema error that leaves bins occupied for subsequent tests.
   await db
     .from("bins")
-    .update({ is_occupied: false, order_id: null, assigned_order_id: null, status: "empty" })
-    .or(`order_id.eq.${id},assigned_order_id.eq.${id}`)
+    .update({ is_occupied: false, current_order_id: null, assigned_order_id: null, status: "empty" })
+    .or(`current_order_id.eq.${id},assigned_order_id.eq.${id}`)
     .then(() => {}, () => {});
   await db.from("orders").delete().eq("id", id).then(() => {}, () => {});
 }
