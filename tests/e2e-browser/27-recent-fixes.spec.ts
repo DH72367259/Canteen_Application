@@ -53,7 +53,7 @@ async function seedOrder(
       status: "placed",
       total_amount: 50,
       otp: String(Math.floor(1000 + Math.random() * 9000)),
-      slot_label: "01:00 AM - 01:15 AM", // always in the past
+      slot_label: "12:00 AM - 11:59 PM", // start always past; end safe until 11:59 PM
       ...overrides,
     })
     .select("id")
@@ -198,7 +198,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
       .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 100,
         otp: "t2oa",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         bin_count: 3, // needs 3 bins — unlikely to be available
       })
       .select("id")
@@ -209,7 +209,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
       .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 50,
         otp: "t2ob",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         bin_count: 1,
       })
       .select("id")
@@ -220,7 +220,7 @@ test.describe("TEST-2: break→continue fix in deferredBinAssign — multi-bin o
       .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed",
         total_amount: 50,
         otp: "t2oc",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         bin_count: 1,
       })
       .select("id")
@@ -671,7 +671,7 @@ test.describe("TEST-6: Extra-bin fee shown on order status and in API response",
         status: "placed",
         total_amount: 120,
         otp: "9999",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         extra_bin_fee_paise: 400, // 2 extra bins × ₹2 each
         bin_count: 3,
       })
@@ -710,7 +710,7 @@ test.describe("TEST-6: Extra-bin fee shown on order status and in API response",
         status: "placed",
         total_amount: 50,
         otp: "1111",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         extra_bin_fee_paise: 0,
         bin_count: 1,
       })
@@ -833,7 +833,7 @@ test.describe("TEST-7: Worker app shows shortcode not UUID for customer_name", (
       .insert({ canteen_id: canteenId, user_id: await getStudent1Id().catch(() => null), status: "placed_in_bin",
         total_amount: 80,
         otp: "uuid1",
-        slot_label: "01:00 AM - 01:15 AM",
+        slot_label: "12:00 AM - 11:59 PM",
         // Simulate customer_name being a UUID string (when user has no display name)
         // The orders API maps user_id → customerName, which can be the UUID itself
       })

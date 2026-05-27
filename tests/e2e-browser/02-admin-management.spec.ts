@@ -18,9 +18,11 @@ test.describe("Admin — canteen and user management", () => {
     if (await canteensTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await canteensTab.click();
     }
-    // At least one canteen should appear (scroll into view first to pass viewport check)
+    // Wait for page to settle then check the canteen appears in the list.
+    // scrollIntoViewIfNeeded is NOT used — it times out when the list re-renders
+    // during SSR hydration; toBeVisible() does not require viewport intersection.
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
     const canteenEl = page.getByText(/Test Canteen/i).first();
-    await canteenEl.scrollIntoViewIfNeeded();
     await expect(canteenEl).toBeVisible({ timeout: 15_000 });
   });
 
