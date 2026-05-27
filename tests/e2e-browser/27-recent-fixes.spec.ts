@@ -53,7 +53,7 @@ async function seedOrder(
       status: "placed",
       total_amount: 50,
       otp: String(Math.floor(1000 + Math.random() * 9000)),
-      slot_label: "12:00 AM - 11:59 PM", // start always past; end safe until 11:59 PM
+      slot_label: "01:00 AM - 01:15 AM", // always expired → verify-otp/collection allowed
       ...overrides,
     })
     .select("id")

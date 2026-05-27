@@ -21,9 +21,14 @@ test.describe("Admin — canteen and user management", () => {
     // Wait for page to settle then check the canteen appears in the list.
     // scrollIntoViewIfNeeded is NOT used — it times out when the list re-renders
     // during SSR hydration; toBeVisible() does not require viewport intersection.
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
     const canteenEl = page.getByText(/Test Canteen/i).first();
-    await expect(canteenEl).toBeVisible({ timeout: 15_000 });
+    // Wait for element to be in DOM first (does not require viewport visibility)
+    await expect(canteenEl).toBeAttached({ timeout: 20_000 });
+    // JS-level scroll bypasses Playwright's element-stability wait which times out
+    // when the canteen list re-renders during SSR hydration
+    await canteenEl.evaluate(el => el.scrollIntoView({ block: "center" })).catch(() => {});
+    await page.waitForTimeout(300);
+    await expect(canteenEl).toBeVisible({ timeout: 8_000 });
   });
 
   test("user list API returns all seeded accounts", async () => {
