@@ -32,10 +32,21 @@ test.describe("Vendor dashboard — all tabs reachable", () => {
     await expect(page.getByText(/sales/i).first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test("Analytics tab loads with sub-tabs", async ({ page }) => {
+  test("Analytics tab loads with slot breakdown (no Receipt History sub-tab)", async ({ page }) => {
     await page.getByRole("button", { name: /analytics/i }).first().click();
-    await expect(page.getByText(/slot breakdown/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/receipt history/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/analytics/i).first()).toBeVisible({ timeout: 10_000 });
+    // Slot breakdown date picker must be present
+    await expect(page.locator("input[type=date]").first()).toBeVisible({ timeout: 10_000 });
+    // Receipt History was moved to Bills & Receipts; it must NOT appear here
+    await expect(page.getByText(/receipt history/i)).not.toBeVisible({ timeout: 3_000 }).catch(() => {});
+  });
+
+  test("Bills & Receipts tab loads with period filters", async ({ page }) => {
+    await page.getByRole("button", { name: /bills/i }).first().click();
+    await expect(page.getByText(/bills & receipts/i).first()).toBeVisible({ timeout: 10_000 });
+    // Period filter chips — Today/This Week/This Month/This Year
+    await expect(page.getByRole("button", { name: /today/i }).first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByRole("button", { name: /this week/i }).first()).toBeVisible({ timeout: 5_000 });
   });
 
   test("Slot and Bin Control tab loads", async ({ page }) => {
