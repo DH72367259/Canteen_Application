@@ -65,20 +65,24 @@ export default function BillReceipt({
     const style = document.createElement("style");
     style.id = "bill-print-style";
     style.textContent = `
+      @page { margin: 0; size: 80mm auto; }
       @media print {
-        body > *:not(#bill-print-root) { display: none !important; }
+        body * { visibility: hidden; }
+        #bill-print-root, #bill-print-root * { visibility: visible; }
         #bill-print-root {
-          display: block !important;
+          position: fixed;
+          top: 0;
+          left: 0;
           width: 80mm;
           max-width: 80mm;
           margin: 0;
-          padding: 0;
+          padding: 8px;
           font-family: 'Courier New', Courier, monospace;
           font-size: 11pt;
           color: #000;
           background: #fff;
         }
-        .bill-no-print { display: none !important; }
+        .bill-no-print { display: none !important; visibility: hidden !important; }
         .bill-divider { border-top: 1px dashed #000; margin: 4px 0; }
       }
     `;
@@ -158,7 +162,7 @@ export default function BillReceipt({
           <div className="bill-divider" style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
 
           <div style={{ textAlign: "center", fontSize: "0.7rem", color: "#64748b" }}>
-            Attach to Bin {binLabel ?? "—"} · Thank you!
+            Thank you!
           </div>
         </div>
 
