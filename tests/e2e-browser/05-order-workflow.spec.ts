@@ -125,7 +125,7 @@ test.describe("QR verification API", () => {
     const { data: orders } = await db
       .from("orders")
       .select("id")
-      .in("status", ["placed_in_bin", "ready_for_pickup"])
+      .in("status", ["placed", "confirmed", "placed_in_bin", "ready_for_pickup"])
       .limit(1);
 
     if (!orders?.length) { test.skip(); return; }

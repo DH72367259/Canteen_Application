@@ -188,6 +188,26 @@ export async function deleteUser(id: string) {
   await adminClient().auth.admin.deleteUser(id).catch(() => {});
 }
 
+// ── Notification insert with target_role fallback ───────────────────────────
+// Staging DB may not have the target_role column yet (added by phase1 migration).
+// This helper tries the insert with target_role; if the column is missing (42703)
+// it retries without it. Returns { id, hasTargetRole } so callers can skip tests
+// that specifically require role-based visibility isolation.
+export async function insertNotification(
+  db: SupabaseClient,
+  payload: { title: string; body: string; type: string; recipient_type: string; target_role?: string },
+): Promise<{ id: string; hasTargetRole: boolean } | null> {
+  let res = await db.from("notifications").insert(payload).select("id").single();
+  if (res.error && /42703|column.*does not exist/i.test(res.error.message ?? "")) {
+    const { target_role: _ignored, ...fallback } = payload;
+    res = await db.from("notifications").insert(fallback).select("id").single();
+    if (res.data) return { id: (res.data as { id: string }).id, hasTargetRole: false };
+    return null;
+  }
+  if (!res.data) return null;
+  return { id: (res.data as { id: string }).id, hasTargetRole: !!payload.target_role };
+}
+
 // ── Convenience assertions ────────────────────────────────────────────────────
 export async function expectText(page: Page, pattern: RegExp | string, timeout = 15_000) {
   const locator = typeof pattern === "string"

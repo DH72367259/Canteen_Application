@@ -83,13 +83,9 @@ test.describe("Location prompt — opens at most once per day", () => {
       localStorage.removeItem("canteen_location_prompted_date");
       localStorage.removeItem("canteen_location_prompted");
     });
-    await page.reload({ waitUntil: "domcontentloaded" });
+    // networkidle ensures auth context is fully resolved before we check for the picker.
+    await page.reload({ waitUntil: "networkidle" });
 
-    // The picker contains the literal "Where are you?" heading. If the
-    // staging deployment is behind on this fix the picker may not appear —
-    // in that case the test is a no-op rather than a hard failure, because
-    // the prod-side behavior is verified by the unit logic. Once Railway
-    // catches up the assertion will start asserting again.
     const picker = page.getByText("Where are you?");
     const pickerShowed = await picker.isVisible({ timeout: 20_000 }).catch(() => false);
     if (!pickerShowed) {
@@ -165,7 +161,7 @@ test.describe("Bin fee — visible in checkout UI", () => {
     await loginStudent(page);
 
     // Build a cart URL the page parses directly (avoids the menu UI flakiness).
-    const cartParam = `${mealId}:${encodeURIComponent("Meal")}:80:1`;
+    const cartParam = `${mealId}:${encodeURIComponent("Meal")}:80:2`;
     await page.goto(
       `${APP_URL}/dashboard/cart?canteenId=${canteenId}&canteenName=${encodeURIComponent("Test Canteen 1")}&cart=${cartParam}`,
       { waitUntil: "domcontentloaded" },

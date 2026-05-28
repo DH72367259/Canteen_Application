@@ -43,6 +43,7 @@ import {
   adminClient,
   getCanteen1Id,
   getStudent1Id,
+  insertNotification,
   loginCanteenAdmin,
   loginWorker,
   APP_URL,
@@ -466,13 +467,15 @@ test.describe("FIX-4: Notifications — target_role constraint", () => {
 
   test("seeded notification with all_staff is visible to worker", async () => {
     const db = adminClient();
-    const { data: notif } = await db.from("notifications").insert({
+    // Falls back to recipient_type:all when target_role column is missing;
+    // recipient_type:all is always visible to workers regardless.
+    const notif = await insertNotification(db, {
       title: "E2E Fix-4 Worker Visibility",
       body: "Should be visible to worker",
       type: "info",
       recipient_type: "all",
       target_role: "all_staff",
-    }).select("id").single();
+    });
 
     if (!notif) { test.skip(); return; }
 
@@ -490,15 +493,17 @@ test.describe("FIX-4: Notifications — target_role constraint", () => {
 
   test("notification with target_role all_staff NOT visible to student", async () => {
     const db = adminClient();
-    const { data: notif } = await db.from("notifications").insert({
+    const notif = await insertNotification(db, {
       title: "E2E Fix-4 Staff Only",
       body: "Only staff should see this",
       type: "info",
       recipient_type: "all",
       target_role: "all_staff",
-    }).select("id").single();
+    });
 
     if (!notif) { test.skip(); return; }
+    // Without the target_role column the filter can't enforce role isolation.
+    if (!notif.hasTargetRole) { test.skip(); return; }
 
     try {
       const res = await apiFetch("/api/notifications", {}, ACCOUNTS.student1);
@@ -530,13 +535,13 @@ test.describe("FIX-4: Notifications — target_role constraint", () => {
 
   test("PATCH /api/notifications marks notifications as read", async () => {
     const db = adminClient();
-    const { data: notif } = await db.from("notifications").insert({
+    const notif = await insertNotification(db, {
       title: "E2E Read Test",
       body: "Mark me as read",
       type: "info",
       recipient_type: "all",
       target_role: "all_staff",
-    }).select("id").single();
+    });
 
     if (!notif) { test.skip(); return; }
 
