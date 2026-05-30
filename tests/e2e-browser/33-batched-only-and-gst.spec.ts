@@ -441,6 +441,71 @@ test.describe("autoAcceptPlacedOrders — 45-second self-cancel guard", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Suite 4.6: Cancel-with-reason notification reaches the student
+// ═════════════════════════════════════════════════════════════════════════════
+test.describe("Cancel notification — student gets the reason", () => {
+  let canteenId = "";
+  let studentId = "";
+
+  test.beforeAll(async () => {
+    canteenId = await getCanteen1Id();
+    studentId = await getStudent1Id();
+  });
+
+  test("staff cancel inserts a notification with the cancellation reason in the body", async () => {
+    const db = adminClient();
+    const placedAt = new Date(Date.now() - 2 * 60_000).toISOString(); // 2 min ago
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenId,
+        user_id: studentId,
+        status: "confirmed",
+        total_amount: 60,
+        otp: "8001",
+        slot_label: "12:00 AM - 11:59 PM",
+        created_at: placedAt,
+      })
+      .select("id")
+      .single();
+    if (error || !order) { test.skip(true, `Order seed failed: ${error?.message}`); return; }
+    const orderId = (order as { id: string }).id;
+    const reason = `e2e-cancel-reason-${Date.now().toString(36)}`;
+
+    try {
+      const res = await apiFetch(
+        `/api/orders/${orderId}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        },
+        ACCOUNTS.canteenAdmin,
+      );
+      expect(res.status).toBe(200);
+
+      // Look up the most recent notification for this student matching this reason
+      const { data: notif } = await db
+        .from("notifications")
+        .select("title, body, recipient_id, recipient_type, type")
+        .eq("recipient_id", studentId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const list = (notif ?? []) as Array<{ title: string; body: string; recipient_type: string; type: string }>;
+      const match = list.find((n) => (n.body ?? "").includes(reason));
+      expect(match, `Expected a notification to student containing "${reason}" in the body. Got: ${JSON.stringify(list)}`).toBeDefined();
+      expect(match!.body).toContain("Reason");
+      expect(match!.body).toContain(reason);
+      expect(match!.recipient_type).toBe("user");
+    } finally {
+      // Clean up the order + notifications we created
+      await db.from("notifications").delete().like("body", `%${reason}%`);
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Suite 5: GST invoice — seller block + GSTIN env wiring
 // ═════════════════════════════════════════════════════════════════════════════
 test.describe("GST: /api/orders/[id]/invoice", () => {
