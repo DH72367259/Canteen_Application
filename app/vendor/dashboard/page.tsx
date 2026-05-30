@@ -364,8 +364,15 @@ export default function VendorDashboard() {
       // single-bin (binLabel/binColor) representation.
       const status = (raw: string | undefined): BinStatus =>
         raw === "ready_for_pickup" || raw === "placed_in_bin" ? "completed"
-        : raw === "preparing" ? "preparing"
+        // ready_for_placement = vendor accepted, bin assignment pending —
+        // treat like "preparing" so the order stays visible in the rack
+        // and the Cancel button keeps rendering.
+        : (raw === "preparing" || raw === "ready_for_placement") ? "preparing"
         : (raw === "placed" || raw === "confirmed") ? "placed"
+        // late_pickup_pending = 10-min stale-bin sweep moved it; worker
+        // still needs to physically shift the food and tap Mark Shifted.
+        // Surface as "delayed" so the vendor can cancel + refund if needed.
+        : raw === "late_pickup_pending" ? "delayed"
         : "empty";
       const mapped: Bin[] = active.flatMap((o, idx) => {
         const slices = (o.binAssignments && o.binAssignments.length > 0)
@@ -998,6 +1005,12 @@ export default function VendorDashboard() {
                                 {bin.rawOrderId && (
                                   <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
                                 )}
+                              </>
+                            )}
+                            {bin.status === "delayed" && bin.rawOrderId && (
+                              <>
+                                <div style={{ marginTop: "0.25rem", fontSize: "0.7rem", fontWeight: 700, color: "#b45309", opacity: 0.9 }}>Stale — uncollected 10+ min</div>
+                                <button onClick={e => { e.stopPropagation(); setCancelTarget({ id: bin.rawOrderId!, amount: bin.totalAmount }); }} style={{ marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 700, background: "var(--red)", color: "#fff", border: "none", borderRadius: 6, padding: "0.2rem 0.5rem", cursor: "pointer" }}>✕ Cancel</button>
                               </>
                             )}
                           </div>
