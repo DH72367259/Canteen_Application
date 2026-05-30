@@ -95,10 +95,24 @@ export async function GET(
   // 11th order when the canteen cap is 10.
   const { data: slotControl } = await supabase
     .from("slot_control")
-    .select("slot_duration_mins")
+    .select("slot_duration_mins, slot_mode")
     .eq("canteen_id", id)
     .maybeSingle();
   const slotDurationMins = Number(slotControl?.slot_duration_mins) || 15;
+  // In batched_only mode the canteen has paused its made-to-order line —
+  // hide made-to-order MEALS so students never see options they can't order.
+  // Snacks stay visible regardless (they're always pre-packed in practice).
+  // Client decision 2026-05-30.
+  const slotMode = (slotControl as Record<string, unknown> | null)?.slot_mode === "batched_only"
+    ? "batched_only"
+    : "both";
+  if (slotMode === "batched_only") {
+    rows = rows.filter((r) => {
+      const availType = r.availability_type ?? "slot_based";
+      // Visible when: it's a batched item OR it's a snack (not a meal)
+      return availType === "batched_prepared" || r.is_meal === false;
+    });
+  }
   const { data: slotRows } = await supabase
     .from("time_slots")
     .select("id, start_time, is_active")

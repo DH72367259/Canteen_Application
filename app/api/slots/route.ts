@@ -287,8 +287,12 @@ export async function GET(request: Request) {
         //     order count so the estimate reflects total canteen load, not
         //     just one slot window. Capped at 15 min.
         const endMin = hhmmToMinutes(p.end);
+        // Hard cap at 5 min in batched_only — client decision 2026-05-30
+        // ("no student should feel left out by the time they come, others
+        // may have taken their order"). Scale: 2 min base + 1 min per
+        // ~10 queued orders → reaches 5 around 30 orders in the queue.
         const readyInMin = slotMode === "batched_only"
-          ? Math.min(15, 2 + Math.floor(systemActiveCount / 5))
+          ? Math.min(5, 2 + Math.floor(systemActiveCount / 10))
           : Math.max(0, endMin - nowMin);
         result.push({
           id,

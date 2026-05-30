@@ -887,13 +887,21 @@ function CartContent() {
         {/* Disable Pay until the cart/check round-trip confirms this slot still
             has bin capacity. While waiting → "Checking slot availability…".
             Slot full → "Slot full — pick another". Otherwise enable the button
-            with the normal Razorpay label. */}
+            with the normal Razorpay label.
+            In batched_only mode the slot never goes full — skip the wait
+            entirely and let the button enable immediately. The cart/check
+            call still runs in background to compute extra-bin fee, but the
+            student is never shown a loading state for it. */}
         {(() => {
           const noCart = cart.length === 0;
           const noSlot = !slot;
-          const checking = !noCart && !noSlot && !cartCheck;
+          // In batched_only, cart/check never blocks (slot_full forced false
+          // upstream) — don't make the student stare at a loader.
+          const checking = slotMode === "batched_only"
+            ? false
+            : !noCart && !noSlot && !cartCheck;
           const slotFull = !!cartCheck?.slot_full;
-          const partialFit = !slotFull && !!cartCheck?.partial_fit;
+          const partialFit = slotMode === "batched_only" ? false : (!slotFull && !!cartCheck?.partial_fit);
           const disabled = busy || noCart || noSlot || checking || slotFull || partialFit;
           let label: string;
           if (busy) label = "Processing…";
