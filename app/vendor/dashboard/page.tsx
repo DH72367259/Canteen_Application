@@ -3303,8 +3303,8 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.5rem" }}>Slot Mode</div>
           <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
             {([
-              { value: "both",         label: "Both",         desc: `${previewBatched} batched + ${previewMadeToOrd} made-to-order` },
-              { value: "batched_only", label: "Batched Only", desc: `${previewMaxOrders} bins all for batched items` },
+              { value: "both",         label: "Both",         desc: `${previewBatched} batched + ${previewMadeToOrd} made-to-order · Students see clock-time slots` },
+              { value: "batched_only", label: "Batched Only", desc: `${previewMaxOrders} bins all for batched items · Students see "Ready in X min" instead of clock-time slots` },
             ] as { value: "both"|"batched_only"; label: string; desc: string }[]).map(opt => (
               <button
                 key={opt.value}
@@ -3324,6 +3324,7 @@ function VendorSlotControlView({ session }: { session: { access_token: string } 
           {slotMode === "batched_only" && (
             <p style={{ fontSize: "0.75rem", color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 6, padding: "0.4rem 0.65rem", marginTop: "0.5rem" }}>
               ⚠️ Made-to-order orders will be <strong>rejected</strong> in this slot when this mode is active.
+              The student app will show <strong>&ldquo;Ready in X min&rdquo;</strong> labels instead of clock-time slots, while still picking a real slot under the hood for crowd control.
             </p>
           )}
         </div>
