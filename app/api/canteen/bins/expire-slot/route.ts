@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/authServer";
 import { createAdminClient } from "@/lib/supabase-server";
-import { releaseExpiredSlotBins } from "@/lib/slotExpiry";
+import { releaseExpiredSlotBins, releaseStalePlacedInBinOrders } from "@/lib/slotExpiry";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +27,13 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
   const { released } = await releaseExpiredSlotBins(supabase, canteenId);
+  const { moved } = await releaseStalePlacedInBinOrders(supabase, canteenId);
 
   return NextResponse.json({
     released,
-    message: released > 0
-      ? `${released} late pickup order${released !== 1 ? "s" : ""} moved — bins freed for next slot.`
-      : "No expired slot bins found.",
+    moved,
+    message: (released + moved) > 0
+      ? `${released} expired-slot order${released !== 1 ? "s" : ""} freed${moved > 0 ? `, ${moved} stale-bin order${moved !== 1 ? "s" : ""} moved to late pickup` : ""}.`
+      : "No expired slot bins or stale orders found.",
   });
 }

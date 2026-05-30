@@ -140,6 +140,70 @@ export async function releaseExpiredSlotBins(
 }
 
 /**
+ * Stale-bin sweep — 10-minute uncollected-in-bin rule.
+ *
+ * Per Father's revised workflow (2026-05-30): if an order has been sitting
+ * in a bin for more than `staleMinutes` (default 10) and the student
+ * hasn't shown up, move it to `late_pickup_pending`. The worker UI shows
+ * such orders in the Late Pickup section. Worker physically shifts the
+ * food to the late pickup counter, then taps "Mark shifted" which calls
+ * /api/orders/[id]/clear-bin to flip status → late_pickup AND free the bin.
+ *
+ * NOTE: this sweep does NOT free the bin itself. The bin stays linked
+ * until the worker confirms the physical move via /clear-bin. That avoids
+ * the next order being assigned to a bin that still has food in it.
+ */
+export async function releaseStalePlacedInBinOrders(
+  supabase: SupabaseClient,
+  canteenId: string,
+  staleMinutes: number = 10,
+): Promise<{ moved: number }> {
+  const cutoffIso = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
+
+  const { data: stale, error } = await supabase
+    .from("orders")
+    .select("id, user_id")
+    .eq("canteen_id", canteenId)
+    .eq("status", "placed_in_bin")
+    .lt("updated_at", cutoffIso);
+
+  if (error) {
+    console.warn("[releaseStalePlacedInBinOrders] query failed:", error.message);
+    return { moved: 0 };
+  }
+  if (!stale?.length) return { moved: 0 };
+
+  const ids = stale.map((o: { id: string }) => o.id);
+
+  await supabase
+    .from("orders")
+    .update({ status: "late_pickup_pending", updated_at: nowIso })
+    .in("id", ids)
+    .eq("status", "placed_in_bin");
+
+  const userIds = [...new Set(
+    (stale as Array<{ user_id: string | null }>)
+      .map(o => o.user_id)
+      .filter((uid): uid is string => !!uid),
+  )];
+  if (userIds.length > 0) {
+    const notifRows = userIds.map(uid => ({
+      title: "⏰ Order not collected — held at late pickup counter",
+      body: `Your food has been sitting in the bin for ${staleMinutes} minutes. The worker is moving it to the late pickup counter — please collect it as soon as possible.`,
+      type: "late_pickup",
+      recipient_type: "user",
+      recipient_id: uid,
+      target_role: "user",
+      created_by: null as string | null,
+    }));
+    await supabase.from("notifications").insert(notifRows).then(() => {}, () => {});
+  }
+
+  return { moved: stale.length };
+}
+
+/**
  * End-of-day auto-close.
  *
  * At every /api/orders fetch (canteen staff side), sweep yesterday's

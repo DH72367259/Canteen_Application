@@ -21,7 +21,9 @@ interface SlotOption {
   is_full: boolean;
   bins_used?: number;
   bins_total?: number;
+  ready_in_min?: number;
 }
+type SlotMode = "both" | "batched_only";
 interface CartCheck {
   slot_available: boolean;
   slot_full: boolean;
@@ -98,6 +100,7 @@ function CartContent() {
   const [slot,        setSlot]        = useState<string | null>(null);
   const [slots,       setSlots]       = useState<SlotOption[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
+  const [slotMode,    setSlotMode]    = useState<SlotMode>("both");
   // Real-time slot availability: maps slot.id → whether it has capacity for current cart
   const [slotCapacity, setSlotCapacity] = useState<Record<string, { available: boolean; ordersUsed: number; maxCapacity: number }>>({});
   // Wallet / Canteen-cash payments removed from the user app per revised
@@ -137,6 +140,9 @@ function CartContent() {
         const json = await res.json();
         if (!cancelled && Array.isArray(json.slots)) {
           setSlots(json.slots);
+          if (json.slot_mode === "batched_only" || json.slot_mode === "both") {
+            setSlotMode(json.slot_mode);
+          }
           // Auto-select first available slot if current selection is gone
           setSlot(prev => {
             const stillValid = json.slots.some((s: SlotOption) => s.id === prev && s.available);
@@ -599,6 +605,9 @@ function CartContent() {
                       : cartLevelFull ? "Not enough bins for your current cart"
                       : s.label
                     }
+                    aria-label={slotMode === "batched_only" && s.ready_in_min != null
+                      ? `Ready within ${s.ready_in_min} minutes`
+                      : s.label}
                     style={{
                       padding: "0.65rem 0.9rem",
                       borderRadius: 10,
@@ -617,7 +626,11 @@ function CartContent() {
                       minWidth: "80px",
                     }}
                   >
-                    <span>{s.label}</span>
+                    <span>
+                      {slotMode === "batched_only" && s.ready_in_min != null
+                        ? `Ready in ${s.ready_in_min} min`
+                        : s.label}
+                    </span>
                     {(total > 0) && (
                       <span style={{ fontSize: "0.68rem", opacity: 0.7, fontWeight: 500 }}>
                         {used}/{total} bins

@@ -59,7 +59,16 @@ export async function GET(request: Request) {
     capacity: number;
     bins_used?: number;
     bins_total?: number;
+    ready_in_min?: number;
   };
+
+  // slot_mode: "both" = normal slot picker UI; "batched_only" = student sees
+  // "Ready within X min" labels (slot still picked under the hood for crowd
+  // control). Falls back to "both" if column missing in older staging DBs.
+  const slotMode: "both" | "batched_only" = (() => {
+    const v = (control as Record<string, unknown> | null)?.slot_mode;
+    return v === "batched_only" ? "batched_only" : "both";
+  })();
 
   const result: Slot[] = [];
 
@@ -232,6 +241,11 @@ export async function GET(request: Request) {
         // OR the order-cap is hit (whichever happens first). This is the
         // 60-bin hard stop the workflow requires.
         const isFull = binsUsed >= maxBins || orderCount >= cap;
+        // ready_in_min = minutes from now to slot END (when food is guaranteed
+        // ready). Used by the student UI in batched_only mode to render
+        // "Ready within X min" instead of the clock-time label.
+        const endMin = hhmmToMinutes(p.end);
+        const readyInMin = Math.max(0, endMin - nowMin);
         result.push({
           id,
           label,
@@ -240,12 +254,13 @@ export async function GET(request: Request) {
           capacity: cap,
           bins_used: binsUsed,
           bins_total: maxBins,
+          ready_in_min: readyInMin,
         });
       }
     }
 
     if (result.length > 0) {
-      return Response.json({ slots: result });
+      return Response.json({ slots: result, slot_mode: slotMode });
     }
   }
 
@@ -266,7 +281,7 @@ export async function GET(request: Request) {
     });
   }
 
-  return Response.json({ slots: result });
+  return Response.json({ slots: result, slot_mode: slotMode });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[/api/slots] failed:", msg, e);

@@ -5,7 +5,7 @@ import { menuItems } from "@/lib/menu";
 import { autoAcceptPlacedOrders } from "@/lib/orderAutoAccept";
 import { createAdminClient } from "@/lib/supabase-server";
 import { assignDeferredBins } from "@/lib/deferredBinAssign";
-import { releaseExpiredSlotBins, autoCloseEodLateOrders } from "@/lib/slotExpiry";
+import { releaseExpiredSlotBins, releaseStalePlacedInBinOrders, autoCloseEodLateOrders } from "@/lib/slotExpiry";
 import { createOrder, listOrdersForUser, listRecentOrders } from "@/lib/orderRepository";
 import type {
   CreateOrderRequest,
@@ -75,6 +75,7 @@ export async function GET(request: Request) {
           // blocks assignDeferredBins — the critical step for bin assignment.
           await autoAcceptPlacedOrders({ supabase: adminSupa, canteenId: context.canteenId }).catch(() => {});
           await releaseExpiredSlotBins(adminSupa, context.canteenId).catch(() => {});
+          await releaseStalePlacedInBinOrders(adminSupa, context.canteenId).catch(() => {});
           await autoCloseEodLateOrders(adminSupa, context.canteenId).catch(() => {});
           await assignDeferredBins(adminSupa, context.canteenId).catch(() => {});
         }
