@@ -85,13 +85,24 @@ export async function autoAcceptPlacedOrders(
   const nowMs  = Date.now();
   const candidates: CandidateOrder[] = [];
 
+  // The student app shows a 45-second self-cancel countdown
+  // (app/dashboard/order-status/page.tsx — `45_000`). Auto-accept must
+  // never fire inside that window, otherwise the order flips to
+  // `confirmed` and the Cancel button disappears before the student can
+  // tap it. In batched_only mode the slot returned by /api/slots is the
+  // CURRENT in-progress slot, so `nowMin >= startMin` is true at order
+  // placement — without this guard the cancel window vanishes instantly.
+  const SELF_CANCEL_WINDOW_MS = 45_000;
+
   for (const order of orders as CandidateOrder[]) {
+    const ageMs = nowMs - new Date(String(order.created_at)).getTime();
+    if (ageMs < SELF_CANCEL_WINDOW_MS) continue;
+
     const label = String(order.slot_label ?? "");
     const startMin = parseSlotStartMinutes(label);
     if (startMin !== null) {
       if (nowMin >= startMin) candidates.push(order);
     } else {
-      const ageMs = nowMs - new Date(String(order.created_at)).getTime();
       if (ageMs >= 35_000) candidates.push(order);
     }
   }

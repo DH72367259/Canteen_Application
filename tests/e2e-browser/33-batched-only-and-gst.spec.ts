@@ -349,6 +349,98 @@ test.describe("10-min stale-bin sweep — placed_in_bin → late_pickup_pending"
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Suite 4.5: 45-second self-cancel window survives auto-accept
+// ═════════════════════════════════════════════════════════════════════════════
+test.describe("autoAcceptPlacedOrders — 45-second self-cancel guard", () => {
+  let canteenId = "";
+  let studentId = "";
+
+  test.beforeAll(async () => {
+    canteenId = await getCanteen1Id();
+    studentId = await getStudent1Id();
+  });
+
+  test("fresh placed order with current-slot label STAYS in 'placed' (cancel window preserved)", async () => {
+    // In batched_only the slot returned by /api/slots is the CURRENT
+    // in-progress slot, so `nowMin >= startMin` is true at order placement.
+    // Without the cancel-window guard in autoAcceptPlacedOrders, the order
+    // would flip to 'confirmed' on the very next staff poll, killing the
+    // student's 45-second cancel button.
+    //
+    // Use a slot label whose start is already past in IST.
+    const db = adminClient();
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenId,
+        user_id: studentId,
+        status: "placed",
+        total_amount: 50,
+        otp: "9001",
+        // 12:00 AM start → always in the past today; end 11:59 PM → never
+        // marked late_pickup by the slot-end sweep within today.
+        slot_label: "12:00 AM - 11:59 PM",
+      })
+      .select("id, created_at")
+      .single();
+    if (error || !order) { test.skip(true, `Seed failed: ${error?.message}`); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      // Trigger the staff-side poll (which runs autoAcceptPlacedOrders).
+      await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+
+      // Order is < 45s old → must NOT be promoted to 'confirmed'.
+      const { data: after } = await db
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .maybeSingle();
+      const status = (after as { status?: string } | null)?.status;
+      expect(status).toBe("placed");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("placed order older than 45s with started slot DOES auto-accept", async () => {
+    const db = adminClient();
+    const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenId,
+        user_id: studentId,
+        status: "placed",
+        total_amount: 50,
+        otp: "9002",
+        slot_label: "12:00 AM - 11:59 PM",
+        created_at: oneMinAgo,
+      })
+      .select("id")
+      .single();
+    if (error || !order) { test.skip(); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+      const { data: after } = await db
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .maybeSingle();
+      const status = (after as { status?: string } | null)?.status;
+      // Older than 45s + slot already started → auto-accept fires.
+      // Some flows may have moved it to preparing or beyond by the time we
+      // check; accept any "post-placed" status here.
+      expect(["confirmed", "preparing", "ready_for_placement", "placed_in_bin"]).toContain(status);
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Suite 5: GST invoice — seller block + GSTIN env wiring
 // ═════════════════════════════════════════════════════════════════════════════
 test.describe("GST: /api/orders/[id]/invoice", () => {
