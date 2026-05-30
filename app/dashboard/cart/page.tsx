@@ -571,7 +571,51 @@ function CartContent() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.6rem" }}>Choose ready time</h2>
+          <h2 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: "0.6rem" }}>
+            {slotMode === "batched_only" ? "Ready time" : "Choose ready time"}
+          </h2>
+          {/* In batched_only mode, the API returns exactly one slot (the
+              next available one) and the student doesn't need to pick. Show
+              a single status card instead of a multi-button picker — slot
+              auto-selects via the useEffect above. */}
+          {slotMode === "batched_only" && !slotsLoading && slots.length > 0 ? (() => {
+            const s = slots[0];
+            const isFull = !!s.is_full || !s.available;
+            const used = s.bins_used ?? 0;
+            const total = s.bins_total ?? 0;
+            return (
+              <div style={{
+                padding: "0.9rem 1rem",
+                borderRadius: 12,
+                border: `1.5px solid ${isFull ? "#dc2626" : "var(--orange)"}`,
+                background: isFull ? "#fef2f2" : "#fff7ed",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "0.75rem",
+              }}>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.2rem" }}>
+                    {isFull ? "🛑 All bins occupied" : "✨ Pre-packed & ready"}
+                  </div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: isFull ? "#991b1b" : "#9a3412" }}>
+                    {isFull
+                      ? "Try again in a few minutes"
+                      : `Ready in ${s.ready_in_min ?? 2} min`}
+                  </div>
+                  {!isFull && total > 0 && (
+                    <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>
+                      {total - used} of {total} bins free right now
+                    </div>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: "2rem",
+                  opacity: 0.8,
+                }}>{isFull ? "⏳" : "🍱"}</div>
+              </div>
+            );
+          })() : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {slotsLoading ? (
               <span style={{ fontSize: "0.82rem", color: "var(--ink-3)" }}>Loading slots…</span>
@@ -659,9 +703,12 @@ function CartContent() {
               );
             })}
           </div>
+          )}
 
-          {/* Show available slots hint */}
-          {cart.length > 0 && Object.values(slotCapacity).some(c => !c.available) && (
+          {/* Show available slots hint — only meaningful in "both" mode where
+              the student picks among multiple slots. In batched_only the
+              single status card above already conveys availability. */}
+          {slotMode !== "batched_only" && cart.length > 0 && Object.values(slotCapacity).some(c => !c.available) && (
             <div style={{ marginTop: "0.75rem", padding: "0.6rem 0.75rem", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, fontSize: "0.78rem", color: "#92400e" }}>
               <strong>💡 Tip:</strong> Reduce order quantity to enable more slots. Current order doesn't fit in {Object.values(slotCapacity).filter(c => !c.available).length} slots.
             </div>

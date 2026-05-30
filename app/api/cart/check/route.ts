@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { getRequestContext } from "@/lib/authServer";
 import { assignBins, computeSlotCapacity, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
-import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
+import { getMenuItemUsageForToday, getSlotAvailabilityUsage, statusExcludeFilterForSlot } from "@/lib/menuItemCapacity";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +65,9 @@ export async function POST(request: Request) {
   const sc = await ensureSlotControl(supabase, canteen_id);
   if (!sc) return Response.json({ error: "Slot control not configured for this canteen" }, { status: 500 });
 
-  const capacity = computeSlotCapacity(Number(sc.max_bins));
+  const slotMode: "both" | "batched_only" =
+    (sc as Record<string, unknown>).slot_mode === "batched_only" ? "batched_only" : "both";
+  const capacity = computeSlotCapacity(Number(sc.max_bins), slotMode);
 
   // 2. Load menu items in cart to get name + is_meal flags
   const ids = items.map(i => i.id);
@@ -190,7 +192,8 @@ export async function POST(request: Request) {
       .eq("canteen_id", canteen_id)
       .eq(col, slot)
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled")');
+      // Wider exclusion in batched_only mode — bin rotation frees slot capacity.
+      .not("status", "in", statusExcludeFilterForSlot(slotMode));
     if (!error) { existingOrders = (data ?? []) as Array<{ id: string }>; lastErr = null; break; }
     lastErr = error.message;
     if (!/column .* does not exist|undefined column/i.test(error.message)) break;
@@ -269,7 +272,7 @@ export async function POST(request: Request) {
   let slotFullByType = false;
   let availabilityMessage = "";
   if (!slotFull && slot) {
-    const slotUsage = await getSlotAvailabilityUsage(supabase, canteen_id, slot);
+    const slotUsage = await getSlotAvailabilityUsage(supabase, canteen_id, slot, slotMode);
     const thisMadeToOrder = cartLines
       .filter((l) => menuById.get(l.itemId)?.availability_type !== "batched_prepared")
       .reduce((sum, l) => sum + l.quantity, 0);

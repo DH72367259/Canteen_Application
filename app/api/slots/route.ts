@@ -1,6 +1,12 @@
 import { createAdminClient } from "@/lib/supabase-server";
 import { generateTimeSlots, computeSlotCapacity, assignBins, type CartLine } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
+import { statusExcludeFilterForSlot } from "@/lib/menuItemCapacity";
+
+// Statuses that mean "no longer holding a bin" — used for batched_only
+// in-memory filtering after the orders query returns. Mirrors
+// statusExcludeFilterForSlot('batched_only').
+const BATCHED_ONLY_TERMINAL = new Set(["cancelled", "collected", "completed", "late_pickup"]);
 
 export const dynamic = "force-dynamic";
 
@@ -135,9 +141,16 @@ export async function GET(request: Request) {
     }
 
     const counts = new Map<string, number>();
+    // In batched_only mode, only ACTIVE orders count toward slot fullness —
+    // bin rotation should free slot capacity (per Father's batched_only model).
+    // In `both` mode, lifetime cumulative count is preserved (planned-batch model).
     for (const o of orderRows) {
       if (!o.slot) continue;
-      if (o.status === "cancelled" || o.status === "refunded") continue;
+      if (slotMode === "batched_only") {
+        if (BATCHED_ONLY_TERMINAL.has(o.status)) continue;
+      } else {
+        if (o.status === "cancelled" || o.status === "refunded") continue;
+      }
       counts.set(o.slot, (counts.get(o.slot) || 0) + 1);
     }
 
@@ -153,7 +166,11 @@ export async function GET(request: Request) {
     const binsBySlot = new Map<string, number>();
 
     const activeOrderIds = orderRows
-      .filter((o) => o.slot && o.status !== "cancelled" && o.status !== "refunded")
+      .filter((o) => {
+        if (!o.slot) return false;
+        if (slotMode === "batched_only") return !BATCHED_ONLY_TERMINAL.has(o.status);
+        return o.status !== "cancelled" && o.status !== "refunded";
+      })
       .map((o) => o.slot as string);
 
     if (activeOrderIds.length > 0) {
@@ -168,7 +185,7 @@ export async function GET(request: Request) {
             .eq("canteen_id", canteenId)
             .gte("created_at", `${dateStr}T00:00:00.000Z`)
             .lte("created_at", `${dateStr}T23:59:59.999Z`)
-            .not("status", "in", '("cancelled")');
+            .not("status", "in", statusExcludeFilterForSlot(slotMode));
           if (!q.error) {
             idRows = (q.data || []).map((r) => {
               const obj = r as Record<string, unknown>;
@@ -241,11 +258,15 @@ export async function GET(request: Request) {
         // OR the order-cap is hit (whichever happens first). This is the
         // 60-bin hard stop the workflow requires.
         const isFull = binsUsed >= maxBins || orderCount >= cap;
-        // ready_in_min = minutes from now to slot END (when food is guaranteed
-        // ready). Used by the student UI in batched_only mode to render
-        // "Ready within X min" instead of the clock-time label.
+        // ready_in_min calculation differs by mode:
+        //   - both: minutes until slot END (clock-time semantics)
+        //   - batched_only: items are pre-packed, worker just places in bin
+        //     (~2 min). Queue depth adds 1 min per 5 active orders in this
+        //     slot, capped at 12. Client-supplied model (Father's feedback).
         const endMin = hhmmToMinutes(p.end);
-        const readyInMin = Math.max(0, endMin - nowMin);
+        const readyInMin = slotMode === "batched_only"
+          ? Math.min(12, 2 + Math.floor(orderCount / 5))
+          : Math.max(0, endMin - nowMin);
         result.push({
           id,
           label,
@@ -260,6 +281,16 @@ export async function GET(request: Request) {
     }
 
     if (result.length > 0) {
+      // In batched_only mode, slots are bookkeeping only — the student
+      // doesn't care which 15-min window they're in. Return just the FIRST
+      // available slot so the cart UI can render a single "Ready in X min"
+      // status card instead of a meaningless multi-button picker.
+      // If no slot is available right now, return the first one anyway so
+      // the UI can surface the queue.
+      if (slotMode === "batched_only") {
+        const firstAvailable = result.find((s) => s.available) ?? result[0];
+        return Response.json({ slots: [firstAvailable], slot_mode: slotMode });
+      }
       return Response.json({ slots: result, slot_mode: slotMode });
     }
   }

@@ -1,5 +1,24 @@
 import { createAdminClient } from "@/lib/supabase-server";
 
+/**
+ * Status filter for slot capacity counting.
+ *
+ * - `both` (default): excludes only cancelled — slot keeps a lifetime cumulative
+ *   count, which matches the planned-batch model where the canteen pre-cooks N
+ *   meals per slot and can't accept a 61st even after one is collected.
+ * - `batched_only`: excludes terminal AND post-bin-free statuses. Per Father's
+ *   batched_only model, items are pre-packed; the bin pool rotates freely, so
+ *   collected/late_pickup orders should NOT keep blocking the slot.
+ *
+ * Returns the PostgREST `.not("status", "in", ...)` argument string.
+ */
+export function statusExcludeFilterForSlot(slotMode: "both" | "batched_only" = "both"): string {
+  if (slotMode === "batched_only") {
+    return '("cancelled","collected","completed","late_pickup")';
+  }
+  return '("cancelled")';
+}
+
 interface CapacityUsageOptions {
   canteenId: string;
   menuItemIds: string[];
@@ -99,6 +118,7 @@ export async function getSlotAvailabilityUsage(
   supabase: ReturnType<typeof createAdminClient>,
   canteenId: string,
   slotLabel: string,
+  slotMode: "both" | "batched_only" = "both",
 ): Promise<SlotAvailabilityUsage> {
   const out: SlotAvailabilityUsage = { batchedPreparedUsed: 0, madeToOrderUsed: 0 };
 
@@ -108,15 +128,8 @@ export async function getSlotAvailabilityUsage(
     .eq("canteen_id", canteenId)
     .eq("slot_label", slotLabel)
     .gte("created_at", istDayStartIso())
-    // ⚠️ "refunded" was previously listed here too, but it is NOT a value
-    // in the order_status enum. Including it makes Postgres reject the
-    // ENTIRE query with `invalid input value for enum order_status:
-    // "refunded"`. The function then returns an empty usage map and EVERY
-    // item appears at full capacity — that's why student "X left" badges
-    // and vendor inventory counts never moved. Refund state lives in the
-    // separate refund_status column; the order's status stays 'cancelled'
-    // after a refund, which IS already excluded here.
-    .not("status", "in", '("cancelled")');
+    // Status filter widens in batched_only — see statusExcludeFilterForSlot.
+    .not("status", "in", statusExcludeFilterForSlot(slotMode));
   if (ordersErr || !orders || orders.length === 0) return out;
 
   const orderIds = orders.map((o) => o.id as string);

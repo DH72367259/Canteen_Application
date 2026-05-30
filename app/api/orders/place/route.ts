@@ -5,7 +5,7 @@ import { recordPaymentIdempotent } from "@/lib/paymentLedger";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { assignBins, computeSlotCapacity, type CartLine, type SlotMode } from "@/lib/slotCapacity";
 import { ensureSlotControl } from "@/lib/slotControlEnsure";
-import { getMenuItemUsageForToday, getSlotAvailabilityUsage } from "@/lib/menuItemCapacity";
+import { getMenuItemUsageForToday, getSlotAvailabilityUsage, statusExcludeFilterForSlot } from "@/lib/menuItemCapacity";
 import { rollbackOrderWithRefund } from "@/lib/orderRaceRollback";
 import { insertNotification } from "@/lib/notify";
 
@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
   // Split: 60% for batched/prepared, 40% for made-to-order.
   // Enforce this split so concurrent orders can't exhaust one type.
   if (slotLabel) {
-    const slotUsage = await getSlotAvailabilityUsage(supabase, canteenId, String(slotLabel));
+    const slotUsage = await getSlotAvailabilityUsage(supabase, canteenId, String(slotLabel), slotMode);
     const thisMadeToOrder = cartLines.filter((l) => {
       const item = menuMap.get(l.itemId);
       return item && (item.availability_type ?? "slot_based") === "slot_based";
@@ -246,7 +246,9 @@ export async function POST(req: NextRequest) {
       .eq("canteen_id", canteenId)
       .eq("slot_label", String(slotLabel))
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled")');
+      // In batched_only mode bin rotation frees slot capacity, so collected/
+      // completed/late_pickup orders are excluded from the count.
+      .not("status", "in", statusExcludeFilterForSlot(slotMode));
     if ((slotCount ?? 0) >= maxOrdersPerSlot) {
       return Response.json(
         { error: "This time slot is full. Please select a different slot.", slot_full: true },
