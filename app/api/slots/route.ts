@@ -5,8 +5,9 @@ import { statusExcludeFilterForSlot } from "@/lib/menuItemCapacity";
 
 // Statuses that mean "no longer holding a bin" — used for batched_only
 // in-memory filtering after the orders query returns. Mirrors
-// statusExcludeFilterForSlot('batched_only').
-const BATCHED_ONLY_TERMINAL = new Set(["cancelled", "collected", "completed", "late_pickup"]);
+// statusExcludeFilterForSlot('batched_only'). "completed" intentionally
+// omitted — not safely in the order_status enum on older deployments.
+const BATCHED_ONLY_TERMINAL = new Set(["cancelled", "collected", "late_pickup"]);
 
 export const dynamic = "force-dynamic";
 

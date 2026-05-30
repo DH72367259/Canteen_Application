@@ -325,7 +325,7 @@ test.describe("Invoice API — bill printing", () => {
       canteen?: Record<string, unknown>;
       items?: unknown[];
       grand_total?: number;
-      gst_note?: string;
+      gst_note?: string | null;
     };
     expect(data.invoice_number).toBeDefined();
     expect(data.invoice_number).toMatch(/^NOQX-\d{8}-[A-Z0-9]+$/);
@@ -334,7 +334,9 @@ test.describe("Invoice API — bill printing", () => {
     expect(data.canteen).toBeDefined();
     expect(Array.isArray(data.items)).toBe(true);
     expect(typeof data.grand_total).toBe("number");
-    expect(data.gst_note).toContain("GST");
+    // gst_note is now conditional: string when GST is charged, null when
+    // DISABLE_GST=true on the server (no GSTIN yet on staging).
+    expect(data.gst_note === null || (typeof data.gst_note === "string" && data.gst_note.includes("GST"))).toBe(true);
 
     await db.from("orders").delete().eq("id", order.id);
   });

@@ -13,8 +13,14 @@ import { createAdminClient } from "@/lib/supabase-server";
  * Returns the PostgREST `.not("status", "in", ...)` argument string.
  */
 export function statusExcludeFilterForSlot(slotMode: "both" | "batched_only" = "both"): string {
+  // ⚠️ Only enum-valid values are allowed here. Same trap as the "refunded"
+  // bug — Postgres rejects the ENTIRE query with `invalid input value for
+  // enum order_status: "X"` if X isn't in the enum. Verified to be in the
+  // enum on staging: cancelled, collected, late_pickup. "completed" exists
+  // in the CHECK constraint code path but isn't actually written anywhere,
+  // so it may not be in the enum on older databases — kept OUT here.
   if (slotMode === "batched_only") {
-    return '("cancelled","collected","completed","late_pickup")';
+    return '("cancelled","collected","late_pickup")';
   }
   return '("cancelled")';
 }
