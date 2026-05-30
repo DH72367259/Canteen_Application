@@ -60,11 +60,26 @@ type ActiveOrder = {
 /**
  * Move every active order whose slot has ended to `late_pickup` immediately.
  * Frees the associated bin so it is available for the next slot right away.
+ *
+ * SKIPPED in batched_only mode: slots are bookkeeping only — the only valid
+ * late-pickup trigger there is the 10-min after-bin-placement sweep
+ * (releaseStalePlacedInBinOrders). Client report 2026-05-30: order placed
+ * 2 min before slot end was hitting late_pickup the second the slot expired.
  */
 export async function releaseExpiredSlotBins(
   supabase: SupabaseClient,
   canteenId: string,
 ): Promise<{ released: number }> {
+  // Read slot_mode; bail in batched_only.
+  const { data: control } = await supabase
+    .from("slot_control")
+    .select("slot_mode")
+    .eq("canteen_id", canteenId)
+    .maybeSingle();
+  if ((control as { slot_mode?: string } | null)?.slot_mode === "batched_only") {
+    return { released: 0 };
+  }
+
   const { data: activeOrders, error } = await supabase
     .from("orders")
     .select("id, status, slot_label, bin_id, user_id")

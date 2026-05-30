@@ -349,6 +349,100 @@ test.describe("10-min stale-bin sweep — placed_in_bin → late_pickup_pending"
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Suite 4.4: Slot-end sweep is a no-op in batched_only mode
+// ═════════════════════════════════════════════════════════════════════════════
+test.describe("releaseExpiredSlotBins — batched_only must NOT trigger on slot end", () => {
+  let canteenIdB44 = "";
+  let studentIdB44 = "";
+  let originalB44: "both" | "batched_only" = "both";
+
+  test.beforeAll(async () => {
+    canteenIdB44 = await getCanteen1Id();
+    studentIdB44 = await getStudent1Id();
+    originalB44 = await getOriginalSlotMode(canteenIdB44);
+  });
+  test.afterAll(async () => {
+    await setSlotMode(originalB44);
+  });
+
+  test("placed_in_bin order with already-ended slot stays untouched in batched_only", async () => {
+    // Client report 2026-05-30: order placed 2 min before slot end, the slot
+    // expired and the order immediately moved to late_pickup. In batched_only
+    // the slot is just bookkeeping — only the 10-min after-bin-placement
+    // timer should ever push to late_pickup.
+    await setSlotMode("batched_only");
+
+    const db = adminClient();
+    const recentBinPlacement = new Date(Date.now() - 60_000).toISOString();
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdB44,
+        user_id: studentIdB44,
+        status: "placed_in_bin",
+        total_amount: 50,
+        otp: "7001",
+        // Slot end (1:15 AM) is in the past today — would normally
+        // trigger releaseExpiredSlotBins. In batched_only it must NOT.
+        slot_label: "1:00 AM - 1:15 AM",
+        updated_at: recentBinPlacement,
+      })
+      .select("id")
+      .single();
+    if (error || !order) { test.skip(true, `Seed failed: ${error?.message}`); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+      const { data: after } = await db
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .maybeSingle();
+      const status = (after as { status?: string } | null)?.status;
+      expect(status).toBe("placed_in_bin");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("same expired-slot order DOES move to late_pickup in 'both' mode (sanity)", async () => {
+    await setSlotMode("both");
+
+    const db = adminClient();
+    const recentBinPlacement = new Date(Date.now() - 60_000).toISOString();
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdB44,
+        user_id: studentIdB44,
+        status: "placed_in_bin",
+        total_amount: 50,
+        otp: "7002",
+        slot_label: "1:00 AM - 1:15 AM",
+        updated_at: recentBinPlacement,
+      })
+      .select("id")
+      .single();
+    if (error || !order) { test.skip(); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+      const { data: after } = await db
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .maybeSingle();
+      const status = (after as { status?: string } | null)?.status;
+      expect(status).toBe("late_pickup");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Suite 4.5: 45-second self-cancel window survives auto-accept
 // ═════════════════════════════════════════════════════════════════════════════
 test.describe("autoAcceptPlacedOrders — 45-second self-cancel guard", () => {
