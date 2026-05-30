@@ -560,8 +560,10 @@ test.describe("TEST-5: Slot mode 'batched_only' blocks slot_based (made-to-order
     }
   });
 
-  test("batched_only blocks slot_based (made-to-order) orders (409)", async () => {
-    // Set batched_only
+  test("batched_only HIDES made-to-order meals from public menu (not rejects)", async () => {
+    // Policy change 2026-05-30: batched_only no longer rejects made-to-order
+    // orders — instead the items are filtered out of /api/canteens/[id]/menu
+    // so students never see them. Order placement is gated by inventory only.
     await apiFetch("/api/canteen/slot-control", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -569,43 +571,15 @@ test.describe("TEST-5: Slot mode 'batched_only' blocks slot_based (made-to-order
     }, ACCOUNTS.canteenAdmin);
 
     const canteenId = await getCanteen1Id();
-    const db = adminClient();
-
-    // Find a slot_based menu item (made-to-order)
-    const { data: slotItems } = await db
-      .from("menu_items")
-      .select("id")
-      .eq("canteen_id", canteenId)
-      .eq("is_available", true)
-      .eq("availability_type", "slot_based")
-      .limit(1);
-
-    if (!slotItems?.length) {
-      // No slot_based items — try placing any item and check if the slot mode cap
-      // is applied. Skip if not applicable.
-      test.skip();
-      return;
-    }
-
-    const itemId = (slotItems[0] as { id: string }).id;
-    // Try to place an order via the place API
-    const res = await apiFetch("/api/orders/place", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        canteenId,
-        cartItems: [{ id: itemId, qty: 1 }],
-        slotLabel: "1:00 PM - 1:15 PM", // a future-ish slot
-      }),
-    }, ACCOUNTS.student1);
-
-    // batched_only means madeToOrderCap=0, so slot_based item should be rejected
-    // with 409 (capacity full) OR 400 (slot closed) — both indicate the block worked.
-    // Also accept 402 (payment required in test env) as the item might require payment.
-    expect([409, 400, 402]).toContain(res.status);
-    if (res.status === 409) {
-      const data = await res.json() as { error?: string };
-      expect(data.error).toMatch(/made-to-order|capacity|slot.*full/i);
+    const res = await apiFetch(`/api/canteens/${canteenId}/menu`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as { items?: Array<{ availability_type?: string; is_meal?: boolean }> };
+    const items = data.items ?? [];
+    // Every item visible must be either batched OR a snack (is_meal=false)
+    for (const item of items) {
+      const isBatched = item.availability_type === "batched_prepared";
+      const isSnack = item.is_meal === false;
+      expect(isBatched || isSnack).toBe(true);
     }
   });
 
