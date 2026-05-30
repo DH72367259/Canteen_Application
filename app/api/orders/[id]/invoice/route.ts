@@ -26,12 +26,13 @@ export async function GET(
   if (order.user_id !== ctx.uid && ctx.role !== "super_admin" && ctx.role !== "canteen_admin")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
+  const gstDisabledFlag = process.env.DISABLE_GST === "true";
   const items = (order.order_items ?? []).map((i: Record<string, unknown>) => {
     const qty       = Number(i.quantity ?? 0);
     const unit      = Number(i.unit_price ?? 0);
     const taxable   = unit * qty;
-    const cgst      = Math.round(taxable * 0.025 * 100) / 100;
-    const sgst      = Math.round(taxable * 0.025 * 100) / 100;
+    const cgst      = gstDisabledFlag ? 0 : Math.round(taxable * 0.025 * 100) / 100;
+    const sgst      = gstDisabledFlag ? 0 : Math.round(taxable * 0.025 * 100) / 100;
     const total     = Math.round((taxable + cgst + sgst) * 100) / 100;
     return {
       name:      (i.menu_items as Record<string, unknown>)?.name ?? "Item",
@@ -61,8 +62,7 @@ export async function GET(
     grand_total = Math.round((subtotal + total_cgst + total_sgst) * 100) / 100;
   } else {
     grand_total = Number(order.total_amount ?? 0);
-    const gstDisabled = process.env.DISABLE_GST === "true";
-    if (gstDisabled) {
+    if (gstDisabledFlag) {
       subtotal   = grand_total;
       total_cgst = 0;
       total_sgst = 0;
@@ -91,12 +91,19 @@ export async function GET(
       city:    (order.canteens as Record<string, unknown>)?.city ?? "",
       college: (order.canteens as Record<string, unknown>)?.college ?? "",
     },
+    seller: {
+      name:  "NoQx Technologies",
+      address: "Bengaluru, Karnataka, India",
+      gstin: process.env.NOQX_GSTIN ?? null,
+    },
     items,
     subtotal:    Math.round(subtotal * 100) / 100,
     total_cgst:  Math.round(total_cgst * 100) / 100,
     total_sgst:  Math.round(total_sgst * 100) / 100,
     grand_total,
     payment_id:  order.payment_id ?? null,
-    gst_note:    "GST @ 5% (CGST 2.5% + SGST 2.5%) applicable on food items as per GST Act.",
+    gst_note:    gstDisabledFlag
+      ? null
+      : "GST @ 5% (CGST 2.5% + SGST 2.5%) applicable on food items as per GST Act.",
   });
 }

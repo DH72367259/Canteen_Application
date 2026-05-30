@@ -15,10 +15,11 @@ interface DbOrder {
 }
 interface GstInvoice {
   invoice_number: string; invoice_date: string; order_id: string; order_status: string;
+  seller: { name: string; address: string; gstin: string | null };
   customer: { name: string; email: string };
   canteen: { name: string; city: string; college: string };
   items: { name: string; quantity: number; unit_price: number; taxable_amount: number; cgst_2_5: number; sgst_2_5: number; total: number }[];
-  subtotal: number; total_cgst: number; total_sgst: number; grand_total: number; payment_id: string | null; gst_note: string;
+  subtotal: number; total_cgst: number; total_sgst: number; grand_total: number; payment_id: string | null; gst_note: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -237,10 +238,17 @@ export default function MyOrdersPage() {
                   <div style={{ fontSize: "0.72rem", color: "var(--ink-3)" }}>{new Date(invoice.invoice_date).toLocaleString("en-IN")}</div>
                 </div>
 
+                {/* Seller info */}
+                <div style={{ marginBottom: "0.75rem", fontSize: "0.74rem", color: "var(--ink-3)" }}>
+                  <span style={{ fontWeight: 700, color: "var(--ink)" }}>{invoice.seller.name}</span>
+                  {" · "}{invoice.seller.address}
+                  {invoice.seller.gstin && <span style={{ marginLeft: "0.5rem", background: "#f0fdf4", color: "#166534", borderRadius: 4, padding: "0.1rem 0.35rem", fontWeight: 700, fontSize: "0.7rem" }}>GSTIN: {invoice.seller.gstin}</span>}
+                </div>
+
                 {/* Canteen & customer */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem", fontSize: "0.76rem" }}>
                   <div>
-                    <div style={{ fontWeight: 600, color: "var(--ink-3)", fontSize: "0.66rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>Billed By</div>
+                    <div style={{ fontWeight: 600, color: "var(--ink-3)", fontSize: "0.66rem", textTransform: "uppercase", marginBottom: "0.2rem" }}>Canteen</div>
                     <div style={{ fontWeight: 700 }}>{invoice.canteen.name}</div>
                     {invoice.canteen.college && <div style={{ color: "var(--ink-3)" }}>{invoice.canteen.college}</div>}
                     {invoice.canteen.city && <div style={{ color: "var(--ink-3)" }}>{invoice.canteen.city}</div>}
@@ -269,16 +277,25 @@ export default function MyOrdersPage() {
 
                 {/* Tax summary */}
                 <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "0.5rem", fontSize: "0.76rem" }}>
-                  {[
-                    ["Subtotal (before tax)",  `₹${invoice.subtotal.toFixed(2)}`],
-                    ["CGST @ 2.5%",            `₹${invoice.total_cgst.toFixed(2)}`],
-                    ["SGST @ 2.5%",            `₹${invoice.total_sgst.toFixed(2)}`],
-                  ].map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
-                      <span style={{ color: "var(--ink-3)" }}>{k}</span>
-                      <span>{v}</span>
+                  {invoice.total_cgst > 0 ? (
+                    <>
+                      {[
+                        ["Subtotal (before tax)",  `₹${invoice.subtotal.toFixed(2)}`],
+                        ["CGST @ 2.5%",            `₹${invoice.total_cgst.toFixed(2)}`],
+                        ["SGST @ 2.5%",            `₹${invoice.total_sgst.toFixed(2)}`],
+                      ].map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                          <span style={{ color: "var(--ink-3)" }}>{k}</span>
+                          <span>{v}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                      <span style={{ color: "var(--ink-3)" }}>Subtotal</span>
+                      <span>₹{invoice.subtotal.toFixed(2)}</span>
                     </div>
-                  ))}
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "0.88rem", borderTop: "2px solid #e5e7eb", paddingTop: "0.4rem", marginTop: "0.2rem" }}>
                     <span>Grand Total</span>
                     <span style={{ color: "var(--orange)" }}>₹{invoice.grand_total.toFixed(2)}</span>
@@ -292,10 +309,12 @@ export default function MyOrdersPage() {
                   </div>
                 )}
 
-                {/* GST note */}
-                <div style={{ marginTop: "0.5rem", fontSize: "0.65rem", color: "var(--ink-3)", lineHeight: 1.5, paddingTop: "0.5rem", borderTop: "1px dashed #e5e7eb" }}>
-                  {invoice.gst_note}
-                </div>
+                {/* GST note — only shown when GST was actually charged */}
+                {invoice.gst_note && (
+                  <div style={{ marginTop: "0.5rem", fontSize: "0.65rem", color: "var(--ink-3)", lineHeight: 1.5, paddingTop: "0.5rem", borderTop: "1px dashed #e5e7eb" }}>
+                    {invoice.gst_note}
+                  </div>
+                )}
 
                 <button onClick={() => { setInvoiceOrder(null); setInvoice(null); }}
                   style={{ width: "100%", marginTop: "1rem", background: "#f3f4f6", border: "none", borderRadius: 12, padding: "0.7rem", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}>

@@ -237,8 +237,9 @@ function CartContent() {
   const proAddon   = proSelectedNow ? 69 : 0;
   const subtotal   = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const extraBinFee = cartCheck ? Math.round(cartCheck.extra_fee_paise / 100) : 0;
-  const cgst       = Math.round(subtotal * 0.025 * 100) / 100;
-  const sgst       = Math.round(subtotal * 0.025 * 100) / 100;
+  const gstEnabled  = process.env.NEXT_PUBLIC_DISABLE_GST !== "true";
+  const cgst       = gstEnabled ? Math.round(subtotal * 0.025 * 100) / 100 : 0;
+  const sgst       = gstEnabled ? Math.round(subtotal * 0.025 * 100) / 100 : 0;
   const gstTotal   = cgst + sgst;
   const payable    = Math.max(0, subtotal + gstTotal + convFee + extraBinFee + proAddon);
 
@@ -769,12 +770,16 @@ function CartContent() {
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem" }}>
             <span>Subtotal</span><span>₹{subtotal}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.2rem", color: "#64748b" }}>
-            <span>CGST @ 2.5%</span><span>₹{cgst.toFixed(2)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#64748b" }}>
-            <span>SGST @ 2.5%</span><span>₹{sgst.toFixed(2)}</span>
-          </div>
+          {gstEnabled && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.2rem", color: "#64748b" }}>
+                <span>CGST @ 2.5%</span><span>₹{cgst.toFixed(2)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#64748b" }}>
+                <span>SGST @ 2.5%</span><span>₹{sgst.toFixed(2)}</span>
+              </div>
+            </>
+          )}
           {extraBinFee > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", marginBottom: "0.4rem", color: "#9a3412" }}>
               <span>Extra-bin fee</span><span>+₹{extraBinFee}</span>
