@@ -207,7 +207,11 @@ export async function POST(req: NextRequest) {
   // ── MADE-TO-ORDER vs BATCHED-PREPARED SPLIT (enforce slot-level caps) ────
   // Split: 60% for batched/prepared, 40% for made-to-order.
   // Enforce this split so concurrent orders can't exhaust one type.
-  if (slotLabel) {
+  //
+  // SKIPPED in batched_only mode: the canteen accepts orders continuously
+  // and bins are assigned FIFO via assignDeferredBins. Inventory
+  // (menu_items.total_per_day) is the only hard gate.
+  if (slotLabel && slotMode !== "batched_only") {
     const slotUsage = await getSlotAvailabilityUsage(supabase, canteenId, String(slotLabel), slotMode);
     const thisMadeToOrder = cartLines.filter((l) => {
       const item = menuMap.get(l.itemId);
@@ -239,15 +243,15 @@ export async function POST(req: NextRequest) {
   // server-side so concurrent requests can't race past the UI. Without it,
   // two requests that both read "slot available" can both succeed and drive
   // the slot past 75% capacity, exhausting the shared physical bin pool.
-  if (slotLabel) {
+  // SKIPPED in batched_only mode — orders queue beyond the bin pool and
+  // assignDeferredBins assigns bins FIFO as collections free them.
+  if (slotLabel && slotMode !== "batched_only") {
     const { count: slotCount } = await supabase
       .from("orders")
       .select("*", { count: "exact", head: true })
       .eq("canteen_id", canteenId)
       .eq("slot_label", String(slotLabel))
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      // In batched_only mode bin rotation frees slot capacity, so collected/
-      // completed/late_pickup orders are excluded from the count.
       .not("status", "in", statusExcludeFilterForSlot(slotMode));
     if ((slotCount ?? 0) >= maxOrdersPerSlot) {
       return Response.json(
@@ -338,14 +342,15 @@ export async function POST(req: NextRequest) {
   }
 
   // ── POST-CREATION CAPACITY CHECK (atomic race condition guard) ──────────────
-  if (slotLabel) {
+  // Skipped entirely in batched_only mode — orders queue beyond the bin pool.
+  if (slotLabel && slotMode !== "batched_only") {
     const { count: slotCountAfter } = await supabase
       .from("orders")
       .select("*", { count: "exact", head: true })
       .eq("canteen_id", canteenId)
       .eq("slot_label", String(slotLabel))
       .gte("created_at", `${todayIST}T00:00:00+05:30`)
-      .not("status", "in", '("cancelled")');
+      .not("status", "in", statusExcludeFilterForSlot(slotMode));
 
     if ((slotCountAfter ?? 0) > maxOrdersPerSlot) {
       // Race-loss: another concurrent order filled the slot between our

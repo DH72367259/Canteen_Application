@@ -579,16 +579,18 @@ function CartContent() {
               a single status card instead of a multi-button picker — slot
               auto-selects via the useEffect above. */}
           {slotMode === "batched_only" && !slotsLoading && slots.length > 0 ? (() => {
+            // In batched_only mode the canteen never says "full" — orders
+            // queue and FIFO bin assignment hands them out as collections
+            // free bins. The student only ever sees a realistic time
+            // estimate based on system-wide queue depth.
             const s = slots[0];
-            const isFull = !!s.is_full || !s.available;
-            const used = s.bins_used ?? 0;
-            const total = s.bins_total ?? 0;
+            const readyMin = s.ready_in_min ?? 2;
             return (
               <div style={{
                 padding: "0.9rem 1rem",
                 borderRadius: 12,
-                border: `1.5px solid ${isFull ? "#dc2626" : "var(--orange)"}`,
-                background: isFull ? "#fef2f2" : "#fff7ed",
+                border: "1.5px solid var(--orange)",
+                background: "#fff7ed",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -596,23 +598,18 @@ function CartContent() {
               }}>
                 <div>
                   <div style={{ fontSize: "0.78rem", color: "var(--ink-3)", fontWeight: 600, marginBottom: "0.2rem" }}>
-                    {isFull ? "🛑 All bins occupied" : "✨ Pre-packed & ready"}
+                    ✨ Pre-packed & ready
                   </div>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: isFull ? "#991b1b" : "#9a3412" }}>
-                    {isFull
-                      ? "Try again in a few minutes"
-                      : `Ready in ${s.ready_in_min ?? 2} min`}
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#9a3412" }}>
+                    Ready to pick up in ~{readyMin} min
                   </div>
-                  {!isFull && total > 0 && (
-                    <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>
-                      {total - used} of {total} bins free right now
-                    </div>
-                  )}
+                  <div style={{ fontSize: "0.72rem", color: "var(--ink-3)", marginTop: "0.15rem" }}>
+                    {readyMin <= 3
+                      ? "No queue — your order is next"
+                      : `Estimate based on the current queue. You'll be notified the moment it's ready.`}
+                  </div>
                 </div>
-                <div style={{
-                  fontSize: "2rem",
-                  opacity: 0.8,
-                }}>{isFull ? "⏳" : "🍱"}</div>
+                <div style={{ fontSize: "2rem", opacity: 0.8 }}>🍱</div>
               </div>
             );
           })() : (

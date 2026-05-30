@@ -94,7 +94,14 @@ export async function GET(request: Request) {
     // `duration` here means a 15-min slot (1:00–1:15) is removed at 12:45 —
     // exactly when the canteen begins preparing it. This also matches the
     // "order before 12:45 for 1:00 slot" rule on the Vendor flow doc.
-    const cutoff = nowMin + duration;
+    //
+    // In batched_only, items are pre-packed — no prep time. The slot the
+    // student gets should be the CURRENT in-progress one so
+    // assignDeferredBins fires immediately on the next poll. Allow slots
+    // whose start is up to `duration` minutes in the past.
+    const cutoff = slotMode === "batched_only"
+      ? Math.max(0, nowMin - duration)
+      : nowMin + duration;
     // Visibility window: how far ahead students can see slots in the picker.
     // Per-canteen setting slot_visibility_window_mins on slot_control:
     //   60  → Min (1 hour) — default
@@ -243,6 +250,10 @@ export async function GET(request: Request) {
     // ensureSlotControl above guarantees never happens — defensive only.
     const maxBins = Number(control.max_bins) || 60;
 
+    // System-wide active order count across all slots — used in batched_only
+    // mode for the queue-based ready_in_min estimate (one canteen, one queue).
+    const systemActiveCount = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+
     for (const [winStart, winEnd] of windows) {
       if (!winStart || !winEnd) continue;
       const pieces = generateTimeSlots(winStart, winEnd, duration);
@@ -250,6 +261,10 @@ export async function GET(request: Request) {
         const startMin = hhmmToMinutes(p.start);
         if (startMin < cutoff) continue;
         if (startMin > windowEndMin) continue;
+        // In batched_only the cutoff allows past slots so the CURRENT
+        // in-progress one can be picked — but skip ones that have already
+        // ended (end time in the past).
+        if (slotMode === "batched_only" && hhmmToMinutes(p.end) <= nowMin) continue;
         const label = rangeLabel(p.start, p.end);
         const id = `${winStart}-${p.start}`;
         const orderCount = counts.get(label) || 0;
@@ -257,15 +272,23 @@ export async function GET(request: Request) {
         // A slot is full when EITHER the bin pool is exhausted (e.g. 60/60)
         // OR the order-cap is hit (whichever happens first). This is the
         // 60-bin hard stop the workflow requires.
-        const isFull = binsUsed >= maxBins || orderCount >= cap;
+        // In batched_only, the slot is NEVER marked full — the client's
+        // explicit ask: "keep taking orders until inventory has quantity".
+        // When all bins are physically occupied, new orders queue up and
+        // assignDeferredBins (FIFO by created_at) hands them bins as
+        // collections free them up.
+        const isFull = slotMode === "batched_only"
+          ? false
+          : binsUsed >= maxBins || orderCount >= cap;
         // ready_in_min calculation differs by mode:
         //   - both: minutes until slot END (clock-time semantics)
-        //   - batched_only: items are pre-packed, worker just places in bin
-        //     (~2 min). Queue depth adds 1 min per 5 active orders in this
-        //     slot, capped at 12. Client-supplied model (Father's feedback).
+        //   - batched_only: items are pre-packed (~2 min to place in bin),
+        //     plus queue offset for students ahead. Uses system-wide active
+        //     order count so the estimate reflects total canteen load, not
+        //     just one slot window. Capped at 15 min.
         const endMin = hhmmToMinutes(p.end);
         const readyInMin = slotMode === "batched_only"
-          ? Math.min(12, 2 + Math.floor(orderCount / 5))
+          ? Math.min(15, 2 + Math.floor(systemActiveCount / 5))
           : Math.max(0, endMin - nowMin);
         result.push({
           id,

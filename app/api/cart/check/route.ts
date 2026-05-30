@@ -266,12 +266,17 @@ export async function POST(request: Request) {
 
   const binsNeeded = binPlan.bins.length;
   const totalBinsAfterOrder = existingBinsUsed + binsNeeded;
-  const slotFull = totalBinsAfterOrder > capacity.maxBins;
+  // In batched_only mode, the canteen accepts orders even when all bins are
+  // physically occupied — orders queue and get bins FIFO via
+  // assignDeferredBins as collections free them. Inventory (menu_items.
+  // total_per_day) is the only hard gate. Client decision 2026-05-30.
+  const slotFull = slotMode === "batched_only" ? false : totalBinsAfterOrder > capacity.maxBins;
 
-  // Check made-to-order vs batched-prepared split
+  // Check made-to-order vs batched-prepared split (skipped in batched_only —
+  // all bins are batched and the slot is no longer the unit of capacity).
   let slotFullByType = false;
   let availabilityMessage = "";
-  if (!slotFull && slot) {
+  if (!slotFull && slot && slotMode !== "batched_only") {
     const slotUsage = await getSlotAvailabilityUsage(supabase, canteen_id, slot, slotMode);
     const thisMadeToOrder = cartLines
       .filter((l) => menuById.get(l.itemId)?.availability_type !== "batched_prepared")
