@@ -147,19 +147,23 @@ test.describe("API: public menu — slot_mode-aware filtering", () => {
     await setSlotMode(original);
   });
 
+  // Cache-bust helper: the menu API has Cache-Control with s-maxage=2 +
+  // stale-while-revalidate=30, so back-to-back mode-switch fetches can
+  // get the previous mode's cached body. A unique query string per call
+  // sidesteps both edge + Next.js fetch caches.
+  function menuUrl() {
+    return `/api/canteens/${canteenId}/menu?t=${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
+
   test("'both' mode: all items visible (including made-to-order meals)", async () => {
     await setSlotMode("both");
-    // 2s response cache; wait briefly for staleness.
-    await new Promise((r) => setTimeout(r, 2500));
-    const res = await apiFetch(`/api/canteens/${canteenId}/menu`);
+    const res = await apiFetch(menuUrl());
     expect(res.status).toBe(200);
     const j = await res.json() as {
       items?: Array<{ availability_type?: string; is_meal?: boolean }>;
     };
     const items = j.items ?? [];
     expect(items.length).toBeGreaterThan(0);
-    // No filter is enforced — both batched + slot_based should be present
-    // when the seed contains both. We at least confirm the response shape.
     for (const item of items) {
       expect(item).toHaveProperty("availability_type");
       expect(item).toHaveProperty("is_meal");
@@ -168,8 +172,7 @@ test.describe("API: public menu — slot_mode-aware filtering", () => {
 
   test("'batched_only' mode: every visible item is batched OR a snack", async () => {
     await setSlotMode("batched_only");
-    await new Promise((r) => setTimeout(r, 2500));
-    const res = await apiFetch(`/api/canteens/${canteenId}/menu`);
+    const res = await apiFetch(menuUrl());
     const j = await res.json() as {
       items?: Array<{ availability_type?: string; is_meal?: boolean; name?: string }>;
     };
@@ -186,17 +189,13 @@ test.describe("API: public menu — slot_mode-aware filtering", () => {
   });
 
   test("flipping back to 'both' re-exposes made-to-order items", async () => {
-    // batched_only first
     await setSlotMode("batched_only");
-    await new Promise((r) => setTimeout(r, 2500));
-    const before = await apiFetch(`/api/canteens/${canteenId}/menu`);
+    const before = await apiFetch(menuUrl());
     const beforeJ = await before.json() as { items?: Array<{ availability_type?: string; is_meal?: boolean }> };
     const batchedCount = (beforeJ.items ?? []).length;
 
-    // back to both
     await setSlotMode("both");
-    await new Promise((r) => setTimeout(r, 2500));
-    const after = await apiFetch(`/api/canteens/${canteenId}/menu`);
+    const after = await apiFetch(menuUrl());
     const afterJ = await after.json() as { items?: Array<{ availability_type?: string; is_meal?: boolean }> };
     const bothCount = (afterJ.items ?? []).length;
 
