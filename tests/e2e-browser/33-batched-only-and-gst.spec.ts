@@ -312,9 +312,12 @@ test.describe("10-min stale-bin sweep — placed_in_bin → late_pickup_pending"
     }
   });
 
-  test("sweep does NOT touch recent placed_in_bin orders (< 10 min)", async () => {
+  test("sweep does NOT touch fresh placed_in_bin orders (under the cutoff)", async () => {
+    // Cutoff is canteen-mode dependent: 5 min in batched_only, 10 min in both.
+    // Use a clearly-under-both-cutoffs timestamp so this test is deterministic
+    // regardless of what mode the canteen happens to be in.
     const db = adminClient();
-    const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+    const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
 
     const { data: order, error } = await db
       .from("orders")
@@ -325,7 +328,7 @@ test.describe("10-min stale-bin sweep — placed_in_bin → late_pickup_pending"
         total_amount: 100,
         otp: "5678",
         slot_label: "12:00 AM - 11:59 PM",
-        updated_at: fiveMinAgo,
+        updated_at: oneMinAgo,
       })
       .select("id")
       .single();
@@ -340,10 +343,58 @@ test.describe("10-min stale-bin sweep — placed_in_bin → late_pickup_pending"
         .eq("id", orderId)
         .maybeSingle();
       const status = (after as { status?: string } | null)?.status;
-      // Recent order: should STILL be placed_in_bin (sweep skipped it)
+      // 1 min old: well under both 5-min and 10-min cutoffs → must stay placed_in_bin.
       expect(status).toBe("placed_in_bin");
     } finally {
       await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("batched_only cutoff is 5 min (not 10) — 6-min-old order moves to late_pickup_pending", async () => {
+    // Client decision 2026-06-01: batched_only tightens the stale-bin window
+    // to 5 min so bins rotate fast. In 'both' mode the same 6-min-old order
+    // would still be placed_in_bin (under the 10-min cutoff).
+    const db = adminClient();
+    // Switch canteen to batched_only just for this test
+    await apiFetch("/api/canteen/slot-control", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot_mode: "batched_only" }),
+    }, ACCOUNTS.canteenAdmin);
+
+    const sixMinAgo = new Date(Date.now() - 6 * 60_000).toISOString();
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenId,
+        user_id: studentId,
+        status: "placed_in_bin",
+        total_amount: 100,
+        otp: "5679",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: sixMinAgo,
+      })
+      .select("id")
+      .single();
+    if (error || !order) {
+      await apiFetch("/api/canteen/slot-control", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slot_mode: "both" }) }, ACCOUNTS.canteenAdmin);
+      test.skip(); return;
+    }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+      const { data: after } = await db
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .maybeSingle();
+      const status = (after as { status?: string } | null)?.status;
+      expect(status).toBe("late_pickup_pending");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+      // Restore to 'both' so the next suite starts clean.
+      await apiFetch("/api/canteen/slot-control", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slot_mode: "both" }) }, ACCOUNTS.canteenAdmin);
     }
   });
 });
