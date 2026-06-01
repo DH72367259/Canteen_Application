@@ -107,7 +107,24 @@ export async function GET(request: Request) {
       orders = await listOrdersForUser(context.uid);
     }
 
-    return NextResponse.json({ orders, role: context.role });
+    // Surface slot_mode so client UIs (worker / vendor / student) can decide
+    // whether the client-side "slot ended → LATE" badge should fire. In
+    // batched_only the slot is just bookkeeping — only the 5-min after-bin
+    // timer marks an order late.
+    let slot_mode: "both" | "batched_only" = "both";
+    if (context.canteenId) {
+      const adminSupa = createAdminClient();
+      const { data: control } = await adminSupa
+        .from("slot_control")
+        .select("slot_mode")
+        .eq("canteen_id", context.canteenId)
+        .maybeSingle();
+      if ((control as { slot_mode?: string } | null)?.slot_mode === "batched_only") {
+        slot_mode = "batched_only";
+      }
+    }
+
+    return NextResponse.json({ orders, role: context.role, slot_mode });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load orders.";
     return NextResponse.json({ error: msg, orders: [] }, { status: 500 });

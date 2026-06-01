@@ -26,6 +26,7 @@ interface Order {
   binAssignments?: BinAssignment[];
   canteenName?: string;
   createdAt?: string;
+  updatedAt?: string;
   total?: number;
   binCount?: number;
   extraBinFeePaise?: number;
@@ -90,6 +91,9 @@ function OrderStatusContent() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
+  // Slot mode + 5-min pickup countdown (batched_only only)
+  const [slotMode, setSlotMode] = useState<"both" | "batched_only">("both");
+  const [pickupSecondsLeft, setPickupSecondsLeft] = useState<number>(0);
 
   const fetchOrder = async (token: string, id: string) => {
     try {
@@ -98,7 +102,10 @@ function OrderStatusContent() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { setError("Could not load order."); return; }
-      const data = await res.json() as { orders?: Order[] };
+      const data = await res.json() as { orders?: Order[]; slot_mode?: string };
+      if (data.slot_mode === "batched_only" || data.slot_mode === "both") {
+        setSlotMode(data.slot_mode);
+      }
       const found = (data.orders ?? []).find((o) => o.id === id);
       if (found) {
         setOrder(found);
@@ -150,6 +157,25 @@ function OrderStatusContent() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [order?.createdAt, currentStatus]);
+
+  // 5-min pickup countdown (batched_only only) — anchored at the moment
+  // status flipped to placed_in_bin, which is what order.updatedAt
+  // reflects at that point. After 5 min the server-side sweep flips
+  // status to late_pickup_pending and this effect bails (status is
+  // no longer placed_in_bin so the timer disappears).
+  useEffect(() => {
+    if (slotMode !== "batched_only") { setPickupSecondsLeft(0); return; }
+    if (currentStatus !== "placed_in_bin") { setPickupSecondsLeft(0); return; }
+    const anchor = order?.updatedAt ?? order?.createdAt;
+    if (!anchor) { setPickupSecondsLeft(0); return; }
+    const tick = () => {
+      const ageMs = Date.now() - new Date(anchor).getTime();
+      setPickupSecondsLeft(Math.max(0, Math.ceil((5 * 60_000 - ageMs) / 1000)));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [order?.updatedAt, order?.createdAt, currentStatus, slotMode]);
 
   async function handleCancelOrder() {
     if (!session?.access_token || !orderId || cancelling) return;
@@ -405,6 +431,29 @@ function OrderStatusContent() {
 
             <div style={{ fontSize: "0.7rem", color: "var(--ink-3)", textAlign: "center", marginTop: "0.6rem" }}>
               QR refreshes automatically every 30 seconds
+            </div>
+          </div>
+        )}
+
+        {/* ── 5-min pickup countdown (batched_only mode, once in bin) ── */}
+        {slotMode === "batched_only" && currentStatus === "placed_in_bin" && pickupSecondsLeft > 0 && (
+          <div style={{
+            background: "#fff7ed",
+            border: "1.5px solid #fed7aa",
+            borderRadius: 14,
+            padding: "0.9rem 1rem",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#9a3412", marginBottom: "0.2rem" }}>
+                  ⏰ Collect within {Math.floor(pickupSecondsLeft / 60)}:{String(pickupSecondsLeft % 60).padStart(2, "0")}
+                </div>
+                <div style={{ fontSize: "0.78rem", color: "#7c2d12", lineHeight: 1.4 }}>
+                  Please collect your order within 5 minutes. After that, the order will be shifted to the Late Pickup Counter.
+                </div>
+              </div>
+              <div style={{ fontSize: "2rem", opacity: 0.85 }}>🛎️</div>
             </div>
           </div>
         )}

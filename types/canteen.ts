@@ -33,6 +33,7 @@ export type CanteenOrder = {
   total: number;
   status: OrderStatus;
   createdAt: string;
+  updatedAt?: string; // last DB update timestamp — used by student UI to compute the 5-min pickup countdown in batched_only
   // Extended fields (populated where available)
   canteenId?: string;
   canteenName?: string;

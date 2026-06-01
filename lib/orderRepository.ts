@@ -40,6 +40,7 @@ function toCanteenOrder(row: Record<string, unknown>): CanteenOrder {
     refund_status:       row.refund_status ? String(row.refund_status) : null,
     refund_id:           row.refund_id ? String(row.refund_id) : null,
     createdAt:    String(row.created_at ?? new Date().toISOString()),
+    updatedAt:    row.updated_at ? String(row.updated_at) : undefined,
     canteenId:    row.canteen_id ? String(row.canteen_id) : undefined,
     canteenName:  (row.canteens as Record<string, unknown> | null)?.name
                     ? String((row.canteens as Record<string, unknown>).name) : undefined,

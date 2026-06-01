@@ -171,9 +171,22 @@ export async function releaseExpiredSlotBins(
 export async function releaseStalePlacedInBinOrders(
   supabase: SupabaseClient,
   canteenId: string,
-  staleMinutes: number = 10,
+  staleMinutes?: number,
 ): Promise<{ moved: number }> {
-  const cutoffIso = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
+  // batched_only canteens use a 5-min window per client decision 2026-06-01
+  // (pre-packed flow, bins must rotate fast). `both` keeps the 10-min window.
+  let effectiveMinutes = staleMinutes ?? 10;
+  if (staleMinutes === undefined) {
+    const { data: control } = await supabase
+      .from("slot_control")
+      .select("slot_mode")
+      .eq("canteen_id", canteenId)
+      .maybeSingle();
+    if ((control as { slot_mode?: string } | null)?.slot_mode === "batched_only") {
+      effectiveMinutes = 5;
+    }
+  }
+  const cutoffIso = new Date(Date.now() - effectiveMinutes * 60 * 1000).toISOString();
   const nowIso = new Date().toISOString();
 
   const { data: stale, error } = await supabase
@@ -205,7 +218,7 @@ export async function releaseStalePlacedInBinOrders(
   if (userIds.length > 0) {
     const notifRows = userIds.map(uid => ({
       title: "⏰ Order not collected — held at late pickup counter",
-      body: `Your food has been sitting in the bin for ${staleMinutes} minutes. The worker is moving it to the late pickup counter — please collect it as soon as possible.`,
+      body: `Your food has been sitting in the bin for ${effectiveMinutes} minutes. The worker is moving it to the late pickup counter — please collect it as soon as possible.`,
       type: "late_pickup",
       recipient_type: "user",
       recipient_id: uid,

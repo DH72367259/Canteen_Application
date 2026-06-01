@@ -76,6 +76,7 @@ export default function CanteenMenuPage() {
   // ── Live menu items (server truth) ────────────────────────────────
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [slotMode, setSlotMode] = useState<"both" | "batched_only">("both");
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
@@ -92,10 +93,13 @@ export default function CanteenMenuPage() {
           const j = await r.json().catch(() => ({}));
           throw new Error(j?.error || `HTTP ${r.status}`);
         })
-        .then((j: { items: MenuItem[]; categories: string[] }) => {
+        .then((j: { items: MenuItem[]; categories: string[]; slot_mode?: string }) => {
           if (cancelled) return;
           setItems(j.items ?? []);
           setCategories(["All", ...(j.categories ?? [])]);
+          if (j.slot_mode === "batched_only" || j.slot_mode === "both") {
+            setSlotMode(j.slot_mode);
+          }
           setMenuError(null);
         })
         .catch((err: Error) => { if (!cancelled && showLoading) setMenuError(`Could not load menu items: ${err.message}`); })
@@ -285,6 +289,29 @@ export default function CanteenMenuPage() {
       {/* Active orders intentionally NOT shown here — the home page (floating
           carousel) and the Stats tab already surface this. Repeating it on
           every canteen menu page was noisy. */}
+
+      {/* Batched-mode advisory — pre-packed items, order from inside the
+          canteen for fastest pickup. Per client request 2026-06-01. */}
+      {slotMode === "batched_only" && (
+        <div style={{
+          margin: "0.75rem 1rem 0",
+          background: "#fff7ed",
+          border: "1.5px solid #fed7aa",
+          borderRadius: 12,
+          padding: "0.65rem 0.85rem",
+          fontSize: "0.8rem",
+          color: "#9a3412",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "0.55rem",
+        }}>
+          <span style={{ fontSize: "1.1rem", lineHeight: 1.1 }}>✨</span>
+          <span style={{ lineHeight: 1.35 }}>
+            <strong>Please place your order when you are near the canteen.</strong>{" "}
+            Your order will be prepared and provided within a few minutes.
+          </span>
+        </div>
+      )}
 
       {/* Category sub-tabs — only show tabs whose items are allowed at the
           current meal period. "All" always shown. */}

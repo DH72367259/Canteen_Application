@@ -175,7 +175,7 @@ export async function GET(
   // for the student menu as other students place orders. Cloudflare still
   // absorbs burst polling at the edge.
   return Response.json(
-    { items, categories, count: items.length },
+    { items, categories, count: items.length, slot_mode: slotMode },
     { headers: { "Cache-Control": "public, max-age=2, s-maxage=2, stale-while-revalidate=30" } },
   );
 }

@@ -77,7 +77,13 @@ function isOrderRelevant(slotLabel: string | null | undefined): boolean {
 }
 
 // Late Pickup tab: slot has ended but student hasn't collected yet.
-function isLatePickup(slotLabel: string | null | undefined): boolean {
+// In batched_only mode the slot is just internal bookkeeping — orders
+// are never "late" because the slot ended. Only the 5-min after-bin
+// timer (server-side releaseStalePlacedInBinOrders) marks them late
+// via DB status. The caller must pass slotMode so this client-side
+// override doesn't fire spuriously in batched_only.
+function isLatePickup(slotLabel: string | null | undefined, slotMode: "both" | "batched_only" = "both"): boolean {
+  if (slotMode === "batched_only") return false;
   if (!slotLabel) return false;
   const range = parseSlotRange(slotLabel);
   if (!range) return false;
@@ -235,6 +241,7 @@ export default function WorkerOrdersPage() {
   const router = useRouter();
   const { user, session, loading, logout } = useAuth();
   const [orders, setOrders]         = useState<WorkerOrder[]>([]);
+  const [slotMode, setSlotMode]     = useState<"both" | "batched_only">("both");
   const [fetching, setFetching]     = useState(true);
   const [updating, setUpdating]     = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<string>("__all__");
@@ -308,7 +315,7 @@ export default function WorkerOrdersPage() {
   useEffect(() => {
     const count = orders.filter(
       (o) => o.status === "late_pickup" ||
-             (isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
+             (isLatePickup(o.pickup_slot, slotMode) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
     ).length;
     const prev = prevLateCountRef.current;
     prevLateCountRef.current = count;
@@ -362,6 +369,9 @@ export default function WorkerOrdersPage() {
               bin_assignments: o.binAssignments,
             }));
           setOrders(mapped);
+          if (data.slot_mode === "batched_only" || data.slot_mode === "both") {
+            setSlotMode(data.slot_mode);
+          }
           setFetching(false);
         }
       } catch { if (!aborted) setFetching(false); }
@@ -470,7 +480,7 @@ export default function WorkerOrdersPage() {
   // (the second arm catches orders that are transitioning before the next auto-update runs)
   const lateOrders = orders.filter(
     (o) => o.status === "late_pickup" ||
-           (isLatePickup(o.pickup_slot) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
+           (isLatePickup(o.pickup_slot, slotMode) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
   );
 
   if (loading || fetching) return <div className="page-loading"><div className="spinner" /></div>;
