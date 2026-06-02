@@ -733,19 +733,43 @@ export default function WorkerOrdersPage() {
                   </div>
 
                   <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {(order.status === "confirmed" || order.status === "preparing" || order.status === "ready_for_placement") && (
-                      <button
-                        disabled={updating === order.id}
-                        onClick={() => {
-                          if (confirm(`Are you sure the order is placed in the correct bin?\n\nBin: ${order.bin_label || "Unknown"}`)) {
-                            updateStatus(order.id, "placed_in_bin");
-                          }
-                        }}
-                        style={{ background: "#eab308", color: "#000", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
-                      >
-                        {updating === order.id ? "..." : "🟡 Placed in Bin"}
-                      </button>
-                    )}
+                    {(order.status === "confirmed" || order.status === "preparing" || order.status === "ready_for_placement") && (() => {
+                      // A bin is "assigned" when the order has a bin_label OR
+                      // at least one bin_assignment row with a real label
+                      // (the fallback "⏳ Pending" placeholder doesn't count).
+                      const hasBin = Boolean(
+                        order.bin_label ||
+                        (order.bin_assignments?.some((a) => a.binLabel && a.binLabel !== "⏳ Pending")),
+                      );
+                      if (!hasBin) {
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                            <button
+                              disabled
+                              style={{ background: "#e5e7eb", color: "#6b7280", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "not-allowed" }}
+                            >
+                              ⏳ Waiting for bin…
+                            </button>
+                            <div style={{ fontSize: "0.7rem", color: "#92400e", background: "#fffbeb", border: "1px solid #fed7aa", borderRadius: 8, padding: "0.4rem 0.55rem", lineHeight: 1.35 }}>
+                              All bins are currently full — the next bin freed will be assigned automatically (FIFO).
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <button
+                          disabled={updating === order.id}
+                          onClick={() => {
+                            if (confirm(`Are you sure the order is placed in the correct bin?\n\nBin: ${order.bin_label}`)) {
+                              updateStatus(order.id, "placed_in_bin");
+                            }
+                          }}
+                          style={{ background: "#eab308", color: "#000", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                        >
+                          {updating === order.id ? "..." : "🟡 Placed in Bin"}
+                        </button>
+                      );
+                    })()}
                     {order.status === "placed_in_bin" && (
                       <button
                         onClick={() => { setOtpModal(order.id); setOtpInput(""); setModalMode("otp"); }}
