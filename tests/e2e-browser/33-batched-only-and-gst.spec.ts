@@ -1032,6 +1032,85 @@ test.describe("late_pickup_pending: worker + student both see it", () => {
     }
   });
 
+  test("rotating QR keeps serving while order sits in late_pickup_pending", async () => {
+    // Regression: /api/orders/[id]/qr-token gated on
+    // ["placed_in_bin","ready_for_pickup","late_pickup"] — the moment the
+    // 5-min sweep flipped status, QR rotation 400'd and the student's QR
+    // froze at the cached payload. Now late_pickup_pending is allowed too.
+    const db = adminClient();
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "late_pickup_pending",
+        total_amount: 100,
+        otp: "3344",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/qr-token`, {}, ACCOUNTS.student1);
+      expect(res.status).toBe(200);
+      const j = await res.json() as { payload?: string; expiresAt?: number };
+      expect(j.payload, "qr-token must still issue a rotating payload").toBeTruthy();
+      expect(typeof j.expiresAt).toBe("number");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("worker verify-qr completes a late_pickup_pending order (status → collected)", async () => {
+    const db = adminClient();
+    // Pick a bin so the order has a realistic shape
+    const { data: bin } = await db.from("bins").select("id").eq("canteen_id", canteenIdLP).limit(1).maybeSingle();
+    if (!bin) { test.skip(true, "no bin"); return; }
+    const binId = (bin as { id: string }).id;
+
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "late_pickup_pending",
+        total_amount: 100,
+        otp: "4455",
+        slot_label: "12:00 AM - 11:59 PM",
+        bin_id: binId,
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      // Generate a valid QR payload via the student token endpoint
+      const tokRes = await apiFetch(`/api/orders/${orderId}/qr-token`, {}, ACCOUNTS.student1);
+      const tok = await tokRes.json() as { payload?: string };
+      expect(tok.payload).toBeTruthy();
+
+      // Worker scans it — must succeed even though status is late_pickup_pending
+      const res = await apiFetch(`/api/orders/${orderId}/verify-qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qrPayload: tok.payload }),
+      }, ACCOUNTS.canteenAdmin);
+      expect(res.status).toBe(200);
+
+      const { data: after } = await db.from("orders").select("status").eq("id", orderId).maybeSingle();
+      expect((after as { status?: string } | null)?.status).toBe("collected");
+    } finally {
+      await db.from("bins").update({ is_occupied: false, order_id: null, status: "empty" }).eq("id", binId);
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
   test("clear-bin refuses to act on orders NOT in late_pickup_pending", async () => {
     const db = adminClient();
     const { data: order } = await db

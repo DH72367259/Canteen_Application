@@ -148,7 +148,7 @@ export async function autoAcceptPlacedOrders(
       .select("id, canteen_id, slot_label")
       .in("canteen_id", canteenIds)
       .gte("created_at", istDayStartIso())
-      .in("status", ["confirmed", "placed_in_bin", "ready_for_pickup", "late_pickup", "collected"]);
+      .in("status", ["confirmed", "placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup", "collected"]);
     const committedIds = (committedOrders ?? []).map((o) => String((o as { id: unknown }).id));
     if (committedIds.length) {
       const { data: committedItems } = await supabase

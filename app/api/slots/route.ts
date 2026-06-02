@@ -7,7 +7,9 @@ import { statusExcludeFilterForSlot } from "@/lib/menuItemCapacity";
 // in-memory filtering after the orders query returns. Mirrors
 // statusExcludeFilterForSlot('batched_only'). "completed" intentionally
 // omitted — not safely in the order_status enum on older deployments.
-const BATCHED_ONLY_TERMINAL = new Set(["cancelled", "collected", "late_pickup"]);
+// late_pickup_pending is included: the 5-min sweep has fired, the order
+// no longer competes for the live slot's capacity.
+const BATCHED_ONLY_TERMINAL = new Set(["cancelled", "collected", "late_pickup_pending", "late_pickup"]);
 
 export const dynamic = "force-dynamic";
 

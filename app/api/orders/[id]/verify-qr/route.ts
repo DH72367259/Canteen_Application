@@ -51,7 +51,10 @@ export async function POST(
   if (["collected", "cancelled"].includes(order.status)) {
     return NextResponse.json({ error: `Order already ${order.status}.` }, { status: 400 });
   }
-  if (!["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(order.status)) {
+  // late_pickup_pending = 5-min sweep moved the order; food may still be
+  // physically in the bin OR mid-shift to the counter. Worker scan must
+  // still complete the handoff (this transitions order to collected).
+  if (!["placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup"].includes(order.status)) {
     return NextResponse.json({ error: "Order is not ready for pickup yet." }, { status: 400 });
   }
 

@@ -41,7 +41,10 @@ export async function GET(
     return NextResponse.json({ error: "Access denied." }, { status: 403 });
   }
 
-  if (!["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(order.status)) {
+  // late_pickup_pending = 5-min after-bin timer expired, worker still
+  // physically shifting food. Student must keep showing the rotating QR
+  // through this state, otherwise the code freezes the moment status flips.
+  if (!["placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup"].includes(order.status)) {
     return NextResponse.json({ error: "QR not available yet." }, { status: 400 });
   }
 

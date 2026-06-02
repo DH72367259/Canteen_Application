@@ -149,12 +149,16 @@ export async function GET(request: Request) {
       const now = new Date();
       const ninetyMinsAgo = new Date(now.getTime() - 90 * 60_000).toISOString();
 
-      // Orders that are genuinely in-flight right now (placed within last 90 min)
+      // Orders that are genuinely in-flight right now (placed within last 90 min).
+      // late_pickup_pending is included here: the 5-min sweep has fired but the
+      // worker hasn't yet tapped "Mark Shifted" — food is still physically in
+      // the bin, so the bin must NOT be auto-released. /clear-bin is the only
+      // legitimate way to free a bin holding a late_pickup_pending order.
       const { data: recentActive } = await supabase
         .from("orders")
         .select("id")
         .eq("canteen_id", canteenId)
-        .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup"])
+        .in("status", ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup", "late_pickup_pending"])
         .gte("created_at", ninetyMinsAgo);
 
       const activeOrderIds = new Set((recentActive ?? []).map(o => o.id));

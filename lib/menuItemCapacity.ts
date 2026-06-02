@@ -16,11 +16,13 @@ export function statusExcludeFilterForSlot(slotMode: "both" | "batched_only" = "
   // ⚠️ Only enum-valid values are allowed here. Same trap as the "refunded"
   // bug — Postgres rejects the ENTIRE query with `invalid input value for
   // enum order_status: "X"` if X isn't in the enum. Verified to be in the
-  // enum on staging: cancelled, collected, late_pickup. "completed" exists
-  // in the CHECK constraint code path but isn't actually written anywhere,
-  // so it may not be in the enum on older databases — kept OUT here.
+  // enum on staging: cancelled, collected, late_pickup, late_pickup_pending.
+  // "completed" exists in the CHECK constraint code path but isn't actually
+  // written anywhere, so it may not be in the enum on older databases — kept
+  // OUT here. late_pickup_pending IS written (5-min sweep in slotExpiry.ts)
+  // so it's guaranteed to be in the enum.
   if (slotMode === "batched_only") {
-    return '("cancelled","collected","late_pickup")';
+    return '("cancelled","collected","late_pickup_pending","late_pickup")';
   }
   return '("cancelled")';
 }
