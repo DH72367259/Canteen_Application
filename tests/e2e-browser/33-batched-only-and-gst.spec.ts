@@ -837,3 +837,174 @@ test.describe("Browser: student cart UI in batched_only mode", () => {
     expect(bodyText).not.toContain("Checking slot availability");
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 9: late_pickup_pending visibility for worker + student
+//
+// Client report 2026-06-02: after the 5-min sweep flipped a placed_in_bin order
+// to late_pickup_pending, the worker's Late Pickup tab showed "No late pickups
+// right now" and the student's tracking page collapsed back to "Order Placed".
+//
+// Root causes:
+//   • worker/orders/page.tsx filtered fetched orders by ACTIVE_STATUSES which
+//     did NOT include late_pickup_pending — orders were dropped before reaching
+//     the Late Pickup tab filter.
+//   • dashboard/order-status/page.tsx STATUS_ORDER did NOT include
+//     late_pickup_pending so statusRank fell back to 0 (= "placed"), hiding
+//     the QR/OTP/bin and the late-pickup banner.
+// ═════════════════════════════════════════════════════════════════════════════
+test.describe("late_pickup_pending: worker + student both see it", () => {
+  let canteenIdLP = "";
+  let studentIdLP = "";
+
+  test.beforeAll(async () => {
+    canteenIdLP = await getCanteen1Id();
+    studentIdLP = await getStudent1Id();
+  });
+
+  test("GET /api/orders (worker) returns late_pickup_pending orders (NOT filtered out)", async () => {
+    const db = adminClient();
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "late_pickup_pending",
+        total_amount: 100,
+        otp: "9911",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      const res = await apiFetch("/api/orders", {}, ACCOUNTS.canteenAdmin);
+      const j = await res.json() as { orders?: Array<{ id: string; rawStatus?: string; status?: string }> };
+      const found = (j.orders ?? []).find((o) => o.id === orderId);
+      expect(found, "late_pickup_pending order must be returned by /api/orders").toBeTruthy();
+      // rawStatus must surface the real DB status (worker UI filters on this)
+      expect(found?.rawStatus).toBe("late_pickup_pending");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("GET /api/orders (student) returns late_pickup_pending orders with otp surfaced", async () => {
+    const db = adminClient();
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "late_pickup_pending",
+        total_amount: 100,
+        otp: "1122",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      const res = await apiFetch("/api/orders", {}, ACCOUNTS.student1);
+      const j = await res.json() as { orders?: Array<{ id: string; rawStatus?: string; otp?: string }> };
+      const found = (j.orders ?? []).find((o) => o.id === orderId);
+      expect(found, "student must still see their late_pickup_pending order").toBeTruthy();
+      expect(found?.rawStatus).toBe("late_pickup_pending");
+      // OTP must still be returned so the student app can render the QR fallback
+      expect(found?.otp).toBe("1122");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("/api/orders/[id]/clear-bin flips late_pickup_pending → late_pickup and frees the bin", async () => {
+    const db = adminClient();
+
+    // Pick any existing bin for this canteen
+    const { data: bin } = await db
+      .from("bins")
+      .select("id")
+      .eq("canteen_id", canteenIdLP)
+      .limit(1)
+      .maybeSingle();
+    if (!bin) { test.skip(true, "no bin available"); return; }
+    const binId = (bin as { id: string }).id;
+
+    // Mark bin occupied + tied to a new late_pickup_pending order
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "late_pickup_pending",
+        total_amount: 100,
+        otp: "7777",
+        slot_label: "12:00 AM - 11:59 PM",
+        bin_id: binId,
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+    await db.from("bins").update({ is_occupied: true, order_id: orderId, status: "occupied" }).eq("id", binId);
+
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/clear-bin`, { method: "POST" }, ACCOUNTS.canteenAdmin);
+      expect(res.status).toBe(200);
+
+      const { data: afterOrder } = await db
+        .from("orders")
+        .select("status, bin_id")
+        .eq("id", orderId)
+        .maybeSingle();
+      const { data: afterBin } = await db
+        .from("bins")
+        .select("is_occupied, order_id, status")
+        .eq("id", binId)
+        .maybeSingle();
+
+      expect((afterOrder as { status?: string } | null)?.status).toBe("late_pickup");
+      expect((afterOrder as { bin_id?: string | null } | null)?.bin_id).toBeNull();
+      expect((afterBin as { is_occupied?: boolean } | null)?.is_occupied).toBe(false);
+      expect((afterBin as { order_id?: string | null } | null)?.order_id).toBeNull();
+    } finally {
+      await db.from("bins").update({ is_occupied: false, order_id: null, status: "empty" }).eq("id", binId);
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+
+  test("clear-bin refuses to act on orders NOT in late_pickup_pending", async () => {
+    const db = adminClient();
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "placed_in_bin",
+        total_amount: 100,
+        otp: "8888",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!order) { test.skip(true, "Order seed failed"); return; }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/clear-bin`, { method: "POST" }, ACCOUNTS.canteenAdmin);
+      expect(res.status).toBe(400);
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+    }
+  });
+});

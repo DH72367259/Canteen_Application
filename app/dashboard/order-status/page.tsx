@@ -41,6 +41,7 @@ const STATUS_ORDER = [
   "ready_for_placement",
   "placed_in_bin",
   "ready_for_pickup",
+  "late_pickup_pending",
   "late_pickup",
   "collected",
 ] as const;
@@ -49,7 +50,7 @@ const STEP_DEFS = [
   { label: "Order Placed",       icon: "✅", statuses: ["placed"] as string[] },
   { label: "Confirmed by Canteen", icon: "👨‍🍳", statuses: ["confirmed"] as string[] },
   { label: "Being Prepared",     icon: "🍳", statuses: ["preparing", "ready_for_placement"] as string[] },
-  { label: "Placed in Your Bin", icon: "📦", statuses: ["placed_in_bin", "ready_for_pickup", "late_pickup"] as string[] },
+  { label: "Placed in Your Bin", icon: "📦", statuses: ["placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup"] as string[] },
   { label: "Collected",          icon: "🎉", statuses: ["collected"] as string[] },
 ];
 
@@ -217,8 +218,11 @@ function OrderStatusContent() {
   }
 
   const rank = statusRank(currentStatus);
-  const isLatePickup = currentStatus === "late_pickup";
-  const showOtp   = ["placed_in_bin", "ready_for_pickup", "late_pickup"].includes(currentStatus);
+  // late_pickup_pending = 5-min after-bin timer expired; worker is moving food
+  // to the late pickup counter. From the student's POV this is the same banner
+  // as late_pickup — collect it at the counter using the QR/OTP below.
+  const isLatePickup = currentStatus === "late_pickup" || currentStatus === "late_pickup_pending";
+  const showOtp   = ["placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup"].includes(currentStatus);
   const showBin   = rank >= statusRank("placed_in_bin");
   const isCollected = currentStatus === "collected";
 
@@ -388,9 +392,15 @@ function OrderStatusContent() {
           <div style={{ background: "#fffbeb", border: "1.5px solid #f59e0b", borderRadius: 14, padding: "0.85rem 1rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
             <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>⚠️</span>
             <div>
-              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400e" }}>Your slot ended — but your food is still here!</div>
+              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400e" }}>
+                {slotMode === "batched_only"
+                  ? "Pickup window ended — food moved to late pickup counter"
+                  : "Your slot ended — but your food is still here!"}
+              </div>
               <div style={{ fontSize: "0.78rem", color: "#78350f", marginTop: "0.3rem", lineHeight: 1.5 }}>
-                The canteen has moved your food to a separate area. Show the QR code below to the canteen staff to collect your order anytime today.
+                {currentStatus === "late_pickup_pending"
+                  ? "The worker is shifting your food to the late pickup counter now. Show the QR code below when you reach the counter to collect it."
+                  : "The canteen has moved your food to a separate area. Show the QR code below to the canteen staff to collect your order anytime today."}
               </div>
             </div>
           </div>

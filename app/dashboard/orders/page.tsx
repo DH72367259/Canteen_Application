@@ -36,10 +36,12 @@ const STATUS_LABEL: Record<string, string>  = {
   placed: "Placed", confirmed: "Confirmed", preparing: "Preparing",
   ready_for_placement: "Ready to place", placed_in_bin: "In bin",
   ready_for_pickup: "Ready ✅", collected: "Collected", cancelled: "Cancelled",
+  late_pickup_pending: "Late Pickup ⚠️",
   late_pickup: "Late Pickup ⚠️",
 };
 const STATUS_COLOR: Record<string, string> = {
   collected: "#15803d", ready_for_pickup: "#d97706", cancelled: "#dc2626",
+  late_pickup_pending: "#b45309",
   late_pickup: "#b45309",
 };
 

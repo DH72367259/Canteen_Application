@@ -204,7 +204,7 @@ function OrdersTab({ session }: { session: { access_token: string } | null }) {
 
       const PREP   = ["confirmed", "preparing", "ready_for_placement"];
       const PICKUP = ["placed_in_bin", "ready_for_pickup"];
-      const LATE   = ["late_pickup"];
+      const LATE   = ["late_pickup_pending", "late_pickup"];
 
       const prepOrders = all
         .filter(o => PREP.includes(o.rawStatus ?? o.status))

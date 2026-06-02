@@ -34,7 +34,7 @@ const BIN_COLORS: Record<string, string> = {
   yellow: "#eab308", purple: "#a855f7", orange: "#f97316",
 };
 
-const ACTIVE_STATUSES = ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup", "late_pickup"];
+const ACTIVE_STATUSES = ["placed", "confirmed", "preparing", "ready_for_placement", "placed_in_bin", "ready_for_pickup", "late_pickup_pending", "late_pickup"];
 
 function tint(hex: string, alpha: string): string {
   if (!hex.startsWith("#") || hex.length !== 7) return `${hex}${alpha}`;
@@ -314,7 +314,7 @@ export default function WorkerOrdersPage() {
   // When late orders first appear while on the orders tab, auto-switch + start countdown.
   useEffect(() => {
     const count = orders.filter(
-      (o) => o.status === "late_pickup" ||
+      (o) => o.status === "late_pickup" || o.status === "late_pickup_pending" ||
              (isLatePickup(o.pickup_slot, slotMode) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
     ).length;
     const prev = prevLateCountRef.current;
@@ -395,6 +395,23 @@ export default function WorkerOrdersPage() {
     } finally { setUpdating(null); }
   }
 
+  // Worker confirms they have physically shifted the food from the bin to the
+  // late pickup counter. Server flips status: late_pickup_pending → late_pickup
+  // AND frees the bin so the next student can be assigned to it.
+  async function markShifted(orderId: string) {
+    if (!session) return;
+    setUpdating(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/clear-bin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "late_pickup", bin_label: null } : o)));
+      }
+    } finally { setUpdating(null); }
+  }
+
   async function verifyOtp(orderId: string) {
     if (!session || otpInput.length < 4) return;
     setOtpSubmitting(true);
@@ -453,8 +470,13 @@ export default function WorkerOrdersPage() {
     setOtpError(null);
   }
 
-  // Orders tab: current slot + 60-min upcoming (never late_pickup — those go to Late tab)
-  const relevantOrders = orders.filter((o) => o.status !== "late_pickup" && isOrderRelevant(o.pickup_slot));
+  // Orders tab: current slot + 60-min upcoming (never late_pickup or late_pickup_pending —
+  // those belong to the Late Pickup tab so the worker can shift them).
+  const relevantOrders = orders.filter(
+    (o) => o.status !== "late_pickup" &&
+           o.status !== "late_pickup_pending" &&
+           isOrderRelevant(o.pickup_slot),
+  );
   const slots = [...new Set(relevantOrders.map((o) => o.pickup_slot).filter((s): s is string => Boolean(s)))].sort();
   const slotFilteredOrders = activeSlot === "__all__"
     ? relevantOrders
@@ -476,10 +498,13 @@ export default function WorkerOrdersPage() {
   const prepSummary = aggregateBySlot(prepOrders);
   const selectedSummary = pickBestPrepSlot(prepSummary);
 
-  // Late Pickup tab: DB status is late_pickup, OR slot has ended with an active status
-  // (the second arm catches orders that are transitioning before the next auto-update runs)
+  // Late Pickup tab: DB status is late_pickup or late_pickup_pending (sweep moved
+  // an uncollected placed_in_bin order — worker now needs to physically shift it),
+  // OR the slot has ended with an active status (`both` mode client-side fallback
+  // before the next server sweep runs).
   const lateOrders = orders.filter(
     (o) => o.status === "late_pickup" ||
+           o.status === "late_pickup_pending" ||
            (isLatePickup(o.pickup_slot, slotMode) && ["placed_in_bin", "ready_for_pickup", "confirmed", "preparing"].includes(o.status))
   );
 
@@ -879,12 +904,58 @@ export default function WorkerOrdersPage() {
                             : `#${order.id.slice(-8).toUpperCase()}`}
                         </div>
                         <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
-                          Order #{order.id.slice(-8).toUpperCase()} · Slot {order.pickup_slot ?? "—"} · <span style={{ color: "#dc2626", fontWeight: 700 }}>LATE</span>
+                          Order #{order.id.slice(-8).toUpperCase()} · Slot {order.pickup_slot ?? "—"} · <span style={{ color: "#dc2626", fontWeight: 700 }}>
+                            {order.status === "late_pickup_pending" ? "SHIFT TO COUNTER" : "LATE"}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Direct handover: slot closed, no bin was assigned */}
-                      {["confirmed", "preparing"].includes(order.status) ? (
+                      {/* late_pickup_pending: 5-min timer expired, bin still occupied.
+                          Worker must physically move food to the late-pickup counter,
+                          then tap "Mark Shifted" — that frees the bin and flips status
+                          to late_pickup so the student can show their QR to collect. */}
+                      {order.status === "late_pickup_pending" ? (
+                        <>
+                          <div style={{ padding: "0.75rem", display: "grid", gap: "0.65rem" }}>
+                            {assignments.map((a) => {
+                              const binColor = BIN_COLORS[a.binColor] ?? "#f97316";
+                              return (
+                                <div key={`${order.id}-${a.binIndex}-${a.binLabel}`} style={{ border: `2px solid ${binColor}`, borderRadius: 14, background: tint(binColor, "18"), overflow: "hidden" }}>
+                                  <div style={{ background: binColor, color: "#fff", padding: "0.45rem 0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ fontWeight: 900, fontSize: "1.02rem" }}>Bin {a.binLabel}</span>
+                                    <span style={{ fontSize: "0.72rem", opacity: 0.92 }}>Pickup expired</span>
+                                  </div>
+                                  <div style={{ padding: "0.55rem 0.7rem" }}>
+                                    {a.items.map((it, idx) => (
+                                      <div key={`${it.name}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.92rem", fontWeight: 700, padding: "0.18rem 0", borderBottom: idx < a.items.length - 1 ? "1px dashed #cbd5e1" : "none" }}>
+                                        <span>{it.name}</span>
+                                        <span style={{ color: "#b45309" }}>x{it.quantity}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ padding: "0 0.75rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "0.55rem 0.7rem", fontSize: "0.78rem", color: "#9a3412", fontWeight: 600, lineHeight: 1.35 }}>
+                              📦 Shift the food from this bin to the late-pickup counter, then tap below to free the bin.
+                            </div>
+                            <button
+                              disabled={updating === order.id}
+                              onClick={() => {
+                                if (confirm("Confirm you have moved this order's food to the late pickup counter? This will free the bin for the next student.")) {
+                                  clearAutoReturn();
+                                  markShifted(order.id);
+                                }
+                              }}
+                              style={{ width: "100%", background: "#0f766e", color: "#fff", border: "none", borderRadius: 10, padding: "0.7rem", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}
+                            >
+                              {updating === order.id ? "Shifting…" : "📦 Mark Shifted to Late Counter"}
+                            </button>
+                          </div>
+                        </>
+                      ) : ["confirmed", "preparing"].includes(order.status) ? (
                         <>
                           <div style={{ margin: "0 0.75rem", padding: "0.65rem 0.75rem", background: "#fff7ed", border: "1.5px dashed #f97316", borderRadius: 12 }}>
                             <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#c2410c", marginBottom: "0.4rem" }}>
