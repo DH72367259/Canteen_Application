@@ -108,23 +108,63 @@ export async function GET(request: Request) {
     }
 
     // Surface slot_mode so client UIs (worker / vendor / student) can decide
-    // whether the client-side "slot ended → LATE" badge should fire. In
-    // batched_only the slot is just bookkeeping — only the 5-min after-bin
-    // timer marks an order late.
-    let slot_mode: "both" | "batched_only" = "both";
-    if (context.canteenId) {
+    // whether the client-side "slot ended → LATE" badge should fire and (for
+    // students) whether to start the 5-min after-bin countdown.
+    //
+    // Students do NOT have profile.canteen_id set, so falling back to
+    // context.canteenId here would always return "both" for them — which is
+    // exactly the 2026-06-02 client report (countdown never appeared even
+    // though the canteen was in batched_only). Fix: derive slot_mode per
+    // distinct canteen present in the order list, attach a `slot_mode` field
+    // to each order, and fall back to the first order's slot_mode for the
+    // top-level field that staff UIs read.
+    const distinctCanteenIds = [
+      ...new Set(orders.map((o) => o.canteenId).filter((id): id is string => !!id)),
+    ];
+    const slotModeByCanteen = new Map<string, "both" | "batched_only">();
+    if (distinctCanteenIds.length > 0) {
       const adminSupa = createAdminClient();
-      const { data: control } = await adminSupa
+      const { data: controls } = await adminSupa
         .from("slot_control")
-        .select("slot_mode")
-        .eq("canteen_id", context.canteenId)
-        .maybeSingle();
-      if ((control as { slot_mode?: string } | null)?.slot_mode === "batched_only") {
-        slot_mode = "batched_only";
+        .select("canteen_id, slot_mode")
+        .in("canteen_id", distinctCanteenIds);
+      for (const row of (controls ?? []) as Array<{ canteen_id: string; slot_mode?: string }>) {
+        slotModeByCanteen.set(
+          String(row.canteen_id),
+          row.slot_mode === "batched_only" ? "batched_only" : "both",
+        );
       }
     }
 
-    return NextResponse.json({ orders, role: context.role, slot_mode });
+    const ordersWithMode = orders.map((o) => ({
+      ...o,
+      slot_mode: (o.canteenId && slotModeByCanteen.get(o.canteenId)) || "both",
+    }));
+
+    let slot_mode: "both" | "batched_only" = "both";
+    if (context.canteenId) {
+      slot_mode = slotModeByCanteen.get(context.canteenId) ?? "both";
+      if (slot_mode === "both") {
+        // Staff request with no orders yet — still surface the canteen's mode
+        // so the worker UI knows whether to fire the slot-end LATE override.
+        const adminSupa = createAdminClient();
+        const { data: control } = await adminSupa
+          .from("slot_control")
+          .select("slot_mode")
+          .eq("canteen_id", context.canteenId)
+          .maybeSingle();
+        if ((control as { slot_mode?: string } | null)?.slot_mode === "batched_only") {
+          slot_mode = "batched_only";
+        }
+      }
+    } else if (ordersWithMode.length > 0) {
+      // Student (no canteenId in profile): mirror the most recent active
+      // order's slot_mode so legacy code paths reading top-level slot_mode
+      // still get the right value.
+      slot_mode = ordersWithMode[0].slot_mode;
+    }
+
+    return NextResponse.json({ orders: ordersWithMode, role: context.role, slot_mode });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load orders.";
     return NextResponse.json({ error: msg, orders: [] }, { status: 500 });

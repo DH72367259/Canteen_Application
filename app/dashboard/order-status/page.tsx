@@ -25,11 +25,17 @@ interface Order {
   items?: OrderItem[];
   binAssignments?: BinAssignment[];
   canteenName?: string;
+  canteenId?: string;
   createdAt?: string;
   updatedAt?: string;
   total?: number;
   binCount?: number;
   extraBinFeePaise?: number;
+  // Per-order slot_mode (added 2026-06-02): student profiles don't carry a
+  // canteen_id, so the API exposes the order's canteen's slot_mode here.
+  // The page-level slotMode state is hydrated from this when set, with the
+  // top-level slot_mode (legacy) as a fallback.
+  slot_mode?: "both" | "batched_only";
 }
 
 // ── Status progression ─────────────────────────────────────────────────────────
@@ -104,10 +110,15 @@ function OrderStatusContent() {
       });
       if (!res.ok) { setError("Could not load order."); return; }
       const data = await res.json() as { orders?: Order[]; slot_mode?: string };
-      if (data.slot_mode === "batched_only" || data.slot_mode === "both") {
-        setSlotMode(data.slot_mode);
-      }
       const found = (data.orders ?? []).find((o) => o.id === id);
+      // Prefer the THIS order's slot_mode (per-order field) over the
+      // top-level fallback — a student with orders at two canteens could
+      // otherwise see the wrong canteen's countdown logic. The top-level
+      // value is still honored when per-order is absent.
+      const resolvedMode = found?.slot_mode ?? data.slot_mode;
+      if (resolvedMode === "batched_only" || resolvedMode === "both") {
+        setSlotMode(resolvedMode);
+      }
       if (found) {
         setOrder(found);
         setError(null);

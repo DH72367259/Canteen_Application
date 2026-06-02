@@ -982,6 +982,56 @@ test.describe("late_pickup_pending: worker + student both see it", () => {
     }
   });
 
+  test("GET /api/orders (student) surfaces per-order slot_mode (canteen=batched_only must reach student UI)", async () => {
+    // Regression: student profiles don't have canteen_id, so /api/orders was
+    // falling back to slot_mode='both' for every student request — the
+    // batched_only 5-min countdown banner on order-status/page.tsx never
+    // fired. Client report 2026-06-02.
+    await apiFetch("/api/canteen/slot-control", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot_mode: "batched_only" }),
+    }, ACCOUNTS.canteenAdmin);
+
+    const db = adminClient();
+    const { data: order } = await db
+      .from("orders")
+      .insert({
+        canteen_id: canteenIdLP,
+        user_id: studentIdLP,
+        status: "placed_in_bin",
+        total_amount: 100,
+        otp: "5566",
+        slot_label: "12:00 AM - 11:59 PM",
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (!order) {
+      await apiFetch("/api/canteen/slot-control", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slot_mode: "both" }) }, ACCOUNTS.canteenAdmin);
+      test.skip(true, "Order seed failed"); return;
+    }
+    const orderId = (order as { id: string }).id;
+
+    try {
+      const res = await apiFetch("/api/orders", {}, ACCOUNTS.student1);
+      const j = await res.json() as {
+        orders?: Array<{ id: string; slot_mode?: string }>;
+        slot_mode?: string;
+      };
+      const found = (j.orders ?? []).find((o) => o.id === orderId);
+      expect(found, "student must see their order").toBeTruthy();
+      // The per-order field is the SOURCE OF TRUTH for the countdown effect.
+      expect(found?.slot_mode).toBe("batched_only");
+      // Top-level field is the legacy fallback — for a student whose only
+      // order is at this canteen it must mirror the per-order value.
+      expect(j.slot_mode).toBe("batched_only");
+    } finally {
+      await db.from("orders").delete().eq("id", orderId);
+      await apiFetch("/api/canteen/slot-control", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slot_mode: "both" }) }, ACCOUNTS.canteenAdmin);
+    }
+  });
+
   test("clear-bin refuses to act on orders NOT in late_pickup_pending", async () => {
     const db = adminClient();
     const { data: order } = await db
