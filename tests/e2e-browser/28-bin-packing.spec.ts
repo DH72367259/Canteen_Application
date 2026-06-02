@@ -296,30 +296,34 @@ test.describe("Order placement — bin count and extra fee", () => {
   test("2-meal order response has binCount=2 and extraBinFeePaise>0", async () => {
     if (!canteenId || !mealId) { test.skip(true, "No canteen/menu items"); return; }
 
+    // /api/orders/place expects CAMELCASE field names (canteenId, cartItems,
+    // slotLabel). This test was previously passing snake_case (canteen_id,
+    // items, slot_label) which the route ignores — it returned 400 every
+    // time and the test silently skipped. Fixed 2026-06-02.
     const slotLabel = "1:00 AM - 1:15 AM"; // far future past midnight — won't block slot cap
     const res = await apiFetch("/api/orders/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        canteen_id: canteenId,
-        items: [{ id: mealId, qty: 2 }],
-        slot_label: slotLabel,
-        payment_method: "cod",
+        canteenId,
+        cartItems: [{ id: mealId, qty: 2 }],
+        slotLabel,
       }),
     }, ACCOUNTS.student1);
 
-    // Accept 201 (order placed) or 409 (slot full in test env) — we just want the bin fields
+    // Accept 201/200 (order placed) or 409 (slot full in test env) — we just want the bin fields
     if (res.status === 409) { test.skip(true, "Slot full — skipping bin count check"); return; }
     if (!res.ok) { test.skip(true, `Order failed: ${res.status}`); return; }
 
-    const j = await res.json() as { binCount?: number; extraBinFeePaise?: number; bin_count?: number };
-    const binCount = j.binCount ?? j.bin_count;
-    expect(binCount, "2 meals should require 2 bins").toBe(2);
+    const j = await res.json() as { binCount?: number; extraBinFeePaise?: number; orderId?: string };
+    expect(j.binCount, "2 meals should require 2 bins").toBe(2);
     expect(j.extraBinFeePaise, "extra bin fee should be >0 for 2nd bin").toBeGreaterThan(0);
 
-    // Cleanup: cancel order if it was placed
-    const db = adminClient();
-    await db.from("orders").update({ status: "cancelled" }).eq("canteen_id", canteenId).eq("status", "placed").gte("created_at", new Date(Date.now() - 10_000).toISOString());
+    // Cleanup the placed order
+    if (j.orderId) {
+      const db = adminClient();
+      await db.from("orders").update({ status: "cancelled" }).eq("id", j.orderId);
+    }
   });
 
   test("1-meal + 3-snack order has binCount=1 and extraBinFeePaise=0", async () => {
@@ -330,23 +334,23 @@ test.describe("Order placement — bin count and extra fee", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        canteen_id: canteenId,
-        items: [{ id: mealId, qty: 1 }, { id: snackId, qty: 3 }],
-        slot_label: slotLabel,
-        payment_method: "cod",
+        canteenId,
+        cartItems: [{ id: mealId, qty: 1 }, { id: snackId, qty: 3 }],
+        slotLabel,
       }),
     }, ACCOUNTS.student2);
 
     if (res.status === 409) { test.skip(true, "Slot full"); return; }
     if (!res.ok) { test.skip(true, `Order failed: ${res.status}`); return; }
 
-    const j = await res.json() as { binCount?: number; extraBinFeePaise?: number; bin_count?: number };
-    const binCount = j.binCount ?? j.bin_count;
-    expect(binCount).toBe(1);
+    const j = await res.json() as { binCount?: number; extraBinFeePaise?: number; orderId?: string };
+    expect(j.binCount).toBe(1);
     expect(j.extraBinFeePaise).toBe(0);
 
-    const db = adminClient();
-    await db.from("orders").update({ status: "cancelled" }).eq("canteen_id", canteenId).eq("status", "placed").gte("created_at", new Date(Date.now() - 10_000).toISOString());
+    if (j.orderId) {
+      const db = adminClient();
+      await db.from("orders").update({ status: "cancelled" }).eq("id", j.orderId);
+    }
   });
 });
 

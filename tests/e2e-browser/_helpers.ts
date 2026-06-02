@@ -190,15 +190,27 @@ export async function deleteUser(id: string) {
 
 // ── Notification insert with target_role fallback ───────────────────────────
 // Staging DB may not have the target_role column yet (added by phase1 migration).
-// This helper tries the insert with target_role; if the column is missing (42703)
-// it retries without it. Returns { id, hasTargetRole } so callers can skip tests
+// This helper tries the insert with target_role; if the column is missing
+// (Postgres 42703, or Supabase PostgREST PGRST204 "schema cache miss") it
+// retries without it. Returns { id, hasTargetRole } so callers can skip tests
 // that specifically require role-based visibility isolation.
+//
+// 2026-06-02: prior version only matched the Postgres 42703 message
+// ("column 'X' does not exist"). Supabase PostgREST returns a different
+// message ("Could not find the '<col>' column of '<table>' in the schema
+// cache") with code PGRST204, so the regex missed it and the fallback never
+// fired — all 6 notification e2e tests silently skipped against staging.
 export async function insertNotification(
   db: SupabaseClient,
   payload: { title: string; body: string; type: string; recipient_type: string; target_role?: string },
 ): Promise<{ id: string; hasTargetRole: boolean } | null> {
+  function isColumnMissing(err: { code?: string; message?: string } | null | undefined): boolean {
+    if (!err) return false;
+    if (err.code === "42703" || err.code === "PGRST204") return true;
+    return /column .* does not exist|could not find the .* column/i.test(err.message ?? "");
+  }
   let res = await db.from("notifications").insert(payload).select("id").single();
-  if (res.error && /42703|column.*does not exist/i.test(res.error.message ?? "")) {
+  if (res.error && isColumnMissing(res.error)) {
     const { target_role: _ignored, ...fallback } = payload;
     res = await db.from("notifications").insert(fallback).select("id").single();
     if (res.data) return { id: (res.data as { id: string }).id, hasTargetRole: false };
