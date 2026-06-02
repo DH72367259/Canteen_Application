@@ -1072,6 +1072,14 @@ test.describe("late_pickup_pending: worker + student both see it", () => {
     if (!bin) { test.skip(true, "no bin"); return; }
     const binId = (bin as { id: string }).id;
 
+    // IMPORTANT: use a slot_label that NO other test file inserts. Spec 27
+    // and other tests in spec 33 hit "12:00 AM - 11:59 PM" — when those
+    // run in parallel, findUnfulfilledSiblings (called by verify-qr) finds
+    // the parallel-worker's still-placed student1 order in that slot and
+    // returns 409 instead of letting us complete. A unique slot_label
+    // keeps the sibling guard from matching anything outside this test.
+    const isolatedSlot = "03:00 AM - 03:30 AM";
+
     const { data: order } = await db
       .from("orders")
       .insert({
@@ -1080,7 +1088,7 @@ test.describe("late_pickup_pending: worker + student both see it", () => {
         status: "late_pickup_pending",
         total_amount: 100,
         otp: "4455",
-        slot_label: "12:00 AM - 11:59 PM",
+        slot_label: isolatedSlot,
         bin_id: binId,
         updated_at: new Date().toISOString(),
       })
